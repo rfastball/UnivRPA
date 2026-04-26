@@ -5,6 +5,7 @@ Public g_AbortWait As Boolean
 
 Public Sub RaiseAbort()
     g_AbortWait = True
+    LogShim.LogJ "raise_abort", "{""tick"":" & modWinAPI.GetTickCount() & "}"
 End Sub
 
 Public Sub LogInvariant_Wait(result As Boolean, elapsed_ms As Long, exit_reason As String)

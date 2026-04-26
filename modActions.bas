@@ -246,7 +246,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         
         ' 비상 탈출
         If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Or dbgTemp.g_AbortWait Then
-            LogShim.LogJ "wait_exit_path", "{""reason"":""esc"",""flag"":" & LCase(CStr(dbgTemp.g_AbortWait)) & "}"
+            LogShim.LogJ "wait_exit_path", "{""reason"":""esc"",""flag"":" & LCase(CStr(dbgTemp.g_AbortWait)) & ",""tick"":" & modWinAPI.GetTickCount() & "}"
             Action_Wait = False: Exit Function
         End If
         
