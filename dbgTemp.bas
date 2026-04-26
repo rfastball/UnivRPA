@@ -38,6 +38,16 @@ Fail:
     LogShim.LogJ "macro_error", "{""scenario"":""S2"",""num"":" & Err.Number & "}"
 End Sub
 
+Public Sub Scenario_S4_VanishMatch()
+    On Error GoTo Fail
+    Dim startTime As Long: startTime = modWinAPI.GetTickCount()
+    Dim r As Boolean: r = modActions.Action_Wait("WAIT_VANISH", 100, 100, "FFFFFFFFFF")
+    LogInvariant_Wait r, modWinAPI.GetTickCount() - startTime, "matched"
+    Exit Sub
+Fail:
+    LogShim.LogJ "macro_error", "{""scenario"":""S4"",""num"":" & Err.Number & "}"
+End Sub
+
 Public Sub Scenario_S3_Timeout()
     On Error GoTo Fail
     g_AbortWait = False
