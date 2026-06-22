@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -lEn \"LogJ|LogD|LogShim\" *.bas *.cls *.frm)",
+      "Bash(grep -En \"frmRPAStatus\" *.bas *.cls)",
+      "Bash(grep -L \"Option Explicit\" *.bas)",
+      "Bash(grep -E '\\\\.\\(bas|cls|frm\\)$')"
+    ]
+  }
+}

@@ -238,8 +238,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         
         ' 타임아웃
         If (modWinAPI.GetTickCount() - startTime) > timeLimit Then
-            LogShim.LogJ "wait_timeout", _
-                "{""type"":""" & sType & """,""color"":""" & hexColor & """,""x"":" & x & ",""y"":" & y & "}"
+            MsgBox "[TimeOut] " & sType & " 실패" & vbCrLf & "Color: " & hexColor, vbCritical
             Action_Wait = False
             Exit Function
         End If
@@ -253,9 +252,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
 CleanUp:
     Exit Function
 ErrHandler:
-    LogShim.LogJ "wait_error", _
-        "{""num"":" & Err.Number & ",""src"":""Action_Wait""}"
-    Action_Wait = False
+    MsgBox "Error " & Err.Number & ": " & Err.Description
     Resume CleanUp
 End Function
 
