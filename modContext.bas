@@ -24,10 +24,6 @@ Private LabelMap As Collection      ' 라벨 저장소 (Key:Name -> Value:LineNu
 ' [4] 루프카운터 관리
 Private LoopCounters As New Collection ' Key: "L10" (Line 10) -> Value: Current Count
 
-' [5] 로드한 clsTable 객체 관리
-Private m_DataTable As clsTable      ' 현재 로드된 테이블 객체
-Private m_CurrentDataRow As Long     ' 현재 루프 중인 테이블 행 번호
-
 '==============================================================================
 ' 1. Initialization & Reset (초기화)
 '==============================================================================
@@ -35,11 +31,7 @@ Private m_CurrentDataRow As Long     ' 현재 루프 중인 테이블 행 번호
 ' [초기화] 매크로 시작 시 반드시 호출
 Public Sub InitContext()
     Dim i As Integer
-    
-    ' 0.clsTable 초기화
-    Set m_DataTable = Nothing
-    m_CurrentDataRow = 0
-    
+
     ' 1. 메모리 초기화
     For i = 0 To 99
         Memory(i) = ""
@@ -220,36 +212,6 @@ Public Sub RemoveLoopCount(ByVal lineIdx As Long)
     LoopCounters.Remove "L" & lineIdx
     On Error GoTo 0
 End Sub
-
-'--------------------------------------------------
-' 7. clsTable 관련 로직
-'--------------------------------------------------
-' [Table 전용 인터페이스]
-Public Sub SetDataTable(ByVal Tbl As clsTable)
-    Set m_DataTable = Tbl
-End Sub
-
-Public Function GetDataTable() As clsTable
-    Set GetDataTable = m_DataTable
-End Function
-
-Public Sub SetCurrentDataRow(ByVal rowIdx As Long)
-    m_CurrentDataRow = rowIdx
-End Sub
-
-Public Function GetCurrentDataRow() As Long
-    GetCurrentDataRow = m_CurrentDataRow
-End Function
-
-' [[컬럼명]] 처리를 위한 값 획득 함수
-Public Function GetTableValue(ByVal colName As String) As String
-    If m_DataTable Is Nothing Or m_CurrentDataRow = 0 Then
-        GetTableValue = ""
-    Else
-        GetTableValue = CStr(m_DataTable.GetValue(m_CurrentDataRow, colName))
-    End If
-End Function
-
 
 ' [modContext] 타입 오류 없는 안전한 로거
 Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Variant, ByVal v4 As Variant)

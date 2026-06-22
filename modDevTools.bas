@@ -111,8 +111,8 @@ Private Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As
     ' 1. 명령어 존재 여부 확인
     Select Case True
      Case cmd = "IF", cmd = "ELSE", cmd = "END_IF", cmd = "WHILE", cmd = "WEND", _
-        cmd = "FOR", cmd = "NEXT", cmd = "FOR_TABLE", cmd = "NEXT_TABLE", _
-        cmd = "LOAD_TABLE", cmd = "GOTO", cmd = "CALL", cmd = "RETURN", cmd = "LABEL", _
+        cmd = "FOR", cmd = "NEXT", _
+        cmd = "GOTO", cmd = "CALL", cmd = "RETURN", cmd = "LABEL", _
         cmd = "SWITCH_PIXEL", cmd = "ASSERT", cmd = "KEY", cmd = "COMBO", _
         cmd = "FOCUS", cmd = "INC", cmd = "EXIT", cmd = "NOTIFY", _
         cmd = "SELECT", cmd = "CASE", cmd = "END_SELECT"
@@ -228,7 +228,7 @@ End Sub
 Private Function IsBlockStarter(cmd As String) As Boolean
     Select Case True
      Case InStr(cmd, "IF") = 1, InStr(cmd, "WHILE") = 1, _
-        cmd = "FOR", cmd = "FOR_TABLE", cmd = "SELECT"
+        cmd = "FOR", cmd = "SELECT"
         IsBlockStarter = True
      Case Else: IsBlockStarter = False
     End Select
@@ -238,7 +238,7 @@ End Function
 Private Function IsBlockEnder(cmd As String) As Boolean
     Select Case True
      Case InStr(cmd, "END") = 1, cmd = "WEND", _
-        cmd = "NEXT", cmd = "NEXT_TABLE"
+        cmd = "NEXT"
         IsBlockEnder = True
      Case Else: IsBlockEnder = False
     End Select

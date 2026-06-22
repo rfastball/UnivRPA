@@ -356,18 +356,6 @@ Private Function ProcessAction(sType As String, R As Long, sP1 As String, p1 As 
      Case "CLEAR_MEM": modContext.SetVar val(sP1), ""
      Case "INC": IncrementVariable p1: ProcessAction = CMD_NEXT_LINE
 
-            '--------------------------------------------------
-            ' [Data] LOAD_TABLE | _ | _ | 파일명|시트명
-            '--------------------------------------------------
-         Case "LOAD_TABLE"
-            Dim pathInfo As String: pathInfo = ResolveParam(CStr(m_arrMain(R, 5)))
-            Dim newTbl As New clsTable
-
-            ' clsTable 내부에 문자열 파싱 로직이 있다고 가정하고 호출
-            newTbl.LoadFromSheet pathInfo
-            modContext.SetDataTable newTbl
-            ProcessAction = CMD_NEXT_LINE
-            
          Case "NOTIFY"
             modActions.Action_Notify val(p1), val(p2), p3
             
@@ -498,52 +486,6 @@ Private Function ProcessFlowControl(sType As String, R As Long, sP1 As String, r
                 ProcessFlowControl = CMD_ERROR
             End If
 
-         Case "FOR_TABLE"
-            If modContext.GetDataTable Is Nothing Then
-                MsgBox "데이터 테이블이 로드되지 않았습니다.", vbCritical
-                ProcessFlowControl = CMD_ERROR: GoTo CleanUp
-            End If
-
-            ' 루프 최초 진입 시 2행(첫 데이터)으로 세팅
-            If modContext.GetLoopCount(R) = 0 Then
-                modContext.SetLoopCount R, 2
-                modContext.SetCurrentDataRow 2
-            End If
-
-            ' 데이터가 아예 없으면 (헤더만 있으면) 루프 종료 지점 다음으로 탈출
-            If modContext.GetDataTable.RowCount < 2 Then
-                ProcessFlowControl = FindBlockPair(R, "FOR_TABLE", 1) + 1
-            Else
-                ' [참] 데이터가 있으면 본문(다음 줄)으로 진행
-                ProcessFlowControl = CMD_NEXT_LINE
-            End If
-
-         Case "NEXT_TABLE"
-            Dim startLine As Long: startLine = FindBlockPair(R, "FOR_TABLE", -1)
-            If startLine > 0 Then
-                Dim curIdx As Long: curIdx = modContext.GetLoopCount(startLine)
-                Dim maxIdx As Long: maxIdx = modContext.GetDataTable.RowCount
-
-                If curIdx < maxIdx Then
-                    ' 1. 다음 행으로 인덱스 업데이트
-                    modContext.SetLoopCount startLine, curIdx + 1
-                    modContext.SetCurrentDataRow curIdx + 1 ' 변수 치환용 포인터 갱신
-
-                    ' 2. [수정 핵심] startLine + 1 대신 startLine으로 보냅니다.
-                    ' 메인 루프의 Next R이 R을 1 증가시켜줄 것이므로,
-                    ' 결과적으로 FOR_TABLE 바로 다음 줄이 실행됩니다.
-                    ProcessFlowControl = startLine
-                Else
-                    ' 모든 데이터를 처리했으므로 루프 종료
-                    modContext.RemoveLoopCount startLine
-                    modContext.SetCurrentDataRow 0
-                    ProcessFlowControl = CMD_NEXT_LINE
-                End If
-            Else
-                MsgBox "구문 오류: NEXT_TABLE의 짝(FOR_TABLE)을 찾을 수 없습니다.", vbCritical
-                ProcessFlowControl = CMD_ERROR
-            End If
-
             '--------------------------------------------------
             ' [Structured Flow] Select / Case / End_Select
             '--------------------------------------------------
@@ -625,35 +567,6 @@ Private Function ResolveParam(ByVal rawVal As String) As String
         Next i
         ResolveParam = Join(parts, "|")
      GoTo CleanUp
-    End If
-
-    '--------------------------------------------------
-    ' [Case C] 데이터 테이블 [[컬럼명]] 치환 (신규 추가)
-    '--------------------------------------------------
-    ' 문장 내에 [[ ]] 패턴이 존재하는 동안 반복하여 치환합니다.
-    If InStr(result, "[[") > 0 Then
-        Dim pStart As Long, pEnd As Long
-        Dim colName As String, tableVal As String
-
-        pStart = InStr(result, "[[")
-        Do While pStart > 0
-            pEnd = InStr(pStart, result, "]]")
-            If pEnd > pStart Then
-                ' 1. [[ ]] 사이의 텍스트(헤더명) 추출
-                colName = Mid(result, pStart + 2, pEnd - pStart - 2)
-
-                ' 2. modContext를 통해 현재 로드된 테이블의 현재 행 값을 가져옴
-                tableVal = modContext.GetTableValue(colName)
-
-                ' 3. 토큰 전체를 실제 값으로 치환
-                result = Replace(result, "[[" & colName & "]]", tableVal)
-
-                ' 4. 다음 [[ 패턴이 또 있는지 확인
-                pStart = InStr(result, "[[")
-            Else
-             Exit Do ' 닫는 괄호 ] ] 가 없는 비정상 구문은 탈출
-            End If
-        Loop
     End If
 
     ' [Case B] 문장 내 변수 치환 (Interpolation)
@@ -810,24 +723,6 @@ Private Function FindBlockPair(ByVal startLine As Long, ByVal SearchType As Stri
                 Else ' 위로 For 찾기
                     If sCmd = "NEXT" Then depth = depth + 1
                     If sCmd = "FOR" Then
-                        If depth = 0 Then FindBlockPair = R: GoTo CleanUp
-                        depth = depth - 1
-                    End If
-                End If
-
-            '--------------------------------------------------
-            ' [New] FOR_TABLE 전용 탐색 로직
-            '--------------------------------------------------
-            Case "FOR_TABLE"
-                If Direction = 1 Then ' 아래로 NEXT_TABLE 찾기
-                    If sCmd = "FOR_TABLE" Then depth = depth + 1
-                    If sCmd = "NEXT_TABLE" Then
-                        If depth = 0 Then FindBlockPair = R: GoTo CleanUp
-                        depth = depth - 1
-                    End If
-                Else ' 위로 FOR_TABLE 찾기
-                    If sCmd = "NEXT_TABLE" Then depth = depth + 1
-                    If sCmd = "FOR_TABLE" Then
                         If depth = 0 Then FindBlockPair = R: GoTo CleanUp
                         depth = depth - 1
                     End If

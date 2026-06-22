@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 1. 프로젝트 정체성
 
-UnivRPA는 Excel VBA 기반 범용 RPA 인터프리터. 시트의 표(COMMAND/PARAM1/PARAM2/PARAM3) 행을 명령어로 해석해 Win32 API로 실행한다. 픽셀 비전, 데이터 테이블 반복(`clsTable`), 라벨/CALL/RETURN 흐름 제어를 지원. 운영 자산은 `../UnivRPA.xlsb` 단일 워크북.
+UnivRPA는 Excel VBA 기반 범용 RPA 인터프리터. 시트의 표(COMMAND/PARAM1/PARAM2/PARAM3) 행을 명령어로 해석해 Win32 API로 실행한다. 픽셀 비전, 라벨/CALL/RETURN 흐름 제어를 지원. 운영 자산은 `../UnivRPA.xlsb` 단일 워크북.
 
 ## 2. 4-Layer 아키텍처
 
@@ -16,7 +16,7 @@ UnivRPA는 Excel VBA 기반 범용 RPA 인터프리터. 시트의 표(COMMAND/PA
 
 ```
 modEngine   (Layer 1) ─ 인터프리터/오케스트레이터  RunRPA() 진입
-   └─ modContext (Layer 2) ─ 상태 (Memory[0..99], CallStack, Labels, Loop counters, clsTable)
+   └─ modContext (Layer 2) ─ 상태 (Memory[0..99], CallStack, Labels, Loop counters)
    └─ modActions (Layer 3) ─ 행동 (클릭/입력/대기/픽셀)
          └─ modWinAPI (Layer 4) ─ Win32 thin wrapper
 ```
@@ -35,7 +35,6 @@ modEngine   (Layer 1) ─ 인터프리터/오케스트레이터  RunRPA() 진입
 - **파라미터 보간 (`ResolveParam`, dispatch 시점)**:
   - `{n}` — Memory 슬롯(0~99)
   - `{CLIP}` — 클립보드
-  - `[[ColName]]` — 현재 `clsTable` 행의 컬럼값(case-insensitive)
   - `{PIXEL:x,y}` — 해당 좌표 픽셀 색
 - **들여쓰기 시각화**: 명령어 앞 `>` 접두는 중첩 깊이. `modDevTools.FormatRPAScript_Final`이 자동 정렬.
 - **인터럽트 키**: `VK_ESCAPE`(`&H1B`)=하드 종료, `VK_PAUSE_RESUME`(`&H13`)=처음부터 재시작. `BetterWait`이 `DoEvents` + 50ms(`DELAY_MICRO`) 단위로 검사.

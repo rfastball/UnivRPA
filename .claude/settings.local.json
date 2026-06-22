@@ -4,7 +4,8 @@
       "Bash(grep -lEn \"LogJ|LogD|LogShim\" *.bas *.cls *.frm)",
       "Bash(grep -En \"frmRPAStatus\" *.bas *.cls)",
       "Bash(grep -L \"Option Explicit\" *.bas)",
-      "Bash(grep -E '\\\\.\\(bas|cls|frm\\)$')"
+      "Bash(grep -E '\\\\.\\(bas|cls|frm\\)$')",
+      "Bash(git -C \"C:/Users/rfast/Desktop/Project/UnivRPA/src\" status --short)"
     ]
   }
 }
