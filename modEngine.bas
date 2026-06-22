@@ -23,6 +23,7 @@ Private Const CMD_NOT_HANDLED As Long = -2
 ' 1. Main Entry Point (RunRPA)
 '==============================================================================
 Sub RunRPA()
+Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     Dim tb1 As ListObject
     Dim currentLine As Long
     Dim nextLine As Long
