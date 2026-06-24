@@ -79,7 +79,7 @@ End Sub
 ' [변수 읽기] 미정의 키는 빈 문자열({$BLANK}) 반환 (오류 아님)
 Public Function GetVar(ByVal key As String) As String
     Dim k As String: k = Trim(key)
-    If Memory.Exists(k) Then GetVar = Memory(k) Else GetVar = ""
+    If Memory.exists(k) Then GetVar = Memory(k) Else GetVar = ""
 End Function
 
 ' [전체 메모리 덤프] 디버깅용
@@ -257,7 +257,7 @@ Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Varian
     Set wsLog = ThisWorkbook.Worksheets("RPA_LOG")
     If wsLog Is Nothing Then
         Set wsLog = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-        wsLog.Name = "RPA_LOG"
+        wsLog.name = "RPA_LOG"
         wsLog.Range("A1:E1").Value = Array("Time", "Loop", "Line", "Command", "Message")
         wsLog.Range("A1:E1").Font.Bold = True
     End If

@@ -55,7 +55,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
         ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우
         If rngTarget Is Nothing Or rngTarget.Rows.count < 2 Then
-            MsgBox "실행할 데이터가 없습니다. (현재 시트: " & wsSource.Name & ")", vbExclamation
+            MsgBox "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", vbExclamation
             modContext.ResetContext
          Exit Sub
         End If
@@ -438,6 +438,7 @@ Private Function ProcessFlowControl(sType As String, R As Long, rP1 As String, s
          ' [Loop] WHILE / END_WHILE (활성 루프 스택)
          '--------------------------------------------------
          Case "WHILE"
+            Dim whileEnd As Long
             If CheckIfSyntax(rP1, sP2, rP3) Then
                 ' 참: 첫 진입이면 PUSH, 백엣지 재진입(top.header=R)이면 회차+1
                 If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then
@@ -449,8 +450,8 @@ Private Function ProcessFlowControl(sType As String, R As Long, rP1 As String, s
             Else
                 ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
                 If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop
-                Dim wEnd As Long: wEnd = FindBlockPair(R, "WHILE", 1)
-                If wEnd > 0 Then ProcessFlowControl = wEnd + 1 Else ProcessFlowControl = CMD_ERROR
+                whileEnd = FindBlockPair(R, "WHILE", 1)
+                If whileEnd > 0 Then ProcessFlowControl = whileEnd + 1 Else ProcessFlowControl = CMD_ERROR
             End If
 
          Case "END_WHILE"

@@ -1,4 +1,4 @@
-Attribute VB_Name = "modTester"
+﻿Attribute VB_Name = "modTester"
 Option Explicit
 
 '==============================================================================
@@ -25,7 +25,7 @@ Sub Run_System_SelfDiagnosis()
     On Error GoTo 0
 
     Set wsTest = Sheets.Add
-    wsTest.Name = "RPA_TEST_SUITE"
+    wsTest.name = "RPA_TEST_SUITE"
 
     ' 컨텍스트 및 변수 초기화
     modContext.InitContext

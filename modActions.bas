@@ -473,7 +473,7 @@ Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, By
     op = UCase(Trim(op))
 
     Select Case op
-        ' [Equal] 정확히 같다 (== : *, ? 도 리터럴로 취급, Like 아님)
+        ' [Equal] 정확히 같다 (== : *, ? 도 리터럴로 취급,  아님)
         Case "=="
             If isNum Then
                 Action_CheckCondition = (d1 = d2)
