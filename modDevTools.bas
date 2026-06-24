@@ -1,4 +1,6 @@
 ﻿Attribute VB_Name = "modDevTools"
+' @desc RPA 스크립트 시트 서식·검증을 레지스트리 파생으로 적용 담당
+' @depends modCmdRegistry
 Option Explicit
 Public Sub FormatRPAScript_Final()
     Dim ws As Worksheet: Set ws = ActiveSheet
@@ -104,31 +106,24 @@ Private Sub EnsureHeaders(ws As Worksheet)
     End If
 End Sub
 
-' [신규] 명령어 및 파라미터 유효성 검사 (v2 명령어셋)
+' [파생] 명령어 및 파라미터 유효성 검사 → GetCmdDef 게이트로 환원
 Private Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
+    Dim def As CmdDef
+    Set def = modCmdRegistry.GetCmdDef(cmd)
+
+    ' 1. 명령어 존재 여부 = 레지스트리 등록 여부
+    If def Is Nothing Then
+        ValidateLine = False
+        Exit Function
+    End If
+
     ValidateLine = True
 
-    ' 1. 명령어 존재 여부 확인
-    Select Case cmd
-        ' [Flow]
-        Case "IF", "ELSE", "END_IF", "WHILE", "END_WHILE", _
-             "REPEAT", "END_REPEAT", "SELECT", "CASE", "END_SELECT", _
-             "BREAK", "CONTINUE", "GOTO", "CALL", "RETURN", "LABEL"
-        ' [Action]
-        Case "CLICK", "RCLICK", "KEY", "COMBO", "TYPE", "SET", _
-             "FOCUS", "SLEEP", "NOTIFY", "EXIT"
-        ' [Vision]
-        Case "WAIT_APPEAR", "WAIT_VANISH", "CLICK_SYNC", "ASSERT"
-        Case Else
-            ValidateLine = False
-            Exit Function
-    End Select
-
     ' 2. 조건 연산자: 맨 '=' 금지 (== 강제)
-    If cmd = "IF" Or cmd = "WHILE" Then
-        If Trim(CStr(p2)) = "=" Then
-            ValidateLine = False
-            Exit Function
+    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사 — 데이터로 일반화
+    If Not def.P2 Is Nothing Then
+        If def.P2.IsRaw Then
+            If Trim(CStr(p2)) = "=" Then ValidateLine = False
         End If
     End If
 End Function
@@ -199,48 +194,47 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Opti
     '----------------------------------------------------------
     cmdCell.Font.Bold = True ' 명령어는 다시 굵게
 
-    Select Case True
-        ' [Flow] - 연녹색 (줄 전체)
-     Case IsBlockStarter(cmd), IsBlockEnder(cmd), cmd = "ELSE", cmd = "CASE", _
-        cmd = "BREAK", cmd = "CONTINUE", cmd = "GOTO", cmd = "CALL", _
-        cmd = "RETURN", cmd = "LABEL"
-        rng.Interior.color = RGB(226, 239, 218)
-
-        ' [Vision] - 연황색 (B열 강조, C-E 연녹 배경)
-     Case cmd = "WAIT_APPEAR", cmd = "WAIT_VANISH", cmd = "CLICK_SYNC", cmd = "ASSERT"
-        cmdCell.Interior.color = RGB(255, 242, 204)
-        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
-
-        ' [Action & Input] - 연청색 (B열 강조, C-E 연녹 배경)
-     Case cmd = "CLICK", cmd = "RCLICK", cmd = "KEY", cmd = "COMBO", _
-        cmd = "TYPE", cmd = "SET", cmd = "FOCUS", cmd = "SLEEP"
-        cmdCell.Interior.color = RGB(221, 235, 247)
-        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
-
-        ' [System] - 연회색
-     Case cmd = "EXIT", cmd = "NOTIFY"
-        rng.Interior.color = RGB(242, 242, 242)
-
-        ' 블록 내부인데 위 케이스에 해당 없는 경우 연녹색 배경 유지
-     Case Else
+    ' [파생] ColorGroup(무슨 색) / PaintScope(칠하는 범위) — 두 독립 축을 게이트에서 조회
+    Dim def As CmdDef
+    Set def = modCmdRegistry.GetCmdDef(cmd)
+    If def Is Nothing Then
+        ' 미등록 명령어: 블록 내부면 연녹 배경만 유지 (구 Case Else)
         If depth > 0 Then rng.Interior.color = RGB(245, 255, 245)
-    End Select
+        Exit Sub
+    End If
+
+    Dim clr As Long: clr = ColorOf(def.ColorGroup)
+    If def.PaintScope = FULLROW Then
+        ' [Flow/System] 줄 전체
+        rng.Interior.color = clr
+    Else
+        ' [Action/Vision/Memory] B열 강조 + 중첩 시 C-E 연녹 배경
+        cmdCell.Interior.color = clr
+        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
+    End If
 End Sub
 
-' [v2] 블록 시작 명령어 정의
-Private Function IsBlockStarter(cmd As String) As Boolean
-    Select Case cmd
-        Case "IF", "WHILE", "REPEAT", "SELECT": IsBlockStarter = True
-        Case Else: IsBlockStarter = False
+' [파생 헬퍼] ColorGroup enum -> 현행 팔레트 RGB (값 보존)
+Private Function ColorOf(ByVal cg As eColorGroup) As Long
+    Select Case cg
+        Case clrFLOW:   ColorOf = RGB(226, 239, 218)  ' 연녹
+        Case clrACTION: ColorOf = RGB(221, 235, 247)  ' 연청
+        Case clrVISION: ColorOf = RGB(255, 242, 204)  ' 연황
+        Case clrSYSTEM: ColorOf = RGB(242, 242, 242)  ' 연회
+        Case Else:      ColorOf = RGB(245, 255, 245)
     End Select
 End Function
 
-' [v2] 블록 종료 명령어 정의
+' [파생] 블록 시작 판정 → BlockRole = STARTER
+Private Function IsBlockStarter(cmd As String) As Boolean
+    Dim def As CmdDef: Set def = modCmdRegistry.GetCmdDef(cmd)
+    If Not def Is Nothing Then IsBlockStarter = (def.BlockRole = STARTER)
+End Function
+
+' [파생] 블록 종료 판정 → BlockRole = ENDER
 Private Function IsBlockEnder(cmd As String) As Boolean
-    Select Case cmd
-        Case "END_IF", "END_WHILE", "END_REPEAT", "END_SELECT": IsBlockEnder = True
-        Case Else: IsBlockEnder = False
-    End Select
+    Dim def As CmdDef: Set def = modCmdRegistry.GetCmdDef(cmd)
+    If Not def Is Nothing Then IsBlockEnder = (def.BlockRole = ENDER)
 End Function
 
 

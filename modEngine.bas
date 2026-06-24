@@ -1,5 +1,6 @@
 ﻿Attribute VB_Name = "modEngine"
-
+' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
+' @depends modCmdRegistry, modContext, modActions, modWinAPI
 Option Explicit
 
 '==============================================================================
@@ -14,10 +15,8 @@ Option Explicit
 ' [수정] 배열을 모듈 전역 변수로 선언하여 모든 함수에서 접근 가능하게 함
 Private m_arrMain As Variant
 
-' [상수 정의] 매직 넘버 제거
-Private Const CMD_NEXT_LINE As Long = 0
-Private Const CMD_ERROR As Long = -1
-Private Const CMD_NOT_HANDLED As Long = -2
+' [상수] 디스패치 반환 코드는 modCmdRegistry에 공개 정의 (CMD_NEXT_LINE / CMD_ERROR).
+'   CMD_NOT_HANDLED 폴백은 레지스트리 도입으로 폐기됨.
 
 '==============================================================================
 ' 1. Main Entry Point (RunRPA)
@@ -208,70 +207,44 @@ ErrHandler:
 End Function
 
 
+' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환
 Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
     On Error GoTo ErrHandler
     Dim sType As String
-    Dim sP1 As String, sP2 As String, sP3 As String
-    Dim rP1 As String, rP2 As String, rP3 As String
-    Dim p1 As Long, p2 As Long, p3 As String
 
-    ' 1. 명령어(Type) 먼저 추출
+    ' 1. 명령어(Type) 추출
     sType = UCase(Trim(CStr(arr(R, 2))))
 
-    ' [New] 주석 처리: #으로 시작하면 파라미터 해석 없이 즉시 다음 줄로 이동
+    ' [주석] #으로 시작하면 파라미터 해석 없이 즉시 다음 줄로 이동
     If Left(sType, 1) = "#" Then
-        ExecuteSmartAction_Core = CMD_NEXT_LINE ' 0 = 다음 줄 실행
+        ExecuteSmartAction_Core = CMD_NEXT_LINE
      GoTo CleanUp
     End If
 
-    ' [New: 들여쓰기 제거] ">" 기호를 모두 제거하고 다시 공백 제거
-    ' 예: ">> TYPE" -> "TYPE"
+    ' [들여쓰기 제거] ">" 기호 모두 제거 후 공백 제거 (예: ">> TYPE" -> "TYPE")
     sType = Trim(Replace(sType, ">", ""))
 
-    ' 2. 나머지 파라미터 추출 (주석이 아닐 때만 실행됨 - 성능 최적화)
-    sP1 = CStr(arr(R, 3))
-    sP2 = CStr(arr(R, 4))
-    sP3 = CStr(arr(R, 5))
-
-    ' 2. 파라미터 해석 (Centralized Resolution)
-    '    "{n}" 형태면 메모리 값을 가져오고, 아니면 원본 유지
-    rP1 = ResolveParam(sP1)
-    rP2 = ResolveParam(sP2)
-    rP3 = ResolveParam(sP3)
-
-    ' 3. 타입 변환 (For Compatibility)
-    '    대부분의 명령어는 해석된 값(rP)을 숫자로 변환하여 사용
-    ' LONG 타입 오버플로우 방지 ON Error Resume Next
-    On Error Resume Next
-    p1 = val(rP1)
-    p2 = val(rP2)
-    On Error GoTo ErrHandler
-    p3 = rP3     ' 문자열은 그대로 사용
-
-    ' [Refactoring] 로직 분리: 흐름 제어 vs 액션 수행
-    Dim result As Long
-    
-    ' 3. 흐름 제어 (Flow Control) 처리
-    '    - IF, WHILE, REPEAT, GOTO 등 라인 점프가 주 목적
-    '    - sP2(raw)=연산자, rP3=우변
-    result = ProcessFlowControl(sType, R, rP1, sP2, rP3)
-    If result <> CMD_NOT_HANDLED Then
-        ExecuteSmartAction_Core = result
-        GoTo CleanUp
+    ' 2. 레지스트리 게이트 조회 (모든 디스패치의 단일 통로)
+    Dim def As CmdDef
+    Set def = modCmdRegistry.GetCmdDef(sType)
+    If def Is Nothing Then
+        ' 미등록 명령어 (무인 환경: 비차단 알림)
+        modActions.Action_ShowNotification "알 수 없는 명령어: " & sType, 3
+        ExecuteSmartAction_Core = CMD_ERROR
+     GoTo CleanUp
     End If
 
-    ' 4. 액션 (Action) 처리
-    '    - 입력, 비전, 메모리 조작 등 동작 수행이 주 목적
-    '    - sP1(raw)=SET 좌변(주소), rP1/rP2/rP3=해석된 값
-    result = ProcessAction(sType, R, sP1, rP1, rP2, rP3)
-    If result <> CMD_NOT_HANDLED Then
-        ExecuteSmartAction_Core = result
-        GoTo CleanUp
-    End If
+    ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
+    '    RAW = lvalue 주소(SET/INC/DEC P1) · 연산자(IF/WHILE P2). 그 외 = RESOLVE.
+    Dim args(1 To 3) As String
+    args(1) = DecodeSlot(def.P1, CStr(arr(R, 3)))
+    args(2) = DecodeSlot(def.P2, CStr(arr(R, 4)))
+    args(3) = DecodeSlot(def.P3, CStr(arr(R, 5)))
 
-    ' 5. 처리되지 않은 명령어 (무인 환경: 비차단 알림)
-    modActions.Action_ShowNotification "알 수 없는 명령어: " & sType, 3
-    ExecuteSmartAction_Core = CMD_ERROR
+    ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
+    Dim handler As ICommand
+    Set handler = modCmdRegistry.Handler(def.Category)
+    ExecuteSmartAction_Core = handler.Execute(sType, R, args)
 
 CleanUp:
     Exit Function
@@ -280,301 +253,21 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Internal] 액션 명령어 처리 (v2: 입력 / 메모리 / 시스템 / 비전)
-'   sP1Raw = SET 좌변(주소, RAW), rP1/rP2/rP3 = 해석된 P1/P2/P3
-Private Function ProcessAction(sType As String, R As Long, sP1Raw As String, rP1 As String, rP2 As String, rP3 As String) As Long
-    On Error GoTo ErrHandler
-
-    Dim p1 As Long, p2 As Long
-    p1 = CLng(val(rP1))
-    p2 = CLng(val(rP2))
-
-    ProcessAction = CMD_NEXT_LINE ' 기본값: 성공 시 다음 줄
-
-    Select Case sType
-        '--------------------------------------------------
-        ' [Input] 마우스 / 키보드
-        '--------------------------------------------------
-        Case "CLICK":  modActions.Action_MouseClick p1, p2, False
-        Case "RCLICK": modActions.Action_MouseClick p1, p2, True
-        Case "KEY":    modActions.Action_PressKey rP1
-        Case "COMBO":  modActions.Action_PressCombo rP1, rP2
-
-        Case "TYPE"
-            ' P1 = 딜레이ms, P3 = 텍스트
-            modActions.Action_SmartType CLng(val(rP1)), rP3
-
-        '--------------------------------------------------
-        ' [Memory / Clipboard] SET (좌변 RAW = 주소, 우변 rP3 = 값)
-        '--------------------------------------------------
-        Case "SET"
-            Dim kind As String, key As String
-            If ParseLValue(sP1Raw, kind, key) Then
-                If kind = "CLIP" Then
-                    modWinAPI.SetClipboardText rP3
-                Else
-                    modContext.SetVar key, rP3
-                End If
-            Else
-                ' 좌변이 쓰기 가능한 토큰이 아님 (읽기전용/형식오류)
-                ProcessAction = CMD_ERROR
-                GoTo CleanUp
-            End If
-
-        '--------------------------------------------------
-        ' [System]
-        '--------------------------------------------------
-        Case "FOCUS"
-            If Not modActions.Action_FocusWindow(rP3) Then
-                ProcessAction = CMD_ERROR
-                GoTo CleanUp
-            End If
-            modActions.BetterWait 500
-
-        Case "SLEEP"
-            modActions.BetterWait CLng(val(rP3))
-
-        Case "NOTIFY"
-            ' P3 = "메시지[|초]"
-            Dim nMsg As String, nSec As Long, durMs As Long
-            nMsg = rP3: nSec = 0
-            If InStr(rP3, "|") > 0 Then
-                Dim np() As String: np = Split(rP3, "|")
-                nMsg = np(0)
-                nSec = CLng(val(Trim(np(1))))
-            End If
-            If nSec > 0 Then durMs = nSec * 1000 Else durMs = 2000
-            modActions.Action_Notify durMs, 64, nMsg
-
-        Case "EXIT"
-            ProcessAction = CMD_ERROR
-            GoTo CleanUp
-
-        '--------------------------------------------------
-        ' [Vision] 타임아웃 가능 (실패 시 CMD_ERROR)
-        '--------------------------------------------------
-        Case "WAIT_APPEAR", "WAIT_VANISH"
-            If Not modActions.Action_Wait(sType, p1, p2, rP3) Then
-                ProcessAction = CMD_ERROR
-                GoTo CleanUp
-            End If
-
-        Case "CLICK_SYNC"
-            If Not modActions.Action_ClickSync(p1, p2) Then
-                ProcessAction = CMD_ERROR
-                GoTo CleanUp
-            End If
-
-        Case "ASSERT"
-            If Not modActions.Action_Assert(p1, p2, rP3) Then
-                ProcessAction = CMD_ERROR
-                GoTo CleanUp
-            End If
-
-        Case Else
-            ProcessAction = CMD_NOT_HANDLED
-            GoTo CleanUp
-    End Select
-
-    ' [사후 대기] CLICK/RCLICK/KEY/COMBO 만 P3에 대기시간(ms)을 가질 수 있음
-    '   (TYPE=텍스트, FOCUS=제목 이므로 제외)
-    If IsNumeric(rP3) And val(rP3) > 0 Then
-        Select Case sType
-            Case "CLICK", "RCLICK", "KEY", "COMBO"
-                modActions.BetterWait CLng(val(rP3))
-        End Select
+' [Helper] 슬롯 ResolveMode에 따라 RAW(원본) / RESOLVE(토큰치환) 디코드.
+'   슬롯 미정의(Nothing)는 RESOLVE 기본.
+Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As String
+    If spec Is Nothing Then
+        DecodeSlot = ResolveParam(rawVal)
+    ElseIf spec.IsRaw Then
+        DecodeSlot = rawVal
+    Else
+        DecodeSlot = ResolveParam(rawVal)
     End If
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
-    Resume CleanUp
 End Function
 
-' [Internal] 흐름 제어 명령어 처리 (v2: 분기, 반복, 점프)
-'   rP1 = 해석된 좌변, sP2 = 연산자(raw), rP3 = 해석된 우변/대상
-Private Function ProcessFlowControl(sType As String, R As Long, rP1 As String, sP2 As String, rP3 As String) As Long
-    On Error GoTo ErrHandler
-
-    ProcessFlowControl = CMD_NEXT_LINE
-
-    Select Case sType
-         Case "LABEL": ' Pass
-
-         Case "GOTO"
-            ProcessFlowControl = ResolveJumpTarget(rP3)
-
-         Case "CALL"
-            modContext.PushStack R + 1
-            ProcessFlowControl = ResolveJumpTarget(rP3)
-
-         Case "RETURN"
-            Dim retLine As Long
-            retLine = modContext.PopStack()
-            If retLine > 0 Then ProcessFlowControl = retLine Else ProcessFlowControl = CMD_ERROR
-
-         Case "IF"
-            If CheckIfSyntax(rP1, sP2, rP3) Then
-                ProcessFlowControl = CMD_NEXT_LINE
-            Else
-                Dim targetLine As Long: targetLine = FindBlockPair(R, "IF", 1)
-                If targetLine > 0 Then
-                    Dim foundCmd As String
-                    foundCmd = UCase(Trim(Replace(m_arrMain(targetLine, 2), ">", "")))
-                    ProcessFlowControl = IIf(foundCmd = "ELSE", targetLine + 1, targetLine)
-                Else
-                    ProcessFlowControl = CMD_ERROR
-                End If
-            End If
-
-         Case "ELSE"
-            ProcessFlowControl = FindBlockPair(R, "IF", 1)
-
-         Case "END_IF", "END_SELECT"
-            ProcessFlowControl = CMD_NEXT_LINE
-
-         '--------------------------------------------------
-         ' [Loop] WHILE / END_WHILE (활성 루프 스택)
-         '--------------------------------------------------
-         Case "WHILE"
-            Dim whileEnd As Long
-            If CheckIfSyntax(rP1, sP2, rP3) Then
-                ' 참: 첫 진입이면 PUSH, 백엣지 재진입(top.header=R)이면 회차+1
-                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then
-                    modContext.LoopIncrement
-                Else
-                    modContext.LoopPush "WHILE", R, FindBlockPair(R, "WHILE", 1), 0
-                End If
-                ProcessFlowControl = CMD_NEXT_LINE
-            Else
-                ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
-                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop
-                whileEnd = FindBlockPair(R, "WHILE", 1)
-                If whileEnd > 0 Then ProcessFlowControl = whileEnd + 1 Else ProcessFlowControl = CMD_ERROR
-            End If
-
-         Case "END_WHILE"
-            ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
-            Dim wHead As Long: wHead = FindBlockPair(R, "WHILE", -1)
-            If wHead > 0 Then ProcessFlowControl = wHead Else ProcessFlowControl = CMD_ERROR
-
-         '--------------------------------------------------
-         ' [Loop] REPEAT / END_REPEAT (N회 반복)
-         '--------------------------------------------------
-         Case "REPEAT"
-            Dim maxCnt As Long: maxCnt = CLng(val(rP1))
-            If maxCnt <= 0 Then
-                ' 0회 -> 본문 건너뛰기 (PUSH 안 함)
-                Dim rEndSkip As Long: rEndSkip = FindBlockPair(R, "REPEAT", 1)
-                If rEndSkip > 0 Then ProcessFlowControl = rEndSkip + 1 Else ProcessFlowControl = CMD_ERROR
-            Else
-                modContext.LoopPush "REPEAT", R, FindBlockPair(R, "REPEAT", 1), maxCnt
-                ProcessFlowControl = CMD_NEXT_LINE
-            End If
-
-         Case "END_REPEAT"
-            Dim rHead As Long: rHead = FindBlockPair(R, "REPEAT", -1)
-            If rHead > 0 Then
-                If modContext.GetActiveLoopIteration() < modContext.LoopTopMax() Then
-                    modContext.LoopIncrement
-                    ProcessFlowControl = rHead + 1   ' 본문 재실행 (REPEAT 줄은 1회만)
-                Else
-                    modContext.LoopPop
-                    ProcessFlowControl = CMD_NEXT_LINE
-                End If
-            Else
-                ProcessFlowControl = CMD_ERROR
-            End If
-
-         '--------------------------------------------------
-         ' [Loop Control] BREAK / CONTINUE
-         '--------------------------------------------------
-         Case "BREAK"
-            If modContext.LoopDepth() > 0 Then
-                Dim brkEnd As Long: brkEnd = modContext.LoopTopEnd()
-                modContext.LoopPop ' 카운터 정리
-                ProcessFlowControl = brkEnd + 1
-            Else
-                ProcessFlowControl = CMD_ERROR
-            End If
-
-         Case "CONTINUE"
-            If modContext.LoopDepth() > 0 Then
-                ' 감싸는 루프의 ENDER로 점프 → WHILE/REPEAT 각각의 ENDER가 알맞게 처리
-                ProcessFlowControl = modContext.LoopTopEnd()
-            Else
-                ProcessFlowControl = CMD_ERROR
-            End If
-
-            '--------------------------------------------------
-            ' [Structured Flow] Select / Case / End_Select
-            '--------------------------------------------------
-         Case "SELECT"
-            Dim selVal As String, caseVal As String
-            Dim scanR As Long, scanDepth As Long
-            Dim scanCmd As String
-            Dim fallbackLine As Long
-
-            selVal = rP1 ' Select Value (e.g. {CLIP}, {PIXEL:100,100})
-            scanDepth = 0
-            fallbackLine = 0
-
-            ' Scan forward For matching Case
-            For scanR = R + 1 To UBound(m_arrMain, 1)
-                scanCmd = UCase(Trim(Replace(m_arrMain(scanR, 2), ">", "")))
-
-                If scanCmd = "SELECT" Then
-                    scanDepth = scanDepth + 1
-                ElseIf scanCmd = "END_SELECT" Then
-                    If scanDepth > 0 Then
-                        scanDepth = scanDepth - 1
-                    Else
-                        ' End of Select block reached
-                        If fallbackLine > 0 Then
-                            ProcessFlowControl = fallbackLine + 1
-                        Else
-                            ProcessFlowControl = scanR ' Jump To End_Select
-                        End If
-                     GoTo CleanUp
-                    End If
-                ElseIf scanCmd = "CASE" Then
-                    If scanDepth = 0 Then
-                        caseVal = ResolveParam(CStr(m_arrMain(scanR, 3)))
-
-                        ' Check For Else (Case | Else Or Empty)
-                        If UCase(caseVal) = "ELSE" Or caseVal = "" Then
-                            fallbackLine = scanR
-                        Else
-                            If modActions.Action_CheckCondition(selVal, "==", caseVal) Then
-                                ProcessFlowControl = scanR + 1
-                             GoTo CleanUp
-                            End If
-                        End If
-                    End If
-                End If
-            Next scanR
-            ProcessFlowControl = CMD_ERROR
-
-         Case "CASE"
-            ' Case encountered during execution means fallthrough -> Jump To End_Select
-            Dim endSelLine As Long
-            endSelLine = FindBlockPair(R, "SELECT", 1)
-            If endSelLine > 0 Then ProcessFlowControl = endSelLine Else ProcessFlowControl = CMD_ERROR
-
-         Case Else
-            ProcessFlowControl = CMD_NOT_HANDLED
-    End Select
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
-    Resume CleanUp
-End Function
-
-' [Helper] GOTO/CALL 점프 대상 해석 (숫자=줄번호, 아니면 라벨명)
-Private Function ResolveJumpTarget(ByVal target As String) As Long
+' [엔진 서비스] GOTO/CALL 점프 대상 해석 (숫자=줄번호, 아니면 라벨명)
+' @desc 점프 대상 문자열 받아 줄번호 반환, 미해석 라벨 시 CMD_ERROR 반환
+Public Function ResolveJumpTarget(ByVal target As String) As Long
     If IsNumeric(target) Then
         ResolveJumpTarget = val(target)
     Else
@@ -693,26 +386,7 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Helper] SET 좌변(주소) 파싱. 좌변은 RAW (값 해석 금지)
-'   반환 True 시 kind="MEM"|"CLIP", key=메모리명. 읽기전용 토큰은 좌변 불가(False).
-Private Function ParseLValue(ByVal rawP1 As String, ByRef kind As String, ByRef key As String) As Boolean
-    Dim s As String: s = Trim(rawP1)
-    ParseLValue = False
-    If Len(s) < 2 Then Exit Function
-    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
-
-    Dim inner As String: inner = Trim(Mid$(s, 2, Len(s) - 2))
-    If UCase$(inner) = "$CLIP" Then
-        kind = "CLIP": key = ""
-        ParseLValue = True
-    ElseIf Left$(inner, 1) = "$" Then
-        ' 읽기 전용 시스템 토큰은 좌변(쓰기) 불가
-        ParseLValue = False
-    Else
-        kind = "MEM": key = inner
-        ParseLValue = True
-    End If
-End Function
+' [이관됨] ParseLValue는 clsMemoryCommands로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
 
 Private Sub PreScanLabels(arr As Variant, total As Long)
     On Error GoTo ErrHandler
@@ -742,12 +416,12 @@ ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description
     Resume CleanUp
 End Sub
-' [Internal] 블록의 짝을 찾는 통합 탐색 함수
+' [엔진 서비스] 블록의 짝을 찾는 통합 탐색 함수 (m_arrMain 의존 -> modEngine 보유)
 ' StartLine: 탐색 시작 위치 (현재 줄)
-' SearchType: 찾으려는 블록 종류 ("If", "While", "For")
+' SearchType: 찾으려는 블록 종류 ("IF"/"WHILE"/"REPEAT"/"SELECT")
 ' Direction: 1 (아래로 탐색 - 시작점에서 끝 찾기), -1 (위로 탐색 - 끝점에서 시작 찾기)
-' Return: 찾은 줄 번호 (못 찾으면 -1)
-Private Function FindBlockPair(ByVal startLine As Long, ByVal SearchType As String, Optional ByVal Direction As Long = 1) As Long
+' @desc 시작줄/블록종류/방향 받아 짝 줄번호 반환, 못 찾으면 -1 반환
+Public Function FindBlockPair(ByVal startLine As Long, ByVal SearchType As String, Optional ByVal Direction As Long = 1) As Long
     On Error GoTo ErrHandler
     Dim R As Long
     Dim depth As Long
@@ -832,11 +506,72 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Internal] IF/WHILE 조건절 판단 (v2: 좌변 P1 | 연산자 P2 | 우변 P3)
-'   v1: 해석된 P1, op: P2(연산자), v2: 해석된 P3
-Private Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
+' [엔진 서비스] IF/WHILE 조건절 판단 (v2: 좌변 P1 | 연산자 P2 | 우변 P3)
+'   v1: 해석된 P1, op: P2(연산자, RAW), v2: 해석된 P3
+' @desc 좌변/연산자/우변 받아 조건 참거짓 반환
+Public Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
     On Error GoTo ErrHandler
     CheckIfSyntax = modActions.Action_CheckCondition(v1, UCase(Trim(op)), v2)
+
+CleanUp:
+    Exit Function
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Resume CleanUp
+End Function
+
+' [엔진 서비스] m_arrMain 한 줄의 정규화된 명령어 반환 (clsFlowCommands IF/ELSE 판정용)
+' @desc 줄번호 받아 들여쓰기 제거된 대문자 명령어 반환
+Public Function CmdAt(ByVal R As Long) As String
+    CmdAt = UCase(Trim(Replace(CStr(m_arrMain(R, 2)), ">", "")))
+End Function
+
+' [엔진 서비스] SELECT 전방 스캔 (m_arrMain 의존) -> 일치 CASE 다음 줄 / 폴백 / END_SELECT 반환
+'   원 ProcessFlowControl SELECT 분기에서 추출. clsFlowCommands가 호출.
+' @desc 현재 SELECT 줄과 대상값 받아 점프 줄번호 반환, 일치/폴백 없으면 END_SELECT 또는 CMD_ERROR
+Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As Long
+    On Error GoTo ErrHandler
+    Dim scanR As Long, scanDepth As Long
+    Dim scanCmd As String, caseVal As String
+    Dim fallbackLine As Long
+
+    scanDepth = 0
+    fallbackLine = 0
+
+    For scanR = R + 1 To UBound(m_arrMain, 1)
+        scanCmd = UCase(Trim(Replace(m_arrMain(scanR, 2), ">", "")))
+
+        If scanCmd = "SELECT" Then
+            scanDepth = scanDepth + 1
+        ElseIf scanCmd = "END_SELECT" Then
+            If scanDepth > 0 Then
+                scanDepth = scanDepth - 1
+            Else
+                ' SELECT 블록 끝 도달
+                If fallbackLine > 0 Then
+                    ResolveSelectTarget = fallbackLine + 1
+                Else
+                    ResolveSelectTarget = scanR ' END_SELECT 로 점프
+                End If
+             GoTo CleanUp
+            End If
+        ElseIf scanCmd = "CASE" Then
+            If scanDepth = 0 Then
+                caseVal = ResolveParam(CStr(m_arrMain(scanR, 3)))
+                ' Case ELSE (또는 빈 값) = 폴백
+                If UCase(caseVal) = "ELSE" Or caseVal = "" Then
+                    fallbackLine = scanR
+                Else
+                    If modActions.Action_CheckCondition(selVal, "==", caseVal) Then
+                        ResolveSelectTarget = scanR + 1
+                     GoTo CleanUp
+                    End If
+                End If
+            End If
+        End If
+    Next scanR
+
+    ResolveSelectTarget = CMD_ERROR
 
 CleanUp:
     Exit Function

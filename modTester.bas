@@ -1,4 +1,6 @@
 ﻿Attribute VB_Name = "modTester"
+' @desc 명령어셋 통합 자가진단 및 레지스트리 역검증 실행 담당
+' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry
 Option Explicit
 
 '==============================================================================
@@ -265,6 +267,60 @@ Sub Run_System_SelfDiagnosis()
     AssertCond "bare = banned", "5", "=", "5", False, failCount          ' 맨 '=' 금지 -> False
 
     '==========================================================================
+    ' [Test 12] INC / DEC (정수 read-modify-write, {$LOOP} 비대칭 닫힘)
+    '==========================================================================
+    Debug.Print "--- [Test 12] INC / DEC ---"
+
+    ' 미정의 변수 INC -> 1 (missing==empty -> 0 +1)
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
+    modEngine.ExecuteSmartAction arrCmd, 1
+    If modContext.GetVar("n") = "1" Then
+        LogPass "INC (undefined -> 1)"
+    Else
+        LogFail "INC undef", "1", modContext.GetVar("n"): failCount = failCount + 1
+    End If
+
+    ' INC {n} 5 -> 6 (P3 RESOLVE)
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "5")
+    modEngine.ExecuteSmartAction arrCmd, 1
+    If modContext.GetVar("n") = "6" Then
+        LogPass "INC (+5 -> 6)"
+    Else
+        LogFail "INC +5", "6", modContext.GetVar("n"): failCount = failCount + 1
+    End If
+
+    ' DEC {n} -> 5 (기본 1 감분)
+    Call MakeCmd(arrCmd, 1, "DEC", "{n}", 0, "")
+    modEngine.ExecuteSmartAction arrCmd, 1
+    If modContext.GetVar("n") = "5" Then
+        LogPass "DEC (-1 -> 5)"
+    Else
+        LogFail "DEC", "5", modContext.GetVar("n"): failCount = failCount + 1
+    End If
+
+    ' 읽기전용 좌변 INC {$LOOP} -> CMD_ERROR(-1)
+    Dim incErr As Long
+    Call MakeCmd(arrCmd, 1, "INC", "{$LOOP}", 0, "")
+    incErr = modEngine.ExecuteSmartAction(arrCmd, 1)
+    If incErr = -1 Then
+        LogPass "INC {$LOOP} (read-only -> ERROR)"
+    Else
+        LogFail "INC {$LOOP}", "-1", CStr(incErr): failCount = failCount + 1
+    End If
+
+    '==========================================================================
+    ' [Test 13] 역검증 — 레지스트리<->핸들러 동기화 파수꾼 (설계 §7)
+    '==========================================================================
+    Debug.Print "--- [Test 13] Registry/Handler sync ---"
+    Dim syncFails As Long
+    syncFails = Test_RegistryDispatchSync()
+    If syncFails = 0 Then
+        LogPass "Registry dispatch sync (all routed)"
+    Else
+        LogFail "Registry sync", "0 fails", CStr(syncFails) & " fails": failCount = failCount + syncFails
+    End If
+
+    '==========================================================================
     ' 종료 처리
     '==========================================================================
     Application.ScreenUpdating = True
@@ -278,6 +334,33 @@ Sub Run_System_SelfDiagnosis()
 
     MsgBox resMsg, IIf(failCount = 0, vbInformation, vbCritical), "Self Diagnosis (v2)"
 End Sub
+
+' @desc 등록 명령어 전수 순회로 레지스트리<->핸들러 라우팅 동기화 검증, 실패 개수 반환
+'   '테이블엔 있는데 핸들러 없음'(카테고리 미배선/오타)을 구조적으로 막는 파수꾼 (설계 §7).
+'   부작용 없이 라우팅 무결성만 확인 — 실제 실행(클릭/대기)은 자가진단/시트 검증이 담당.
+Public Function Test_RegistryDispatchSync() As Long
+    Dim cmds As Variant: cmds = modCmdRegistry.AllCommands()
+    Dim i As Long, fails As Long
+    Dim cmd As String, def As CmdDef, h As ICommand
+
+    For i = LBound(cmds) To UBound(cmds)
+        cmd = CStr(cmds(i))
+        Set def = modCmdRegistry.GetCmdDef(cmd)
+        If def Is Nothing Then
+            Debug.Print "[FAIL] 게이트 미해석: " & cmd
+            fails = fails + 1
+        Else
+            Set h = modCmdRegistry.Handler(def.Category)
+            If h Is Nothing Then
+                Debug.Print "[FAIL] 핸들러 없음 (category=" & def.Category & "): " & cmd
+                fails = fails + 1
+            End If
+        End If
+    Next i
+
+    Debug.Print "[역검증] 총 " & (UBound(cmds) - LBound(cmds) + 1) & "개 명령어 라우팅 확인, 실패 " & fails
+    Test_RegistryDispatchSync = fails
+End Function
 
 ' [Helper] 연산자 단위 검증
 Private Sub AssertCond(ByVal name As String, ByVal v1 As String, ByVal op As String, _
