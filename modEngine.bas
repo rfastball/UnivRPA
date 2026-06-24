@@ -142,10 +142,9 @@ RestartPoint:
 
                                 ' 에러 체크 (VBA 에러 혹은 커스텀 에러 코드 -99 가정)
                                 If Err.Number <> 0 Or nextLine = -99 Then
-                                    ' 알림창 띄우기 (여기서 코드가 멈춤)
-                                    MsgBox "?? [에러 발생] 라인: " & currentLine & "행" & vbCrLf & _
-                                    "명령어: " & pureCmd & vbCrLf & _
-                                    "내용: " & Err.Description, vbCritical, "JM_RPA Error Tracker"
+                                    ' 무인 환경: 비차단 알림 후 안전 종료 (모달 정지 금지)
+                                    modActions.Action_ShowNotification _
+                                    "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & Err.Description, 3
 
                                     Err.Clear
                                     On Error GoTo 0
@@ -253,8 +252,9 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
     Dim result As Long
     
     ' 3. 흐름 제어 (Flow Control) 처리
-    '    - IF, FOR, WHILE, GOTO 등 라인 점프가 주 목적
-    result = ProcessFlowControl(sType, R, sP1, rP1, rP3, p3)
+    '    - IF, WHILE, REPEAT, GOTO 등 라인 점프가 주 목적
+    '    - sP2(raw)=연산자, rP3=우변
+    result = ProcessFlowControl(sType, R, rP1, sP2, rP3)
     If result <> CMD_NOT_HANDLED Then
         ExecuteSmartAction_Core = result
         GoTo CleanUp
@@ -262,14 +262,15 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
 
     ' 4. 액션 (Action) 처리
     '    - 입력, 비전, 메모리 조작 등 동작 수행이 주 목적
-    result = ProcessAction(sType, R, sP1, p1, p2, p3, rP1, rP2)
+    '    - sP1(raw)=SET 좌변(주소), rP1/rP2/rP3=해석된 값
+    result = ProcessAction(sType, R, sP1, rP1, rP2, rP3)
     If result <> CMD_NOT_HANDLED Then
         ExecuteSmartAction_Core = result
         GoTo CleanUp
     End If
 
-    ' 5. 처리되지 않은 명령어
-    MsgBox "알 수 없는 명령어입니다: " & sType, vbCritical
+    ' 5. 처리되지 않은 명령어 (무인 환경: 비차단 알림)
+    modActions.Action_ShowNotification "알 수 없는 명령어: " & sType, 3
     ExecuteSmartAction_Core = CMD_ERROR
 
 CleanUp:
@@ -279,97 +280,108 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Internal] 액션 명령어 처리 (입력, 비전, 메모리 등)
-Private Function ProcessAction(sType As String, R As Long, sP1 As String, p1 As Long, p2 As Long, p3 As String, Optional rP1 As String = "", Optional rP2 As String = "") As Long
+' [Internal] 액션 명령어 처리 (v2: 입력 / 메모리 / 시스템 / 비전)
+'   sP1Raw = SET 좌변(주소, RAW), rP1/rP2/rP3 = 해석된 P1/P2/P3
+Private Function ProcessAction(sType As String, R As Long, sP1Raw As String, rP1 As String, rP2 As String, rP3 As String) As Long
     On Error GoTo ErrHandler
-    
+
+    Dim p1 As Long, p2 As Long
+    p1 = CLng(val(rP1))
+    p2 = CLng(val(rP2))
+
     ProcessAction = CMD_NEXT_LINE ' 기본값: 성공 시 다음 줄
 
     Select Case sType
         '--------------------------------------------------
-        ' [Vision & Logic] 판단 및 대기
+        ' [Input] 마우스 / 키보드
         '--------------------------------------------------
-     Case "WAIT_PIXEL", "WAIT_VANISH"
-        ' 좌표(p1, p2), 색상(p3) 모두 변수 사용 가능
-        If Not modActions.Action_Wait(sType, p1, p2, p3) Then
+        Case "CLICK":  modActions.Action_MouseClick p1, p2, False
+        Case "RCLICK": modActions.Action_MouseClick p1, p2, True
+        Case "KEY":    modActions.Action_PressKey rP1
+        Case "COMBO":  modActions.Action_PressCombo rP1, rP2
+
+        Case "TYPE"
+            ' P1 = 딜레이ms, P3 = 텍스트
+            modActions.Action_SmartType CLng(val(rP1)), rP3
+
+        '--------------------------------------------------
+        ' [Memory / Clipboard] SET (좌변 RAW = 주소, 우변 rP3 = 값)
+        '--------------------------------------------------
+        Case "SET"
+            Dim kind As String, key As String
+            If ParseLValue(sP1Raw, kind, key) Then
+                If kind = "CLIP" Then
+                    modWinAPI.SetClipboardText rP3
+                Else
+                    modContext.SetVar key, rP3
+                End If
+            Else
+                ' 좌변이 쓰기 가능한 토큰이 아님 (읽기전용/형식오류)
+                ProcessAction = CMD_ERROR
+                GoTo CleanUp
+            End If
+
+        '--------------------------------------------------
+        ' [System]
+        '--------------------------------------------------
+        Case "FOCUS"
+            If Not modActions.Action_FocusWindow(rP3) Then
+                ProcessAction = CMD_ERROR
+                GoTo CleanUp
+            End If
+            modActions.BetterWait 500
+
+        Case "SLEEP"
+            modActions.BetterWait CLng(val(rP3))
+
+        Case "NOTIFY"
+            ' P3 = "메시지[|초]"
+            Dim nMsg As String, nSec As Long, durMs As Long
+            nMsg = rP3: nSec = 0
+            If InStr(rP3, "|") > 0 Then
+                Dim np() As String: np = Split(rP3, "|")
+                nMsg = np(0)
+                nSec = CLng(val(Trim(np(1))))
+            End If
+            If nSec > 0 Then durMs = nSec * 1000 Else durMs = 2000
+            modActions.Action_Notify durMs, 64, nMsg
+
+        Case "EXIT"
             ProcessAction = CMD_ERROR
-         GoTo CleanUp
-        End If
-
-     Case "ASSERT"
-        If Not modActions.Action_Assert(p1, p2, p3) Then
-            ProcessAction = CMD_ERROR
-         GoTo CleanUp
-        End If
-        
-        '-------------------------------
-        ' [Input] 단순 동작
-        '--------------------------------------------------
-     Case "MOUSE-L": modActions.Action_MouseClick p1, p2, False
-     Case "MOUSE-R": modActions.Action_MouseClick p1, p2, True
-     Case "KEY":     modActions.Action_PressKey rP1
-     Case "COMBO":   modActions.Action_PressCombo rP1, rP2
-
-     Case "TYPE"
-        ' TYPE {1} -> 1번 메모리 내용 입력 가능
-        modActions.Action_SmartType p1, p3
-
-     Case "TYPE_CLIP":
-        modActions.Action_SmartType p1, modWinAPI.GetClipboardText()
-
-     Case "FOCUS"
-        ' FOCUS {1} -> 1번 메모리에 저장된 창 제목으로 포커스 가능
-        If Not modActions.Action_FocusWindow(p3) Then
-            MsgBox "창을 찾을 수 없습니다: " & p3, vbCritical
-            ProcessAction = CMD_ERROR
-         GoTo CleanUp
-        End If
-        modActions.BetterWait 500
-
-     Case "CLEAR_CLIP"
-        modWinAPI.SetClipboardText ""
+            GoTo CleanUp
 
         '--------------------------------------------------
-        ' [Memory]
+        ' [Vision] 타임아웃 가능 (실패 시 CMD_ERROR)
         '--------------------------------------------------
-     Case "WAIT"
-        ' WAIT {1} -> 가변 대기 가능
-        modActions.BetterWait val(p3)
+        Case "WAIT_APPEAR", "WAIT_VANISH"
+            If Not modActions.Action_Wait(sType, p1, p2, rP3) Then
+                ProcessAction = CMD_ERROR
+                GoTo CleanUp
+            End If
 
-     Case "EXIT"
-        ProcessAction = CMD_ERROR
-     GoTo CleanUp
+        Case "CLICK_SYNC"
+            If Not modActions.Action_ClickSync(p1, p2) Then
+                ProcessAction = CMD_ERROR
+                GoTo CleanUp
+            End If
 
-        ' [중요] 메모리 쓰기 명령어들은 '주소'는 원본(sP1), '값'은 해석본(p3)을 사용
-     Case "SET_MEM"
-        If UCase(p3) = "{CLIP}" Then
-            modContext.SetVar val(sP1), modWinAPI.GetClipboardText()
-        Else
-            ' p3는 이미 Resolve 되었으므로, {1}을 넣으면 값이 복사됨
-            modContext.SetVar val(sP1), p3
-        End If
+        Case "ASSERT"
+            If Not modActions.Action_Assert(p1, p2, rP3) Then
+                ProcessAction = CMD_ERROR
+                GoTo CleanUp
+            End If
 
-     Case "TYPE_MEM"
-        ' 기존 명령어 유지 (내부적으로 TYPE {n}과 동일해짐)
-        ' 입력 대상 인덱스는 sP1 사용
-        modActions.Action_SmartType 0, modContext.GetVar(val(sP1))
-
-     Case "CLEAR_MEM": modContext.SetVar val(sP1), ""
-     Case "INC": IncrementVariable p1: ProcessAction = CMD_NEXT_LINE
-
-         Case "NOTIFY"
-            modActions.Action_Notify val(p1), val(p2), p3
-            
-         Case Else
+        Case Else
             ProcessAction = CMD_NOT_HANDLED
             GoTo CleanUp
     End Select
 
-    ' [사후 대기] Input 계열만 p3에 대기시간이 있을 수 있음
-    If IsNumeric(p3) And val(p3) > 0 Then
+    ' [사후 대기] CLICK/RCLICK/KEY/COMBO 만 P3에 대기시간(ms)을 가질 수 있음
+    '   (TYPE=텍스트, FOCUS=제목 이므로 제외)
+    If IsNumeric(rP3) And val(rP3) > 0 Then
         Select Case sType
-            Case "MOUSE-L", "MOUSE-R", "KEY", "COMBO", "FOCUS"
-            modActions.BetterWait val(p3)
+            Case "CLICK", "RCLICK", "KEY", "COMBO"
+                modActions.BetterWait CLng(val(rP3))
         End Select
     End If
 
@@ -380,63 +392,30 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Internal] 흐름 제어 명령어 처리 (분기, 반복, 점프)
-Private Function ProcessFlowControl(sType As String, R As Long, sP1 As String, rP1 As String, rP3 As String, p3 As String) As Long
+' [Internal] 흐름 제어 명령어 처리 (v2: 분기, 반복, 점프)
+'   rP1 = 해석된 좌변, sP2 = 연산자(raw), rP3 = 해석된 우변/대상
+Private Function ProcessFlowControl(sType As String, R As Long, rP1 As String, sP2 As String, rP3 As String) As Long
     On Error GoTo ErrHandler
-    Dim jumpTarget As Long
-    
+
     ProcessFlowControl = CMD_NEXT_LINE
 
     Select Case sType
          Case "LABEL": ' Pass
 
          Case "GOTO"
-            If IsNumeric(p3) Then
-                ProcessFlowControl = val(p3)
-            Else
-                jumpTarget = modContext.GetLabel(p3)
-                If jumpTarget > 0 Then ProcessFlowControl = jumpTarget Else ProcessFlowControl = CMD_ERROR
-            End If
+            ProcessFlowControl = ResolveJumpTarget(rP3)
 
          Case "CALL"
             modContext.PushStack R + 1
-            If IsNumeric(p3) Then
-                ProcessFlowControl = val(p3)
-            Else
-                jumpTarget = modContext.GetLabel(p3)
-                If jumpTarget > 0 Then ProcessFlowControl = jumpTarget Else ProcessFlowControl = CMD_ERROR
-            End If
+            ProcessFlowControl = ResolveJumpTarget(rP3)
 
          Case "RETURN"
             Dim retLine As Long
             retLine = modContext.PopStack()
             If retLine > 0 Then ProcessFlowControl = retLine Else ProcessFlowControl = CMD_ERROR
 
-         Case "IF_PIXEL", "IFNOT_PIXEL", "SWITCH_PIXEL"
-            ' p1, p2는 좌표이므로 재해석 필요할 수 있으나 여기선 단순화
-            ' 주의: ProcessFlowControl 인자에는 p1, p2가 없으므로 rP1 등을 파싱해야 함
-            ' 편의상 여기서는 modActions 호출 시 val(ResolveParam...) 사용 권장되나
-            ' 기존 로직 유지를 위해 rP1(좌표X), rP2(좌표Y)가 필요함.
-            ' [Fix] 인자 부족으로 인해 여기서는 rP1, rP2를 다시 파싱하거나 인자를 추가해야 함.
-            ' -> 간단히 해결하기 위해 rP1을 콤마로 나누거나, 상위에서 p1, p2를 넘겨받아야 함.
-            ' -> 이번 리팩토링에서는 IF_PIXEL 등은 Action 성격이 강하므로 ProcessAction으로 넘기는 게 맞을 수도 있으나
-            ' -> 점프를 수행하므로 FlowControl이 맞음.
-            ' -> [Solution] 이 함수 내에서 필요한 값만 다시 파싱 (성능 영향 미미)
-            Dim x As Long, y As Long
-            x = val(rP1): y = val(ResolveParam(CStr(m_arrMain(R, 4)))) ' rP2
-            jumpTarget = modActions.GetJumpTarget_Pixel(sType, x, y, p3)
-            If jumpTarget > 0 Then ProcessFlowControl = jumpTarget
-
-         Case "IF_CLIP", "IFNOT_CLIP"
-            jumpTarget = modActions.GetJumpTarget_Text(sType, modWinAPI.GetClipboardText(), p3)
-            If jumpTarget > 0 Then ProcessFlowControl = jumpTarget
-
-         Case "IF_MEM", "IFNOT_MEM"
-            jumpTarget = modActions.GetJumpTarget_Text(sType, modContext.GetVar(val(sP1)), p3)
-            If jumpTarget > 0 Then ProcessFlowControl = jumpTarget
-
          Case "IF"
-            If CheckIfSyntax(rP1, rP3) Then
+            If CheckIfSyntax(rP1, sP2, rP3) Then
                 ProcessFlowControl = CMD_NEXT_LINE
             Else
                 Dim targetLine As Long: targetLine = FindBlockPair(R, "IF", 1)
@@ -455,34 +434,74 @@ Private Function ProcessFlowControl(sType As String, R As Long, sP1 As String, r
          Case "END_IF", "END_SELECT"
             ProcessFlowControl = CMD_NEXT_LINE
 
+         '--------------------------------------------------
+         ' [Loop] WHILE / END_WHILE (활성 루프 스택)
+         '--------------------------------------------------
          Case "WHILE"
-            If CheckIfSyntax(rP1, rP3) Then
+            If CheckIfSyntax(rP1, sP2, rP3) Then
+                ' 참: 첫 진입이면 PUSH, 백엣지 재진입(top.header=R)이면 회차+1
+                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then
+                    modContext.LoopIncrement
+                Else
+                    modContext.LoopPush "WHILE", R, FindBlockPair(R, "WHILE", 1), 0
+                End If
                 ProcessFlowControl = CMD_NEXT_LINE
             Else
-                Dim endLoop As Long: endLoop = FindBlockPair(R, "WHILE", 1)
-                If endLoop > 0 Then ProcessFlowControl = endLoop + 1 Else ProcessFlowControl = CMD_ERROR
+                ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
+                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop
+                Dim wEnd As Long: wEnd = FindBlockPair(R, "WHILE", 1)
+                If wEnd > 0 Then ProcessFlowControl = wEnd + 1 Else ProcessFlowControl = CMD_ERROR
             End If
 
-         Case "WEND"
-            Dim startLoop As Long: startLoop = FindBlockPair(R, "WHILE", -1)
-            If startLoop > 0 Then ProcessFlowControl = startLoop Else ProcessFlowControl = CMD_ERROR
+         Case "END_WHILE"
+            ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
+            Dim wHead As Long: wHead = FindBlockPair(R, "WHILE", -1)
+            If wHead > 0 Then ProcessFlowControl = wHead Else ProcessFlowControl = CMD_ERROR
 
-         Case "FOR"
-            If modContext.GetLoopCount(R) = 0 Then modContext.SetLoopCount R, 1
-            ProcessFlowControl = CMD_NEXT_LINE
+         '--------------------------------------------------
+         ' [Loop] REPEAT / END_REPEAT (N회 반복)
+         '--------------------------------------------------
+         Case "REPEAT"
+            Dim maxCnt As Long: maxCnt = CLng(val(rP1))
+            If maxCnt <= 0 Then
+                ' 0회 -> 본문 건너뛰기 (PUSH 안 함)
+                Dim rEndSkip As Long: rEndSkip = FindBlockPair(R, "REPEAT", 1)
+                If rEndSkip > 0 Then ProcessFlowControl = rEndSkip + 1 Else ProcessFlowControl = CMD_ERROR
+            Else
+                modContext.LoopPush "REPEAT", R, FindBlockPair(R, "REPEAT", 1), maxCnt
+                ProcessFlowControl = CMD_NEXT_LINE
+            End If
 
-         Case "NEXT"
-            Dim forLine As Long: forLine = FindBlockPair(R, "FOR", -1)
-            If forLine > 0 Then
-                Dim currentCnt As Long: currentCnt = modContext.GetLoopCount(forLine)
-                Dim maxCnt As Long: maxCnt = val(ResolveParam(CStr(m_arrMain(forLine, 3))))
-                If currentCnt < maxCnt Then
-                    modContext.SetLoopCount forLine, currentCnt + 1
-                    ProcessFlowControl = forLine + 1
+         Case "END_REPEAT"
+            Dim rHead As Long: rHead = FindBlockPair(R, "REPEAT", -1)
+            If rHead > 0 Then
+                If modContext.GetActiveLoopIteration() < modContext.LoopTopMax() Then
+                    modContext.LoopIncrement
+                    ProcessFlowControl = rHead + 1   ' 본문 재실행 (REPEAT 줄은 1회만)
                 Else
-                    modContext.RemoveLoopCount forLine
+                    modContext.LoopPop
                     ProcessFlowControl = CMD_NEXT_LINE
                 End If
+            Else
+                ProcessFlowControl = CMD_ERROR
+            End If
+
+         '--------------------------------------------------
+         ' [Loop Control] BREAK / CONTINUE
+         '--------------------------------------------------
+         Case "BREAK"
+            If modContext.LoopDepth() > 0 Then
+                Dim brkEnd As Long: brkEnd = modContext.LoopTopEnd()
+                modContext.LoopPop ' 카운터 정리
+                ProcessFlowControl = brkEnd + 1
+            Else
+                ProcessFlowControl = CMD_ERROR
+            End If
+
+         Case "CONTINUE"
+            If modContext.LoopDepth() > 0 Then
+                ' 감싸는 루프의 ENDER로 점프 → WHILE/REPEAT 각각의 ENDER가 알맞게 처리
+                ProcessFlowControl = modContext.LoopTopEnd()
             Else
                 ProcessFlowControl = CMD_ERROR
             End If
@@ -552,49 +571,62 @@ ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description
     Resume CleanUp
 End Function
-' [Internal] 파라미터 해석기 (Interpolation 지원 버전)
+
+' [Helper] GOTO/CALL 점프 대상 해석 (숫자=줄번호, 아니면 라벨명)
+Private Function ResolveJumpTarget(ByVal target As String) As Long
+    If IsNumeric(target) Then
+        ResolveJumpTarget = val(target)
+    Else
+        Dim jt As Long: jt = modContext.GetLabel(target)
+        If jt > 0 Then ResolveJumpTarget = jt Else ResolveJumpTarget = CMD_ERROR
+    End If
+End Function
+
+' [Internal] 파라미터 해석기 (v2 토크나이저)
+'   {...} 스팬을 깊이 인식으로 스캔 -> 내용으로 분기 ($시스템/$PIXEL/리터럴/{name})
+'   중첩 중괄호 지원: {$PIXEL:{cx},{cy}}. 값 치환만 수행하며 *? 와일드카드는 건드리지 않음.
 Private Function ResolveParam(ByVal rawVal As String) As String
     On Error GoTo ErrHandler
-    Dim strVal As String: strVal = Trim(rawVal)
-    Dim result As String: result = strVal
-    Dim parts() As String
-    Dim i As Long
+    Dim src As String: src = rawVal
+    Dim out As String
+    Dim i As Long, n As Long
+    Dim ch As String
 
-    ' [Case A] 파이프(|) 처리 (기존 로직 유지)
-    If InStr(strVal, "|") > 0 Then
-        parts = Split(strVal, "|")
-        For i = LBound(parts) To UBound(parts)
-            parts(i) = ResolveParam(parts(i))
-        Next i
-        ResolveParam = Join(parts, "|")
-     GoTo CleanUp
-    End If
+    n = Len(src)
+    i = 1
+    Do While i <= n
+        ch = Mid$(src, i, 1)
+        If ch = "{" Then
+            ' 짝이 되는 '}' 를 깊이 카운팅으로 탐색 (중첩 허용)
+            Dim depth As Long, j As Long, found As Long
+            depth = 1: found = 0
+            For j = i + 1 To n
+                Select Case Mid$(src, j, 1)
+                    Case "{": depth = depth + 1
+                    Case "}"
+                        depth = depth - 1
+                        If depth = 0 Then found = j: Exit For
+                End Select
+            Next j
 
-    ' [Case B] 문장 내 변수 치환 (Interpolation)
-    ' 1. 시스템 예약어 {CLIP} 치환
-    If InStr(UCase(result), "{CLIP}") > 0 Then
-        result = Replace(result, "{CLIP}", modWinAPI.GetClipboardText(), , , vbTextCompare)
-    End If
+            If found = 0 Then
+                ' 짝 없음 -> 남은 문자열을 리터럴로 그대로 출력 (graceful fallback)
+                out = out & Mid$(src, i)
+                Exit Do
+            End If
 
-    ' 2. 일반 메모리 변수 {0}~{99} 치환
-    ' 문장 전체에서 {n} 패턴을 찾아 실제 값으로 갈아끼웁니다.
-    For i = 0 To 99
-        Dim token As String: token = "{" & i & "}"
-        If InStr(result, token) > 0 Then
-            result = Replace(result, token, modContext.GetVar(i))
+            Dim inner As String
+            inner = Mid$(src, i + 1, found - i - 1)
+            ' 내부의 자식 토큰을 먼저 해석한 뒤 분류
+            out = out & ResolveToken(ResolveParam(inner))
+            i = found + 1
+        Else
+            out = out & ch
+            i = i + 1
         End If
-    Next i
+    Loop
 
-    ' 3. 특수 토큰 처리 (기존의 {PIXEL:x,y} 등 단일 토큰 로직)
-    ' 픽셀 값은 보통 문장 중간보다는 "단일 값"으로 쓰이므로 기존 로직을 보호합니다.
-    If Left(result, 1) = "{" And Right(result, 1) = "}" Then
-        Dim inner As String: inner = Mid(result, 2, Len(result) - 2)
-        If InStr(UCase(inner), "PIXEL:") = 1 Then
-            result = ResolvePixelTokenInside(inner)
-        End If
-    End If
-
-    ResolveParam = result
+    ResolveParam = out
 
 CleanUp:
     Exit Function
@@ -603,26 +635,54 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Helper] PIXEL 토큰 내부 파싱 (예: "PIXEL:100,200")
-Private Function ResolvePixelTokenInside(ByVal innerText As String) As String
+' [Helper] 단일 토큰(중괄호 내부 문자열)을 값으로 분류/치환
+Private Function ResolveToken(ByVal inner As String) As String
     On Error GoTo ErrHandler
-    Dim content As String, coords() As String
-    Dim x As Long, y As Long
+    Dim key As String: key = Trim(inner)
+    Dim up As String: up = UCase$(key)
 
-    ' "PIXEL:" 이후의 문자열 추출
-    content = Mid(innerText, 7)
-    coords = Split(content, ",")
+    ' [리터럴/시스템 고정 토큰]
+    Select Case up
+        Case "$BLANK": ResolveToken = "": Exit Function
+        Case "$TAB":   ResolveToken = vbTab: Exit Function
+        Case "$CR":    ResolveToken = vbCr: Exit Function
+        Case "$LF":    ResolveToken = vbLf: Exit Function
+        Case "$SPACE": ResolveToken = " ": Exit Function
+        Case "$CLIP":  ResolveToken = modWinAPI.GetClipboardText(): Exit Function
+        Case "$LOOP":  ResolveToken = CStr(modContext.GetActiveLoopIteration()): Exit Function
+    End Select
 
+    ' [시스템 동적 토큰] {$PIXEL:x,y} (좌표는 이미 해석됨)
+    If Left$(up, 7) = "$PIXEL:" Then
+        ResolveToken = ResolvePixelToken(Mid$(key, 8))
+        Exit Function
+    End If
+
+    ' [미지의 시스템 토큰] -> 오타 노출 위해 리터럴 그대로 반환
+    If Left$(key, 1) = "$" Then
+        ResolveToken = "{" & inner & "}"
+        Exit Function
+    End If
+
+    ' [사용자 메모리] {name}
+    ResolveToken = modContext.GetVar(key)
+
+CleanUp:
+    Exit Function
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Resume CleanUp
+End Function
+
+' [Helper] $PIXEL 좌표 -> 색상 헥스 (coordText 는 이미 해석된 "x,y")
+Private Function ResolvePixelToken(ByVal coordText As String) As String
+    On Error GoTo ErrHandler
+    Dim coords() As String
+    coords = Split(coordText, ",")
     If UBound(coords) = 1 Then
-        ' 좌표값에 변수가 섞여있을 수 있으므로 재귀적으로 한 번 더 해석
-        x = val(ResolveParam(Trim(coords(0))))
-        y = val(ResolveParam(Trim(coords(1))))
-
-        ' ★ 핵심: 엔진은 modWinAPI의 래퍼만 호출합니다.
-        ResolvePixelTokenInside = modWinAPI.GetColorHexAt(x, y)
+        ResolvePixelToken = modWinAPI.GetColorHexAt(CLng(val(Trim(coords(0)))), CLng(val(Trim(coords(1)))))
     Else
-        ' 형식이 맞지 않으면 원본 반환
-        ResolvePixelTokenInside = "{" & innerText & "}"
+        ResolvePixelToken = "{$PIXEL:" & coordText & "}"  ' 형식 불일치 시 원본
     End If
 
 CleanUp:
@@ -630,6 +690,27 @@ CleanUp:
 ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description
     Resume CleanUp
+End Function
+
+' [Helper] SET 좌변(주소) 파싱. 좌변은 RAW (값 해석 금지)
+'   반환 True 시 kind="MEM"|"CLIP", key=메모리명. 읽기전용 토큰은 좌변 불가(False).
+Private Function ParseLValue(ByVal rawP1 As String, ByRef kind As String, ByRef key As String) As Boolean
+    Dim s As String: s = Trim(rawP1)
+    ParseLValue = False
+    If Len(s) < 2 Then Exit Function
+    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
+
+    Dim inner As String: inner = Trim(Mid$(s, 2, Len(s) - 2))
+    If UCase$(inner) = "$CLIP" Then
+        kind = "CLIP": key = ""
+        ParseLValue = True
+    ElseIf Left$(inner, 1) = "$" Then
+        ' 읽기 전용 시스템 토큰은 좌변(쓰기) 불가
+        ParseLValue = False
+    Else
+        kind = "MEM": key = inner
+        ParseLValue = True
+    End If
 End Function
 
 Private Sub PreScanLabels(arr As Variant, total As Long)
@@ -700,30 +781,30 @@ Private Function FindBlockPair(ByVal startLine As Long, ByVal SearchType As Stri
                 End If
 
             Case "WHILE"
-                If Direction = 1 Then ' 아래로 WEND 찾기
+                If Direction = 1 Then ' 아래로 END_WHILE 찾기
                     If sCmd = "WHILE" Then depth = depth + 1
-                    If sCmd = "WEND" Then
+                    If sCmd = "END_WHILE" Then
                         If depth = 0 Then FindBlockPair = R: GoTo CleanUp
                         depth = depth - 1
                     End If
-                Else ' 위로 While 찾기
-                    If sCmd = "WEND" Then depth = depth + 1
+                Else ' 위로 WHILE 찾기
+                    If sCmd = "END_WHILE" Then depth = depth + 1
                     If sCmd = "WHILE" Then
                         If depth = 0 Then FindBlockPair = R: GoTo CleanUp
                         depth = depth - 1
                     End If
                 End If
 
-            Case "FOR"
-                If Direction = 1 Then ' 아래로 Next 찾기
-                    If sCmd = "FOR" Then depth = depth + 1
-                    If sCmd = "NEXT" Then
+            Case "REPEAT"
+                If Direction = 1 Then ' 아래로 END_REPEAT 찾기
+                    If sCmd = "REPEAT" Then depth = depth + 1
+                    If sCmd = "END_REPEAT" Then
                         If depth = 0 Then FindBlockPair = R: GoTo CleanUp
                         depth = depth - 1
                     End If
-                Else ' 위로 For 찾기
-                    If sCmd = "NEXT" Then depth = depth + 1
-                    If sCmd = "FOR" Then
+                Else ' 위로 REPEAT 찾기
+                    If sCmd = "END_REPEAT" Then depth = depth + 1
+                    If sCmd = "REPEAT" Then
                         If depth = 0 Then FindBlockPair = R: GoTo CleanUp
                         depth = depth - 1
                     End If
@@ -750,29 +831,11 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Internal] If/While 문의 조건절(P1, P3)을 해석하여 True/False 반환
-' v1: P1에서 해석된 값
-' p3Raw: P3 셀의 원본 문자열 (예: "GT | 100" 또는 "Success")
-' [modEngine] CheckIfSyntax 수정
-Private Function CheckIfSyntax(ByVal v1 As String, ByVal p3Resolved As String) As Boolean
+' [Internal] IF/WHILE 조건절 판단 (v2: 좌변 P1 | 연산자 P2 | 우변 P3)
+'   v1: 해석된 P1, op: P2(연산자), v2: 해석된 P3
+Private Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
     On Error GoTo ErrHandler
-    Dim parts() As String
-    Dim op As String, v2 As String
-
-    ' p3Resolved에 | 가 있는지 확인
-    If InStr(p3Resolved, "|") > 0 Then
-        parts = Split(p3Resolved, "|")
-        ' Trim을 확실히 하여 공백 문제를 방지
-        op = UCase(Trim(parts(0)))
-        v2 = Trim(parts(1))
-    Else
-        ' 파이프가 없으면 전체를 값으로 보고 "EQ" 처리
-        op = "EQ"
-        v2 = Trim(p3Resolved)
-    End If
-
-    ' modActions에 최종 판단 위임
-    CheckIfSyntax = modActions.Action_CheckCondition(v1, op, v2)
+    CheckIfSyntax = modActions.Action_CheckCondition(v1, UCase(Trim(op)), v2)
 
 CleanUp:
     Exit Function
@@ -780,18 +843,5 @@ ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description
     Resume CleanUp
 End Function
-' [Internal] 변수 값을 1 증가시키는 공통 로직
-Private Sub IncrementVariable(ByVal varIdx As Long)
-    On Error GoTo ErrHandler
-    Dim currentVal As Double
-    currentVal = val(modContext.GetVar(varIdx)) ' 현재 값 가져오기
-    modContext.SetVar varIdx, CStr(currentVal + 1) ' 1 증가시켜 저장
-
-CleanUp:
-    Exit Sub
-ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
-    Resume CleanUp
-End Sub
 
 

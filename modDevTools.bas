@@ -104,30 +104,33 @@ Private Sub EnsureHeaders(ws As Worksheet)
     End If
 End Sub
 
-' [신규] 명령어 및 파라미터 유효성 검사
+' [신규] 명령어 및 파라미터 유효성 검사 (v2 명령어셋)
 Private Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
     ValidateLine = True
 
     ' 1. 명령어 존재 여부 확인
-    Select Case True
-     Case cmd = "IF", cmd = "ELSE", cmd = "END_IF", cmd = "WHILE", cmd = "WEND", _
-        cmd = "FOR", cmd = "NEXT", _
-        cmd = "GOTO", cmd = "CALL", cmd = "RETURN", cmd = "LABEL", _
-        cmd = "SWITCH_PIXEL", cmd = "ASSERT", cmd = "KEY", cmd = "COMBO", _
-        cmd = "FOCUS", cmd = "INC", cmd = "EXIT", cmd = "NOTIFY", _
-        cmd = "SELECT", cmd = "CASE", cmd = "END_SELECT"
-        ' 정상 명령어
-
-     Case InStr(cmd, "IF_") = 1, InStr(cmd, "IFNOT_") = 1, _
-        InStr(cmd, "WAIT") = 1, InStr(cmd, "MOUSE") > 0, _
-        InStr(cmd, "TYPE") > 0, InStr(cmd, "MEM") > 0, _
-        InStr(cmd, "CLIP") > 0
-        ' 패턴 매칭 명령어
-
-     Case Else
-        ValidateLine = False
-     Exit Function
+    Select Case cmd
+        ' [Flow]
+        Case "IF", "ELSE", "END_IF", "WHILE", "END_WHILE", _
+             "REPEAT", "END_REPEAT", "SELECT", "CASE", "END_SELECT", _
+             "BREAK", "CONTINUE", "GOTO", "CALL", "RETURN", "LABEL"
+        ' [Action]
+        Case "CLICK", "RCLICK", "KEY", "COMBO", "TYPE", "SET", _
+             "FOCUS", "SLEEP", "NOTIFY", "EXIT"
+        ' [Vision]
+        Case "WAIT_APPEAR", "WAIT_VANISH", "CLICK_SYNC", "ASSERT"
+        Case Else
+            ValidateLine = False
+            Exit Function
     End Select
+
+    ' 2. 조건 연산자: 맨 '=' 금지 (== 강제)
+    If cmd = "IF" Or cmd = "WHILE" Then
+        If Trim(CStr(p2)) = "=" Then
+            ValidateLine = False
+            Exit Function
+        End If
+    End If
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
@@ -197,50 +200,46 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Opti
     cmdCell.Font.Bold = True ' 명령어는 다시 굵게
 
     Select Case True
-        ' [Logic & Flow] - 연녹색 (줄 전체)
+        ' [Flow] - 연녹색 (줄 전체)
      Case IsBlockStarter(cmd), IsBlockEnder(cmd), cmd = "ELSE", cmd = "CASE", _
-        cmd = "GOTO", cmd = "CALL", cmd = "RETURN", cmd = "LABEL", _
-        InStr(cmd, "IF_") > 0, InStr(cmd, "IFNOT_") > 0, cmd = "SWITCH_PIXEL", cmd = "ASSERT"
+        cmd = "BREAK", cmd = "CONTINUE", cmd = "GOTO", cmd = "CALL", _
+        cmd = "RETURN", cmd = "LABEL"
         rng.Interior.color = RGB(226, 239, 218)
 
-        ' [Wait & Vision] - 연황색 (B열 강조, C-E 연녹 배경)
-     Case InStr(cmd, "WAIT") = 1
+        ' [Vision] - 연황색 (B열 강조, C-E 연녹 배경)
+     Case cmd = "WAIT_APPEAR", cmd = "WAIT_VANISH", cmd = "CLICK_SYNC", cmd = "ASSERT"
         cmdCell.Interior.color = RGB(255, 242, 204)
         If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
 
-            ' [Action & Input] - 연청색 (B열 강조, C-E 연녹 배경)
-         Case InStr(cmd, "MOUSE") > 0, cmd = "KEY", cmd = "COMBO", _
-            InStr(cmd, "TYPE") > 0, InStr(cmd, "MEM") > 0, cmd = "FOCUS", cmd = "INC", InStr(cmd, "CLIP") > 0
-            cmdCell.Interior.color = RGB(221, 235, 247)
-            If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
+        ' [Action & Input] - 연청색 (B열 강조, C-E 연녹 배경)
+     Case cmd = "CLICK", cmd = "RCLICK", cmd = "KEY", cmd = "COMBO", _
+        cmd = "TYPE", cmd = "SET", cmd = "FOCUS", cmd = "SLEEP"
+        cmdCell.Interior.color = RGB(221, 235, 247)
+        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
 
-                ' [System] - 연회색
-             Case cmd = "EXIT", cmd = "NOTIFY"
-                rng.Interior.color = RGB(242, 242, 242)
+        ' [System] - 연회색
+     Case cmd = "EXIT", cmd = "NOTIFY"
+        rng.Interior.color = RGB(242, 242, 242)
 
-                ' 블록 내부인데 위 케이스에 해당 없는 경우 연녹색 배경 유지
-             Case Else
-                If depth > 0 Then rng.Interior.color = RGB(245, 255, 245)
-                End Select
+        ' 블록 내부인데 위 케이스에 해당 없는 경우 연녹색 배경 유지
+     Case Else
+        If depth > 0 Then rng.Interior.color = RGB(245, 255, 245)
+    End Select
 End Sub
 
-' [수정] 블록 시작 명령어 정의
+' [v2] 블록 시작 명령어 정의
 Private Function IsBlockStarter(cmd As String) As Boolean
-    Select Case True
-     Case InStr(cmd, "IF") = 1, InStr(cmd, "WHILE") = 1, _
-        cmd = "FOR", cmd = "SELECT"
-        IsBlockStarter = True
-     Case Else: IsBlockStarter = False
+    Select Case cmd
+        Case "IF", "WHILE", "REPEAT", "SELECT": IsBlockStarter = True
+        Case Else: IsBlockStarter = False
     End Select
 End Function
 
-' [수정] 블록 종료 명령어 정의
+' [v2] 블록 종료 명령어 정의
 Private Function IsBlockEnder(cmd As String) As Boolean
-    Select Case True
-     Case InStr(cmd, "END") = 1, cmd = "WEND", _
-        cmd = "NEXT"
-        IsBlockEnder = True
-     Case Else: IsBlockEnder = False
+    Select Case cmd
+        Case "END_IF", "END_WHILE", "END_REPEAT", "END_SELECT": IsBlockEnder = True
+        Case Else: IsBlockEnder = False
     End Select
 End Function
 

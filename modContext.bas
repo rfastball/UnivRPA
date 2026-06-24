@@ -12,7 +12,7 @@ Option Explicit
 '==============================================================================
 
 ' [1] 핵심 저장소
-Private Memory(0 To 99) As String   ' 변수 저장 공간 (0~99번 슬롯)
+Private Memory As Object            ' 변수 저장 공간 (Scripting.Dictionary, 자유 명명 {name})
 Private CallStack As Collection     ' 서브루틴 복귀 주소 저장 (LIFO 구조)
 
 ' [2] 실행 상태 플래그
@@ -21,8 +21,16 @@ Private IsRunning As Boolean        ' 현재 매크로 실행 중 여부
 ' [3] 라벨 저장소
 Private LabelMap As Collection      ' 라벨 저장소 (Key:Name -> Value:LineNumber)
 
-' [4] 루프카운터 관리
-Private LoopCounters As New Collection ' Key: "L10" (Line 10) -> Value: Current Count
+' [4] 루프 런타임: 활성 루프 스택 ({$LOOP}/BREAK/CONTINUE 통합)
+Private Type LoopFrame
+    kind As String      ' "WHILE" | "REPEAT"
+    headerLine As Long  ' 점프 복귀 대상 (헤더 줄)
+    endLine As Long     ' 종료(ENDER) 줄. BREAK 대상 = endLine + 1
+    iteration As Long   ' 1-base 현재 회차 -> {$LOOP}
+    maxCount As Long    ' REPEAT 전용 최대 횟수
+End Type
+Private LoopStack() As LoopFrame
+Private LoopTop As Long             ' 0 = 빈 스택, n = 활성 프레임 개수
 
 '==============================================================================
 ' 1. Initialization & Reset (초기화)
@@ -30,30 +38,32 @@ Private LoopCounters As New Collection ' Key: "L10" (Line 10) -> Value: Current 
 
 ' [초기화] 매크로 시작 시 반드시 호출
 Public Sub InitContext()
-    Dim i As Integer
+    ' 1. 메모리 초기화 (Dictionary, 대소문자 무시)
+    Set Memory = CreateObject("Scripting.Dictionary")
+    Memory.CompareMode = vbTextCompare
 
-    ' 1. 메모리 초기화
-    For i = 0 To 99
-        Memory(i) = ""
-    Next i
-    
     ' 2. 스택 초기화
     Set CallStack = New Collection
-    
+
     ' 3. 상태 플래그 설정
     IsRunning = True
-    
+
     ' 4. 상태바 초기화
     Application.StatusBar = "RPA Ready..."
-    
+
     ' 5. 라벨 맵 초기화
     Set LabelMap = New Collection
+
+    ' 6. 루프 스택 초기화
+    LoopReset
 End Sub
 
 ' [종료] 매크로 중단/완료 시 호출
 Public Sub ResetContext()
     IsRunning = False
     Set CallStack = Nothing
+    Set Memory = Nothing
+    LoopReset
     Application.StatusBar = False ' 엑셀 기본 상태로 복귀
 End Sub
 
@@ -61,36 +71,24 @@ End Sub
 ' 2. Memory Management (변수 제어)
 '==============================================================================
 
-' [변수 쓰기]
-Public Sub SetVar(ByVal index As Integer, ByVal val As String)
-    If index < 0 Or index > 99 Then
-        LogError "메모리 인덱스 초과: " & index
-        Exit Sub
-    End If
-    Memory(index) = val
-    ' 디버깅용: 변수 변경 시 이미디에이트 창에 출력
-    ' Debug.Print "[MEM] Var(" & index & ") = " & val
+' [변수 쓰기] 자유 명명 키. 좌변=주소, 우변=값
+Public Sub SetVar(ByVal key As String, ByVal val As String)
+    Memory(Trim(key)) = val   ' 존재하면 갱신, 없으면 자동 추가
 End Sub
 
-' [변수 읽기]
-Public Function GetVar(ByVal index As Integer) As String
-    If index < 0 Or index > 99 Then
-        LogError "메모리 인덱스 초과: " & index
-        GetVar = ""
-        Exit Function
-    End If
-    GetVar = Memory(index)
+' [변수 읽기] 미정의 키는 빈 문자열({$BLANK}) 반환 (오류 아님)
+Public Function GetVar(ByVal key As String) As String
+    Dim k As String: k = Trim(key)
+    If Memory.Exists(k) Then GetVar = Memory(k) Else GetVar = ""
 End Function
 
 ' [전체 메모리 덤프] 디버깅용
 Public Sub DumpMemory()
-    Dim i As Integer
+    Dim k As Variant
     Debug.Print "=== Memory Dump ==="
-    For i = 0 To 99
-        If Memory(i) <> "" Then
-            Debug.Print "Var(" & i & "): [" & Memory(i) & "]"
-        End If
-    Next i
+    For Each k In Memory.Keys
+        Debug.Print "Var(" & k & "): [" & Memory(k) & "]"
+    Next k
     Debug.Print "==================="
 End Sub
 
@@ -186,32 +184,67 @@ Public Function GetLabel(ByVal sName As String) As Long
 End Function
 
 '--------------------------------------------------
-' 6. [Loop Management] 완전 자동 카운터 로직
+' 6. [Loop Management] 활성 루프 스택
+'   {$LOOP}(가장 안쪽 회차) / BREAK / CONTINUE 를 한 묶음으로 해결
 '--------------------------------------------------
 
-' 루프 카운터 가져오기 (없으면 0 반환)
-Public Function GetLoopCount(ByVal lineIdx As Long) As Long
-    On Error Resume Next
-    GetLoopCount = LoopCounters.Item("L" & lineIdx)
-    If Err.Number <> 0 Then GetLoopCount = 0
-    On Error GoTo 0
+' [초기화] 스택 비우기
+Public Sub LoopReset()
+    Erase LoopStack
+    LoopTop = 0
+End Sub
+
+' [깊이] 현재 활성 루프 개수
+Public Function LoopDepth() As Long
+    LoopDepth = LoopTop
 End Function
 
-' 루프 카운터 설정/업데이트
-Public Sub SetLoopCount(ByVal lineIdx As Long, ByVal val As Long)
-    Dim sKey As String: sKey = "L" & lineIdx
-    On Error Resume Next
-    LoopCounters.Remove sKey ' 기존 값 제거
-    On Error GoTo 0
-    LoopCounters.Add val, sKey
+' [진입] 새 루프 프레임 PUSH (iteration = 1 로 시작)
+Public Sub LoopPush(ByVal kind As String, ByVal headerLine As Long, ByVal endLine As Long, ByVal maxCount As Long)
+    LoopTop = LoopTop + 1
+    ReDim Preserve LoopStack(1 To LoopTop)
+    LoopStack(LoopTop).kind = kind
+    LoopStack(LoopTop).headerLine = headerLine
+    LoopStack(LoopTop).endLine = endLine
+    LoopStack(LoopTop).iteration = 1
+    LoopStack(LoopTop).maxCount = maxCount
 End Sub
 
-' 루프 종료 시 카운터 제거
-Public Sub RemoveLoopCount(ByVal lineIdx As Long)
-    On Error Resume Next
-    LoopCounters.Remove "L" & lineIdx
-    On Error GoTo 0
+' [이탈] 최상위 루프 프레임 POP
+Public Sub LoopPop()
+    If LoopTop > 0 Then
+        LoopTop = LoopTop - 1
+        If LoopTop > 0 Then
+            ReDim Preserve LoopStack(1 To LoopTop)
+        Else
+            Erase LoopStack
+        End If
+    End If
 End Sub
+
+' [{$LOOP}] 가장 안쪽 루프의 현재 회차 (루프 밖이면 0)
+Public Function GetActiveLoopIteration() As Long
+    If LoopTop > 0 Then GetActiveLoopIteration = LoopStack(LoopTop).iteration Else GetActiveLoopIteration = 0
+End Function
+
+' [회차+1] 최상위 프레임의 회차 증가
+Public Sub LoopIncrement()
+    If LoopTop > 0 Then LoopStack(LoopTop).iteration = LoopStack(LoopTop).iteration + 1
+End Sub
+
+' [접근자] 최상위 프레임 필드 읽기 (빈 스택이면 기본값)
+Public Function LoopTopKind() As String
+    If LoopTop > 0 Then LoopTopKind = LoopStack(LoopTop).kind Else LoopTopKind = ""
+End Function
+Public Function LoopTopHeader() As Long
+    If LoopTop > 0 Then LoopTopHeader = LoopStack(LoopTop).headerLine Else LoopTopHeader = 0
+End Function
+Public Function LoopTopEnd() As Long
+    If LoopTop > 0 Then LoopTopEnd = LoopStack(LoopTop).endLine Else LoopTopEnd = 0
+End Function
+Public Function LoopTopMax() As Long
+    If LoopTop > 0 Then LoopTopMax = LoopStack(LoopTop).maxCount Else LoopTopMax = 0
+End Function
 
 ' [modContext] 타입 오류 없는 안전한 로거
 Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Variant, ByVal v4 As Variant)

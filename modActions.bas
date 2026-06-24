@@ -17,6 +17,10 @@ Private Const DELAY_SHORT As Long = 100
 Private Const DELAY_MEDIUM As Long = 200
 Private Const TIMEOUT_DEFAULT As Long = 30000
 
+' [CLICK_SYNC 전용] 이 시간 내 미안정 색변화는 호버로 간주하지 않음.
+' = "호버의 정의" = 커서 진입 후 이 시간 내 전이. 늘리면 클릭반응을 호버로 오인하기 시작함.
+Private Const HOVER_SETTLE_MS As Long = 150
+
 '==============================================================================
 ' 1. Core Utilities (핵심 유틸리티)
 '==============================================================================
@@ -183,16 +187,22 @@ End Function
 ' 3. Mouse Actions (마우스 제어)
 '==============================================================================
 
-' [마우스 클릭] 이동 -> 대기 -> 클릭 -> 대기
-Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal isRightClick As Boolean = False)
+' [프리미티브] 좌표 이동 + 안정화 대기
+Public Sub MoveAndSettle(ByVal x As Long, ByVal y As Long)
     On Error GoTo ErrHandler
-    ' 1. 좌표 이동
     modWinAPI.SetCursorPos x, y
-    
-    ' 2. 이동 후 안정화 (중요: 너무 빠르면 클릭 씹힘)
-    BetterWait DELAY_SHORT
-    
-    ' 3. 클릭 수행
+    BetterWait DELAY_SHORT   ' 이동 후 안정화 (너무 빠르면 클릭 씹힘)
+
+CleanUp:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Resume CleanUp
+End Sub
+
+' [프리미티브] 현재 커서 위치에서 Down/Up (좌/우)
+Public Sub FireClick(Optional ByVal isRightClick As Boolean = False)
+    On Error GoTo ErrHandler
     If isRightClick Then
         modWinAPI.mouse_event MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0
         BetterWait DELAY_MICRO ' 누르고 잠시 대기
@@ -202,7 +212,19 @@ Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal is
         BetterWait DELAY_MICRO
         modWinAPI.mouse_event MOUSEEVENTF_LEFTUP, 0, 0, 0, 0
     End If
-    
+
+CleanUp:
+    Exit Sub
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Resume CleanUp
+End Sub
+
+' [마우스 클릭] 이동 -> 안정화 -> 클릭 -> 안정화 (CLICK/RCLICK = fire-and-forget)
+Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal isRightClick As Boolean = False)
+    On Error GoTo ErrHandler
+    MoveAndSettle x, y
+    FireClick isRightClick
     BetterWait DELAY_SHORT
 
 CleanUp:
@@ -212,11 +234,45 @@ ErrHandler:
     Resume CleanUp
 End Sub
 
+' [확인된 좌클릭] CLICK_SYNC (§2.1): 이동 -> 호버안정 -> 기준색캡처 -> 좌클릭 -> 색변화까지 대기
+'   타임아웃 시 조용히 False 반환 (모달 없음). 좌클릭 전용 (RCLICK_SYNC/KEY_SYNC 확장 금지).
+Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
+    On Error GoTo ErrHandler
+    Dim baseColor As String
+    Dim startTime As Long
+
+    ' 1. 이동 -> 호버 전이가 끝난 뒤 기준색 캡처 (호버색을 기준선에 포함 = 빼버림)
+    MoveAndSettle x, y
+    BetterWait HOVER_SETTLE_MS
+    baseColor = modWinAPI.GetColorHexAt(x, y)
+
+    ' 2. 좌클릭 발사
+    FireClick False
+
+    ' 3. (x,y) 색이 기준색에서 벗어날 때까지 폴링. 동일점 가드(누른 곳=확인 곳).
+    startTime = modWinAPI.GetTickCount()
+    Do
+        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then Action_ClickSync = False: Exit Function
+        If modWinAPI.GetColorHexAt(x, y) <> baseColor Then Action_ClickSync = True: Exit Function
+        If (modWinAPI.GetTickCount() - startTime) > TIMEOUT_DEFAULT Then
+            Action_ClickSync = False    ' 조용히 실패 (모달 금지)
+            Exit Function
+        End If
+        BetterWait DELAY_SHORT
+    Loop
+
+CleanUp:
+    Exit Function
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Resume CleanUp
+End Function
+
 '==============================================================================
 ' 4. Vision Actions (화면 인식 및 대기)
 '==============================================================================
 
-' [통합 대기] 특정 색상 출현(WAIT_PIXEL) 또는 소멸(WAIT_VANISH) 대기
+' [통합 대기] 특정 색상 출현(WAIT_APPEAR) 또는 소멸(WAIT_VANISH) 대기
 Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As String) As Boolean
     On Error GoTo ErrHandler
     Dim startTime As Long
@@ -236,9 +292,8 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
             If curColor = UCase(hexColor) Then Action_Wait = True: Exit Function
         End If
         
-        ' 타임아웃
+        ' 타임아웃 (무인 환경: 모달 금지, 조용히 실패 반환 → 알림 여부는 엔진이 결정)
         If (modWinAPI.GetTickCount() - startTime) > timeLimit Then
-            MsgBox "[TimeOut] " & sType & " 실패" & vbCrLf & "Color: " & hexColor, vbCritical
             Action_Wait = False
             Exit Function
         End If
@@ -305,16 +360,11 @@ Public Function Action_Assert(x As Long, y As Long, condition As String) As Bool
     
     nowColor = modWinAPI.GetColorHexAt(x, y)
     
+    ' 무인 환경: 모달 금지, 불일치 시 조용히 False 반환 (알림은 엔진이 결정)
     If isForbidden Then
-        If nowColor = targetColor Then
-            MsgBox "[Assert Fail] 금지된 색상 감지!", vbCritical
-            Action_Assert = False: Exit Function
-        End If
+        If nowColor = targetColor Then Action_Assert = False: Exit Function
     Else
-        If nowColor <> targetColor Then
-            MsgBox "[Assert Fail] 색상 불일치 (Exp:" & targetColor & " Act:" & nowColor & ")", vbCritical
-            Action_Assert = False: Exit Function
-        End If
+        If nowColor <> targetColor Then Action_Assert = False: Exit Function
     End If
     Action_Assert = True
 
@@ -328,79 +378,7 @@ End Function
 
 
 '==============================================================================
-' 5. Logic Helpers (판단 로직 위임), 파서 로직
-'==============================================================================
-
-' [화면 조건 파싱] IF_PIXEL, SWITCH 등 복합 조건 문자열 파싱 및 결과 반환
-Public Function GetJumpTarget_Pixel(sType As String, x As Long, y As Long, conditionStr As String) As Long
-    On Error GoTo ErrHandler
-    Dim parts() As String, subParts() As String
-    Dim curColor As String
-    Dim i As Long
-    
-    curColor = modWinAPI.GetColorHexAt(x, y)
-    GetJumpTarget_Pixel = 0
-    
-    Select Case sType
-        Case "IF_PIXEL"
-            parts = Split(conditionStr, "|")
-            ' 잠시 대기하며 색상 확인 (Wait Logic 재사용 가능)
-            If Action_WaitForColor(x, y, parts(0), 0.2) Then GetJumpTarget_Pixel = val(parts(1))
-            
-        Case "IFNOT_PIXEL"
-            parts = Split(conditionStr, "|")
-            BetterWait DELAY_MEDIUM ' 안정화
-            If curColor <> UCase(parts(0)) Then GetJumpTarget_Pixel = val(parts(1))
-            
-        Case "SWITCH_PIXEL"
-            parts = Split(conditionStr, ";")
-            For i = LBound(parts) To UBound(parts)
-                subParts = Split(parts(i), "|")
-                If UBound(subParts) >= 1 Then
-                    If curColor = UCase(subParts(0)) Then
-                        GetJumpTarget_Pixel = val(subParts(1))
-                        Exit Function
-                    End If
-                End If
-            Next i
-    End Select
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
-    Resume CleanUp
-End Function
-
-' [텍스트 조건 파싱] IF_CLIP, IF_MEM 등 문자열 포함 여부 확인
-Public Function GetJumpTarget_Text(sType As String, sourceText As String, conditionStr As String) As Long
-    On Error GoTo ErrHandler
-    Dim parts() As String
-    Dim targetText As String, jumpLine As Long
-    Dim isMatch As Boolean
-    
-    If InStr(conditionStr, "|") = 0 Then Exit Function
-    
-    parts = Split(conditionStr, "|")
-    targetText = parts(0)
-    jumpLine = val(parts(1))
-    
-    ' 포함 여부 검사
-    isMatch = (InStr(1, sourceText, targetText, vbTextCompare) > 0)
-    
-    If sType = "IFNOT_CLIP" Or sType = "IFNOT_MEM" Then isMatch = Not isMatch
-    
-    If isMatch Then GetJumpTarget_Text = jumpLine Else GetJumpTarget_Text = 0
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
-    Resume CleanUp
-End Function
-
-'==============================================================================
-' 6. Window & System Actions (윈도우 제어)
+' 5. Window & System Actions (윈도우 제어)
 '==============================================================================
 
 ' [창 활성화] 제목의 일부만으로 창을 찾아 맨 앞으로 가져옴
@@ -493,51 +471,64 @@ Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, By
     End If
     
     op = UCase(Trim(op))
-    
+
     Select Case op
-        ' [Equal] 같다 (Like 연산자 사용하여 와일드카드 지원)
-        Case "==", "=", "IS", "EQ", ""
+        ' [Equal] 정확히 같다 (== : *, ? 도 리터럴로 취급, Like 아님)
+        Case "=="
             If isNum Then
                 Action_CheckCondition = (d1 = d2)
             Else
-                ' 텍스트 모드: Like 사용 (s2에 *, ?가 있으면 패턴 매칭됨)
-                Action_CheckCondition = (s1 Like s2)
+                ' 명시 텍스트=대소문자 구분(원본), 암묵 텍스트=UCase 정규화됨
+                Action_CheckCondition = (s1 = s2)
             End If
-            
-        ' [Not Equal] 다르다 (!=, <>, ISNOT, NEQ)
-        Case "!=", "<>", "ISNOT", "NEQ", "NOT"
+
+        ' [Not Equal] 다르다 (!=)
+        Case "!="
             If isNum Then
                 Action_CheckCondition = (d1 <> d2)
             Else
-                Action_CheckCondition = Not (s1 Like s2)
+                Action_CheckCondition = (s1 <> s2)
             End If
-            
-        ' [Greater Than] 크다 (>, GT)
-        Case ">", "GT"
+
+        ' [Greater Than] 크다 (>)
+        Case ">"
             If isNum Then Action_CheckCondition = (d1 > d2) Else Action_CheckCondition = (s1 > s2)
-            
-        ' [Less Than] 작다 (<, LT)
-        Case "<", "LT"
+
+        ' [Less Than] 작다 (<)
+        Case "<"
             If isNum Then Action_CheckCondition = (d1 < d2) Else Action_CheckCondition = (s1 < s2)
-            
-        ' [Greater or Equal] 크거나 같다 (>=, GE, GTE)
-        Case ">=", "GE", "GTE"
+
+        ' [Greater or Equal] 크거나 같다 (>=)
+        Case ">="
             If isNum Then Action_CheckCondition = (d1 >= d2) Else Action_CheckCondition = (s1 >= s2)
-            
-        ' [Less or Equal] 작거나 같다 (<=, LE, LTE)
-        Case "<=", "LE", "LTE"
+
+        ' [Less or Equal] 작거나 같다 (<=)
+        Case "<="
             If isNum Then Action_CheckCondition = (d1 <= d2) Else Action_CheckCondition = (s1 <= s2)
-            
-        ' [String Contains] 포함 (CONTAINS, HAS)
-        Case "CONTAINS", "HAS", "IN"
+
+        ' [Pattern] LIKE (* 임의 / ? 한글자 / # 한숫자) - 와일드카드는 여기서만
+        Case "LIKE"
+            Action_CheckCondition = (s1 Like s2)
+
+        ' [Starts With] ~로 시작
+        Case "STARTS"
+            Action_CheckCondition = (Len(s2) > 0 And Left$(s1, Len(s2)) = s2)
+
+        ' [Ends With] ~로 끝
+        Case "ENDS"
+            Action_CheckCondition = (Len(s2) > 0 And Right$(s1, Len(s2)) = s2)
+
+        ' [String Contains] 포함 (CONTAINS)
+        Case "CONTAINS"
             ' 명시적이면 BinaryCompare(대소문자 구분), 암묵적이면 TextCompare(이미 UCase됨)
             If isExplicit Then
                 Action_CheckCondition = (InStr(1, s1, s2, vbBinaryCompare) > 0)
             Else
                 Action_CheckCondition = (InStr(1, s1, s2, vbTextCompare) > 0)
             End If
-            
+
         Case Else
+            ' 알 수 없는 연산자 (맨 '=' 포함) -> False
             Action_CheckCondition = False
     End Select
 
