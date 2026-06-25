@@ -27,7 +27,7 @@ Private Type LoopFrame
     headerLine As Long  ' 점프 복귀 대상 (헤더 줄)
     endLine As Long     ' 종료(ENDER) 줄. BREAK 대상 = endLine + 1
     iteration As Long   ' 1-base 현재 회차 -> {$LOOP}
-    maxCount As Long    ' REPEAT 전용 최대 횟수
+    maxCount As Long    ' REPEAT 전용 최대 횟수 (0=WHILE 또는 무한 REPEAT)
 End Type
 Private LoopStack() As LoopFrame
 Private LoopTop As Long             ' 0 = 빈 스택, n = 활성 프레임 개수

@@ -7,7 +7,7 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' @desc 입력 액션 명령어(마우스/키보드) 5종 디스패치 실행 담당
+' @desc 입력 액션 명령어(마우스/키보드) 6종 디스패치 실행 담당
 ' @depends modActions, modCmdRegistry, ICommand
 Option Explicit
 
@@ -24,6 +24,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
     ICommand_Execute = CMD_NEXT_LINE
 
     Select Case cmd
+        Case "MOVE":   modActions.Action_MouseMove p1, p2
         Case "CLICK":  modActions.Action_MouseClick p1, p2, False
         Case "RCLICK": modActions.Action_MouseClick p1, p2, True
         Case "KEY":    modActions.Action_PressKey args(1)
@@ -36,11 +37,11 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             GoTo CleanUp
     End Select
 
-    ' [사후 대기] CLICK/RCLICK/KEY/COMBO 만 P3에 대기시간(ms)을 가질 수 있음
+    ' [사후 대기] MOVE/CLICK/RCLICK/KEY/COMBO 만 P3에 대기시간(ms)을 가질 수 있음
     '   (TYPE=텍스트 이므로 제외)
     If IsNumeric(args(3)) And val(args(3)) > 0 Then
         Select Case cmd
-            Case "CLICK", "RCLICK", "KEY", "COMBO"
+            Case "MOVE", "CLICK", "RCLICK", "KEY", "COMBO"
                 modActions.BetterWait CLng(val(args(3)))
         End Select
     End If

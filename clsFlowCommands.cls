@@ -81,22 +81,42 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim wHead As Long: wHead = modEngine.FindBlockPair(R, "WHILE", -1)
             If wHead > 0 Then ICommand_Execute = wHead Else ICommand_Execute = CMD_ERROR
 
-         '--- [Loop] REPEAT / END_REPEAT (N회 반복) ---
+         '--- [Loop] REPEAT / END_REPEAT (N회 또는 무한 반복) ---
          Case "REPEAT"
-            Dim maxCnt As Long: maxCnt = CLng(val(args(1)))
-            If maxCnt <= 0 Then
-                ' 0회 -> 본문 건너뛰기 (PUSH 안 함)
-                Dim rEndSkip As Long: rEndSkip = modEngine.FindBlockPair(R, "REPEAT", 1)
-                If rEndSkip > 0 Then ICommand_Execute = rEndSkip + 1 Else ICommand_Execute = CMD_ERROR
-            Else
-                modContext.LoopPush "REPEAT", R, modEngine.FindBlockPair(R, "REPEAT", 1), maxCnt
+            Dim repeatArg As String: repeatArg = Trim$(args(1))
+            Dim maxCnt As Long
+            Dim rEndRepeat As Long: rEndRepeat = modEngine.FindBlockPair(R, "REPEAT", 1)
+            If rEndRepeat <= 0 Then
+                ICommand_Execute = CMD_ERROR
+                GoTo CleanUp
+            End If
+
+            If Len(repeatArg) = 0 Then
+                ' 빈 반복횟수 -> 무한 반복 (BREAK/ESC로 종료)
+                maxCnt = 0
+                modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
                 ICommand_Execute = CMD_NEXT_LINE
+            Else
+                maxCnt = CLng(val(repeatArg))
+                If maxCnt <= 0 Then
+                    ' 0 이하 -> 무한 반복 (반복을 끄려면 REPEAT 블록을 주석 처리)
+                    maxCnt = 0
+                    modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
+                    ICommand_Execute = CMD_NEXT_LINE
+                Else
+                    modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
+                    ICommand_Execute = CMD_NEXT_LINE
+                End If
             End If
 
          Case "END_REPEAT"
             Dim rHead As Long: rHead = modEngine.FindBlockPair(R, "REPEAT", -1)
-            If rHead > 0 Then
-                If modContext.GetActiveLoopIteration() < modContext.LoopTopMax() Then
+            If rHead > 0 And modContext.LoopDepth() > 0 And _
+               modContext.LoopTopKind() = "REPEAT" And modContext.LoopTopHeader() = rHead Then
+                If modContext.LoopTopMax() = 0 Then
+                    modContext.LoopIncrement
+                    ICommand_Execute = rHead + 1   ' 무한 반복: 본문 재실행
+                ElseIf modContext.GetActiveLoopIteration() < modContext.LoopTopMax() Then
                     modContext.LoopIncrement
                     ICommand_Execute = rHead + 1   ' 본문 재실행 (REPEAT 줄은 1회만)
                 Else

@@ -256,6 +256,18 @@ ErrHandler:
     Resume CleanUp
 End Sub
 
+' [마우스 이동] 클릭 없이 좌표 이동 -> 안정화
+Public Sub Action_MouseMove(ByVal x As Long, ByVal y As Long)
+    On Error GoTo ErrHandler
+    MoveAndSettle x, y
+
+CleanUp:
+    Exit Sub
+ErrHandler:
+    Err.Raise Err.Number, "modActions.Action_MouseMove", Err.Description
+    Resume CleanUp
+End Sub
+
 ' [확인된 좌클릭] CLICK_SYNC (§2.1): 이동 -> 호버안정 -> 기준색캡처 -> 좌클릭 -> 색변화까지 대기
 '   타임아웃 시 조용히 False 반환 (모달 없음). 좌클릭 전용 (RCLICK_SYNC/KEY_SYNC 확장 금지).
 Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean

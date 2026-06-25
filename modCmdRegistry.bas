@@ -140,7 +140,7 @@ Private Function P(ByVal Meaning As String, ByVal dtype As eDataType, _
 End Function
 
 '==============================================================================
-' 3. 레지스트리 적재 (현행 30개 + INC/DEC 신규 = 32개)
+' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE 신규 = 33개)
 '   초기값: 설계문서 부록 A / A.1 / A.3
 '   RAW 슬롯은 둘뿐: lvalue(SET/INC/DEC P1), 연산자(IF/WHILE P2). 그 외 RESOLVE.
 '==============================================================================
@@ -155,7 +155,7 @@ Private Sub BuildRegistry()
         P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, RAW, True), P("우변", DT_STR, RESOLVE, True)
     Reg "END_WHILE", FLOW, ENDER, "WHILE", clrFLOW, FULLROW
     Reg "REPEAT", FLOW, STARTER, "REPEAT", clrFLOW, FULLROW, _
-        P("반복횟수", DT_NUM, RESOLVE, True)
+        P("반복횟수(0/빈값=무한)", DT_NUM, RESOLVE, False)
     Reg "END_REPEAT", FLOW, ENDER, "REPEAT", clrFLOW, FULLROW
     Reg "SELECT", FLOW, STARTER, "SELECT", clrFLOW, FULLROW, _
         P("대상값", DT_STR, RESOLVE, True)
@@ -172,7 +172,9 @@ Private Sub BuildRegistry()
     Reg "LABEL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
         sp3:=P("라벨명", DT_STR, RESOLVE, True)
 
-    '--- [ACTION] 5개 -----------------------------------------------------------
+    '--- [ACTION] 6개 -----------------------------------------------------------
+    Reg "MOVE", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
+        P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("사후대기ms", DT_NUM, RESOLVE, False)
     Reg "CLICK", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("사후대기ms", DT_NUM, RESOLVE, False)
     Reg "RCLICK", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
