@@ -19,8 +19,9 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
     view.Prepare
     isRecorded = False
 
-    Do While view.Visible
+    Do While IsFormVisible(view)
         DoEvents
+        If Not IsFormVisible(view) Then Exit Do
 
         If modWinAPI.IsToggleKeyOn(modWinAPI.VK_CAPITAL) Then
             If Not isRecorded Then
@@ -73,3 +74,9 @@ Private Sub FillActiveCell(ByVal x As Long, ByVal y As Long, ByVal hexColor As S
         .offset(1, 0).Select
     End With
 End Sub
+
+Private Function IsFormVisible(ByVal view As Object) As Boolean
+    On Error GoTo SafeExit
+    IsFormVisible = view.Visible
+SafeExit:
+End Function
