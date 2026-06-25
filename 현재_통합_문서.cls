@@ -7,6 +7,8 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
+Private Const MAX_VALIDATE_CELLS As Long = 500
+
 Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)
     If Target Is Nothing Then
         Application.StatusBar = False
@@ -50,6 +52,9 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     Dim commandChanges As Range
     Set commandChanges = Intersect(Target, ws.Columns(cmdCol))
     If commandChanges Is Nothing Then Exit Sub
+    Set commandChanges = Intersect(commandChanges, ws.UsedRange)
+    If commandChanges Is Nothing Then Exit Sub
+    If commandChanges.Cells.CountLarge > MAX_VALIDATE_CELLS Then Exit Sub
 
     Dim cell As Range
     For Each cell In commandChanges.Cells

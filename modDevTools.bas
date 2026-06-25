@@ -2,7 +2,24 @@
 ' @desc RPA 스크립트 시트 서식·검증을 레지스트리 파생으로 적용 담당
 ' @depends modCmdRegistry
 Option Explicit
+
 Public Sub FormatRPAScript_Final()
+    Dim prevScreenUpdating As Boolean
+    Dim prevEnableEvents As Boolean
+    Dim prevCalculation As XlCalculation
+    Dim failNumber As Long
+    Dim failSource As String
+    Dim failDescription As String
+    Dim failHelpFile As String
+    Dim failHelpContext As Long
+    prevScreenUpdating = Application.ScreenUpdating
+    prevEnableEvents = Application.EnableEvents
+    prevCalculation = Application.Calculation
+    On Error GoTo CleanFail
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
     Dim ws As Worksheet: Set ws = ActiveSheet
 
     ' 0. 헤더 자동 생성
@@ -11,11 +28,14 @@ Public Sub FormatRPAScript_Final()
     Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.count, 2).End(xlUp).Row
     Dim R As Long, pureCmd As String, depth As Integer: depth = 0
 
-    Application.ScreenUpdating = False
-
     ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
-    If lastRow < ws.Rows.count Then
-        ws.Range(ws.Cells(lastRow + 1, 1), ws.Cells(ws.Rows.count, 6)).Clear
+    Dim clearLastRow As Long
+    Dim clearCol As Long
+    For clearCol = 1 To 6
+        clearLastRow = Application.Max(clearLastRow, ws.Cells(ws.Rows.count, clearCol).End(xlUp).Row)
+    Next clearCol
+    If clearLastRow > lastRow Then
+        ws.Range(ws.Cells(lastRow + 1, 1), ws.Cells(clearLastRow, 6)).Clear
     End If
 
     ' 1. 기본 스타일 및 명확한 격자 초기화
@@ -81,7 +101,24 @@ Public Sub FormatRPAScript_Final()
 NextRow:
                     Next R
 
-                    Application.ScreenUpdating = True
+CleanExit:
+                    Application.Calculation = prevCalculation
+                    Application.EnableEvents = prevEnableEvents
+                    Application.ScreenUpdating = prevScreenUpdating
+                    Exit Sub
+
+CleanFail:
+                    failNumber = Err.Number
+                    failSource = Err.Source
+                    failDescription = Err.Description
+                    failHelpFile = Err.HelpFile
+                    failHelpContext = Err.HelpContext
+                    On Error Resume Next
+                    Application.Calculation = prevCalculation
+                    Application.EnableEvents = prevEnableEvents
+                    Application.ScreenUpdating = prevScreenUpdating
+                    On Error GoTo 0
+                    Err.Raise failNumber, failSource, failDescription, failHelpFile, failHelpContext
 End Sub
 
 ' [신규] 헤더가 없으면 생성
