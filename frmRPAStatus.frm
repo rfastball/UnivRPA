@@ -15,6 +15,7 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 
 
+
 Option Explicit
 
 ' [API] 화면 해상도 및 작업 영역 감지
@@ -116,9 +117,9 @@ Public Sub InitStatus(total As Long)
     lblProgress.Caption = "Ready (Total: " & total & ")"
 End Sub
 
-Public Sub UpdateInfo(curLine As Long, curLoop As Long, detailText As String)
-    ' 진행률과 루프 횟수 표시
-    lblProgress.Caption = "Line " & curLine & "/" & m_TotalLines & " (Loop " & curLoop & ")"
+Public Sub UpdateInfo(curLine As Long, detailText As String)
+    ' 진행률 표시
+    lblProgress.Caption = "Line " & curLine & "/" & m_TotalLines
     ' 실행중인 열 정보 (명령어 + 파라미터)
     lblCmd.Caption = detailText
     Me.Repaint

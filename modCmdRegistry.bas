@@ -52,6 +52,7 @@ End Enum
 ' [디스패치 반환 코드] 모든 모듈/핸들러 클래스가 공유 (CMD_NOT_HANDLED는 폐기됨)
 Public Const CMD_NEXT_LINE As Long = 0   ' 성공 -> 다음 줄
 Public Const CMD_ERROR As Long = -1      ' 실패 -> 중단
+Public Const CMD_HALT As Long = -2       ' 의도된 종료
 
 ' [레지스트리 저장소] 정식명(String) -> CmdDef
 Private m_reg As Object

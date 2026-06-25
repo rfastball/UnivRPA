@@ -43,7 +43,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             modActions.Action_Notify durMs, 64, nMsg
 
         Case "EXIT"
-            ICommand_Execute = CMD_ERROR
+            ICommand_Execute = CMD_HALT
 
         Case Else
             ICommand_Execute = CMD_ERROR
@@ -52,6 +52,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    modActions.Action_ShowNotification "[에러] SYSTEM " & cmd & ": " & Err.Description, 3
+    ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function

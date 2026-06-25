@@ -33,7 +33,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "RETURN"
             Dim retLine As Long
             retLine = modContext.PopStack()
-            If retLine > 0 Then ICommand_Execute = retLine Else ICommand_Execute = CMD_ERROR
+            If retLine > 0 Then ICommand_Execute = retLine Else ICommand_Execute = CMD_HALT
 
          Case "IF"
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
@@ -143,6 +143,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    modActions.Action_ShowNotification "[에러] FLOW " & cmd & ": " & Err.Description, 3
+    ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function

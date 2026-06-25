@@ -21,165 +21,167 @@ Private m_arrMain As Variant
 '==============================================================================
 ' 1. Main Entry Point (RunRPA)
 '==============================================================================
+Private Enum eControlSignal
+    ControlContinue = 0
+    ControlPause = 1
+    ControlAbort = 2
+End Enum
+
 Sub RunRPA()
 Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
-    Dim tb1 As ListObject
+    On Error GoTo FatalError
+
     Dim currentLine As Long
     Dim nextLine As Long
-    Dim currentLoop As Long
-    ' [wsSource] 실행 시점의 시트를 박제할 변수 추가
     Dim wsSource As Worksheet
     Dim rngTarget As Range
     Dim totalLines As Long
-
-    ' [복구용 변수 추가]
     Dim pureCmd As String
-    Dim depth As Long
+    Dim finalMessage As String
 
-    ' [Context] 1. 실행 환경 초기화
+    finalMessage = "매크로가 종료되었습니다."
     modContext.InitContext
-    currentLoop = 0
 
     '==========================================================
     ' [핵심: 스냅샷] 버튼을 누른 "바로 그 시트"를 고정합니다.
     ' 이후 모든 로직은 ActiveSheet가 아닌 wsSource를 바라봅니다.
     '==========================================================
     Set wsSource = ActiveSheet
-
-    ' [데이터 로드] wsSource를 기준으로 영역을 잡습니다.
-    On Error Resume Next
-    ' 이제 실행 중에 포커스가 바뀌어도 wsSource는 원래 시트를 잡고 있습니다.
     Set rngTarget = wsSource.Range("A1").CurrentRegion
-    On Error GoTo 0
 
-        ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우
-        If rngTarget Is Nothing Or rngTarget.Rows.count < 2 Then
-            MsgBox "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", vbExclamation
-            modContext.ResetContext
-         Exit Sub
+    ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우
+    If rngTarget Is Nothing Then
+        modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
+        GoTo CleanUp
+    End If
+
+    If rngTarget.Rows.count < 2 Then
+        modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
+        GoTo CleanUp
+    End If
+
+    ' [수정] 헤더(1행) 제외: 실제 데이터는 2행부터 시작
+    Set rngTarget = rngTarget.offset(1, 0).Resize(rngTarget.Rows.count - 1)
+
+    ' [중요] 2차원 배열로 메모리에 완전히 적재 (메모리 맵 생성)
+    ' 이후 루프 안에서는 Cells나 Range를 쓰지 말고 오직 m_arrMain만 써야 합니다.
+    m_arrMain = rngTarget.value
+    totalLines = UBound(m_arrMain, 1)
+
+    ' [New] 0. 라벨 프리 스캔 (Pre-Scan)
+    ' 메모리에 올라온 m_arrMain 지도를 보고 미리 위치를 파악합니다.
+    PreScanLabels m_arrMain, totalLines
+
+    ' [UI] 상태 표시 폼 로드
+    frmRPAStatus.Show vbModeless
+    frmRPAStatus.MoveToBottomRight ' [Fix] 폼이 뜬 직후 위치 강제 이동
+    frmRPAStatus.InitStatus totalLines
+
+    modContext.LogStatus "매크로 실행 중..."
+    currentLine = 1
+
+    Do While currentLine >= 1 And currentLine <= totalLines
+        If CheckControlSignals() = ControlAbort Then
+            finalMessage = "매크로가 중단되었습니다."
+            GoTo CleanUp
         End If
 
-        ' [수정] 헤더(1행) 제외: 실제 데이터는 2행부터 시작
-        Set rngTarget = rngTarget.offset(1, 0).Resize(rngTarget.Rows.count - 1)
+        '----------------------------------------------------------
+        ' [명령어 파싱 및 상태 업데이트]
+        '----------------------------------------------------------
+        Dim fullCmdText As String
+        fullCmdText = m_arrMain(currentLine, 2)
+        pureCmd = UCase(Trim(Replace(fullCmdText, ">", "")))
 
-        ' [중요] 2차원 배열로 메모리에 완전히 적재 (메모리 맵 생성)
-        ' 이후 루프 안에서는 Cells나 Range를 쓰지 말고 오직 m_arrMain만 써야 합니다.
-        m_arrMain = rngTarget.value
-        totalLines = UBound(m_arrMain, 1)
+        ' [UI] 표시할 상세 정보 조합 (명령어 + 파라미터)
+        Dim stepInfo As String
+        stepInfo = pureCmd & " " & m_arrMain(currentLine, 3) & " " & m_arrMain(currentLine, 4) & " " & m_arrMain(currentLine, 5)
 
-        ' [New] 0. 라벨 프리 스캔 (Pre-Scan)
-        ' 메모리에 올라온 m_arrMain 지도를 보고 미리 위치를 파악합니다.
-        PreScanLabels m_arrMain, totalLines
+        ' [UI] 폼 업데이트
+        frmRPAStatus.UpdateInfo currentLine, stepInfo
+        DoEvents
 
-        ' [UI] 상태 표시 폼 로드
-        frmRPAStatus.Show vbModeless
-        frmRPAStatus.MoveToBottomRight ' [Fix] 폼이 뜬 직후 위치 강제 이동
-        frmRPAStatus.InitStatus totalLines
+        '----------------------------------------------------------
+        ' [액션 실행 및 반환 계약 해석]
+        '----------------------------------------------------------
+        nextLine = ExecuteSmartAction(m_arrMain, currentLine)
 
-        ' [재시작 포인트]
-RestartPoint:
-        Do
-            ' [Context] 실행 상태 확인 (Loop 시작 전)
-            If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then GoTo ExitMacro
+        Select Case nextLine
+            Case CMD_NEXT_LINE
+                currentLine = NextPointer(currentLine, nextLine)
 
-                currentLoop = currentLoop + 1
-                modContext.LogStatus "▶ 매크로 실행 중... (" & currentLoop & " 회차)"
+            Case CMD_HALT
+                GoTo CleanUp
 
-                ' 줄 번호 초기화
-                currentLine = 1
+            Case CMD_ERROR
+                modActions.Action_ShowNotification "[에러] 라인 " & currentLine & " / " & pureCmd, 3
+                GoTo CleanUp
 
-                ' [내부 루프] 한 줄씩 실행
-                Do While currentLine <= totalLines
+            Case Is > 0
+                currentLine = NextPointer(currentLine, nextLine)
 
-                    ' 1. ESC 체크 (비상 탈출)
-                    If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then GoTo ExitMacro
+            Case Else
+                modActions.Action_ShowNotification "[에러] 알 수 없는 반환 코드: " & nextLine, 3
+                GoTo CleanUp
+        End Select
 
-                        ' 2. 일시정지(~) 체크 및 대기 로직
-                        If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then
-                            ' [WinAPI] 메시지박스 타임아웃 사용 (3초 후 자동 닫힘 Or 사용자 확인)
-                            modActions.Action_ShowNotification "일시정지됨. [Pause] 재시작, [ESC] 종료", 3
-                            modWinAPI.Sleep 500
+        DoEvents
+    Loop
 
-                            Do
-                                ' 다시 Pause 키를 누르면 재시작(처음부터)
-                                If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then
-                                    modWinAPI.Sleep 200
-                                    modContext.LogStatus "처음부터 다시 시작합니다."
-                                    GoTo RestartPoint
-                                    End If
+CleanUp:
+    On Error Resume Next
+    Unload frmRPAStatus
+    modContext.ResetContext
+    modActions.Action_ShowNotification finalMessage, 1
+    On Error GoTo 0
+    Exit Sub
 
-                                    ' ESC 누르면 완전 종료
-                                    If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then GoTo ExitMacro
-
-                                        DoEvents
-                                        modWinAPI.Sleep 50
-                                    Loop
-                                End If
-
-                                '----------------------------------------------------------
-                                ' [명령어 파싱 및 상태 업데이트]
-                                '----------------------------------------------------------
-                                ' 현재 실행할 행의 정보를 미리 파악 (B열 데이터 기준)
-                                Dim fullCmdText As String
-                                fullCmdText = m_arrMain(currentLine, 2)
-                                pureCmd = UCase(Trim(Replace(fullCmdText, ">", "")))
-                                depth = Len(fullCmdText) - Len(Replace(fullCmdText, ">", ""))
-
-                                ' [UI] 표시할 상세 정보 조합 (명령어 + 파라미터)
-                                Dim stepInfo As String
-                                stepInfo = pureCmd & " " & m_arrMain(currentLine, 3) & " " & m_arrMain(currentLine, 4) & " " & m_arrMain(currentLine, 5)
-
-                                ' [UI] 폼 업데이트
-                                frmRPAStatus.UpdateInfo currentLine, currentLoop, stepInfo
-                                DoEvents
-
-                                '----------------------------------------------------------
-                                ' 3. 액션 실행 및 에러 감시
-                                '----------------------------------------------------------
-                                On Error Resume Next ' 런타임 에러 발생 시 중단 방지
-                                nextLine = ExecuteSmartAction(m_arrMain, currentLine)
-
-                                ' 에러 체크 (VBA 에러 혹은 커스텀 에러 코드 -99 가정)
-                                If Err.Number <> 0 Or nextLine = -99 Then
-                                    ' 무인 환경: 비차단 알림 후 안전 종료 (모달 정지 금지)
-                                    modActions.Action_ShowNotification _
-                                    "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & Err.Description, 3
-
-                                    Err.Clear
-                                    On Error GoTo 0
-                                        GoTo ExitMacro ' 에러 발생 시 안전하게 종료
-                                        End If
-                                        On Error GoTo 0
-
-
-                                            If nextLine = -1 Then GoTo ExitMacro
-
-                                                ' 4. 액션 직후 체크
-                                                If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then GoTo ExitMacro
-                                                    If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then DoEvents
-
-                                                        ' 5. 분기 처리 (Goto, Call, RETURN 등)
-                                                        If nextLine > 0 Then
-                                                            currentLine = nextLine
-                                                            DoEvents
-                                                        Else
-                                                            currentLine = currentLine + 1
-                                                        End If
-
-                                                        DoEvents
-                                                    Loop
-                                                Loop
-
-ExitMacro:
-                                                ' [UI] 폼 종료
-                                                Unload frmRPAStatus
-
-                                                ' [Context] 종료 처리 (스택/메모리 해제, 상태바 복귀)
-                                                modContext.ResetContext
-
-                                                ' 완료 알림
-                                                modActions.Action_ShowNotification "매크로가 종료되었습니다.", 1
+FatalError:
+    modActions.Action_ShowNotification _
+        "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & Err.Description, 3
+    finalMessage = "매크로가 종료되었습니다."
+    Resume CleanUp
 End Sub
+
+Private Function CheckControlSignals() As eControlSignal
+    CheckControlSignals = ControlContinue
+
+    If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then
+        CheckControlSignals = ControlAbort
+        Exit Function
+    End If
+
+    If Not modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then Exit Function
+
+    CheckControlSignals = ControlPause
+    modActions.Action_ShowNotification "일시정지됨. [Pause] 재개, [ESC] 종료", 3
+    modWinAPI.Sleep 500
+
+    Do
+        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then
+            CheckControlSignals = ControlAbort
+            Exit Function
+        End If
+
+        If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then
+            modWinAPI.Sleep 200
+            modContext.LogStatus "일시정지를 해제하고 현재 줄에서 재개합니다."
+            CheckControlSignals = ControlContinue
+            Exit Function
+        End If
+
+        DoEvents
+        modWinAPI.Sleep 50
+    Loop
+End Function
+
+Private Function NextPointer(ByVal curLine As Long, ByVal retCode As Long) As Long
+    If retCode = CMD_NEXT_LINE Then
+        NextPointer = curLine + 1
+    Else
+        NextPointer = retCode
+    End If
+End Function
 
 ' [진짜 엔진이 호출하는 입구]
 ' 로그 기록 ON/OFF 용
@@ -202,7 +204,8 @@ Public Function ExecuteSmartAction(arr As Variant, R As Long) As Long
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
+    ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
 End Function
 
@@ -249,7 +252,8 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
+    ExecuteSmartAction_Core = CMD_ERROR
     Resume CleanUp
 End Function
 
@@ -325,7 +329,7 @@ Private Function ResolveParam(ByVal rawVal As String) As String
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.ResolveParam", Err.Description
     Resume CleanUp
 End Function
 
@@ -364,7 +368,7 @@ Private Function ResolveToken(ByVal inner As String) As String
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.ResolveToken", Err.Description
     Resume CleanUp
 End Function
 
@@ -382,7 +386,7 @@ Private Function ResolvePixelToken(ByVal coordText As String) As String
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.ResolvePixelToken", Err.Description
     Resume CleanUp
 End Function
 
@@ -413,7 +417,7 @@ ContinueLoop:
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.PreScanLabels", Err.Description
     Resume CleanUp
 End Sub
 ' [엔진 서비스] 블록의 짝을 찾는 통합 탐색 함수 (m_arrMain 의존 -> modEngine 보유)
@@ -502,7 +506,7 @@ NextRow:
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.FindBlockPair", Err.Description
     Resume CleanUp
 End Function
 
@@ -516,7 +520,7 @@ Public Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 A
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.CheckIfSyntax", Err.Description
     Resume CleanUp
 End Function
 
@@ -576,7 +580,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modEngine.ResolveSelectTarget", Err.Description
     Resume CleanUp
 End Function
 

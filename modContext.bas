@@ -108,7 +108,7 @@ Public Function PopStack() As Long
         PopStack = CallStack.item(CallStack.count)
         CallStack.Remove CallStack.count
     Else
-        LogError "Call Stack Underflow: 돌아갈 곳이 없습니다. (RETURN 매칭 오류)"
+        LogStatus "빈 콜스택 RETURN: 복귀할 곳이 없어 실행을 종료합니다."
         PopStack = 0
     End If
 End Function

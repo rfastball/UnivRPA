@@ -21,6 +21,28 @@ Private Const TIMEOUT_DEFAULT As Long = 30000
 ' = "호버의 정의" = 커서 진입 후 이 시간 내 전이. 늘리면 클릭반응을 호버로 오인하기 시작함.
 Private Const HOVER_SETTLE_MS As Long = 150
 
+Private Function WaitIfPaused() As Boolean
+    If Not IsKeyDown(VK_PAUSE_RESUME) Then Exit Function
+
+    Action_ShowNotification "일시정지됨. [Pause] 재개, [ESC] 종료", 3
+    Sleep 500
+
+    Do
+        If IsKeyDown(VK_ESCAPE) Then
+            WaitIfPaused = True
+            Exit Function
+        End If
+
+        If IsKeyDown(VK_PAUSE_RESUME) Then
+            Sleep 200
+            Exit Function
+        End If
+
+        DoEvents
+        Sleep DELAY_MICRO
+    Loop
+End Function
+
 '==============================================================================
 ' 1. Core Utilities (핵심 유틸리티)
 '==============================================================================
@@ -32,14 +54,14 @@ Public Sub BetterWait(ByVal totalWait As Long)
     
     If totalWait < stepWait Then
         If IsKeyDown(VK_ESCAPE) Then Exit Sub
-        If IsKeyDown(VK_PAUSE_RESUME) Then Exit Sub
+        If WaitIfPaused() Then Exit Sub
         Sleep totalWait
         DoEvents
         GoTo CleanUp
     End If
     For i = 1 To totalWait \ stepWait
         If IsKeyDown(VK_ESCAPE) Then Exit Sub
-        If IsKeyDown(VK_PAUSE_RESUME) Then Exit Sub
+        If WaitIfPaused() Then Exit Sub
         Sleep stepWait
         DoEvents
     Next i
@@ -47,7 +69,7 @@ Public Sub BetterWait(ByVal totalWait As Long)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.BetterWait", Err.Description
     Resume CleanUp
 End Sub
 
@@ -63,7 +85,7 @@ Public Sub Action_InputText(ByVal txt As String, ByVal delayMs As Long)
     
     For i = 1 To Len(txt)
         If IsKeyDown(VK_ESCAPE) Then Exit Sub
-        If IsKeyDown(VK_PAUSE_RESUME) Then Exit Sub
+        If WaitIfPaused() Then Exit Sub
         charCode = AscW(Mid(txt, i, 1))
         
         ' 1. Key Down (Unicode Flag 사용)
@@ -78,7 +100,7 @@ Public Sub Action_InputText(ByVal txt As String, ByVal delayMs As Long)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_InputText", Err.Description
     Resume CleanUp
 End Sub
 
@@ -99,7 +121,7 @@ Public Sub Action_SmartType(delayParam As Long, text As String)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_SmartType", Err.Description
     Resume CleanUp
 End Sub
 
@@ -114,7 +136,7 @@ Public Sub Action_PressKey(ByVal vKey As Variant)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_PressKey", Err.Description
     Resume CleanUp
 End Sub
 
@@ -136,7 +158,7 @@ Public Sub Action_PressCombo(k1 As Variant, k2 As Variant)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_PressCombo", Err.Description
     Resume CleanUp
 End Sub
 
@@ -196,7 +218,7 @@ Public Sub MoveAndSettle(ByVal x As Long, ByVal y As Long)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.MoveAndSettle", Err.Description
     Resume CleanUp
 End Sub
 
@@ -216,7 +238,7 @@ Public Sub FireClick(Optional ByVal isRightClick As Boolean = False)
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.FireClick", Err.Description
     Resume CleanUp
 End Sub
 
@@ -230,7 +252,7 @@ Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal is
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_MouseClick", Err.Description
     Resume CleanUp
 End Sub
 
@@ -264,7 +286,7 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_ClickSync", Err.Description
     Resume CleanUp
 End Function
 
@@ -307,7 +329,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_Wait", Err.Description
     Resume CleanUp
 End Function
 
@@ -344,7 +366,7 @@ Public Function Action_WaitForColor(ByVal x As Long, ByVal y As Long, ByVal hexC
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_WaitForColor", Err.Description
     Resume CleanUp
 End Function
 
@@ -371,7 +393,7 @@ Public Function Action_Assert(x As Long, y As Long, condition As String) As Bool
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_Assert", Err.Description
     Resume CleanUp
 End Function
 
@@ -418,7 +440,7 @@ Public Function Action_FocusWindow(ByVal partialTitle As String) As Boolean
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_FocusWindow", Err.Description
     Resume CleanUp
 End Function
 
@@ -535,7 +557,7 @@ Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, By
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_CheckCondition", Err.Description
     Resume CleanUp
 End Function
 
@@ -549,7 +571,7 @@ Public Sub Action_ShowNotification(ByVal msg As String, Optional ByVal durationS
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Debug.Print "[ERROR] Action_ShowNotification: " & Err.Description
     Resume CleanUp
 End Sub
 ' [modActions] 사용자 알림 (ms 단위 준수)
@@ -574,6 +596,6 @@ Public Sub Action_Notify(ByVal durationMs As Long, ByVal iconType As Long, ByVal
 CleanUp:
     Exit Sub
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    Err.Raise Err.Number, "modActions.Action_Notify", Err.Description
     Resume CleanUp
 End Sub

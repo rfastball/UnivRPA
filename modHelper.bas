@@ -1,12 +1,12 @@
 ﻿Attribute VB_Name = "modHelper"
 '==============================================================================
-' [UI 설계 가이드] UserForm1 구성 명세서
+' [UI 설계 가이드] frmCapture 구성 명세서
 '==============================================================================
 ' ※ 이 코드를 실행하기 위해 VBE에서 [삽입] -> [사용자 정의 폼]을 생성하고
 '    아래 속성(Properties)에 맞춰 컨트롤을 배치하십시오.
 '
 ' 1. UserForm (폼 자체)
-'    - (이름)       : UserForm1
+'    - (이름)       : frmCapture
 '    - Caption      : 매크로 헬퍼
 '    - ShowModal    : False  ★중요★ (True면 루프가 돌지 않아 먹통이 됨)
 '    - Height / Width : 적당히 작게 (예: 150 / 200) - 화면 구석에 띄우기 위함
@@ -64,20 +64,20 @@ Sub StartHUD_Final()
     Dim isAutoMode As Boolean ' 자동 기록 모드(체크박스) 여부
     
     ' 유저폼 초기화
-    UserForm1.chkContinuous.Caption = "자동 입력 모드 (Auto-Fill)"
-    UserForm1.chkContinuous.value = False ' 기본은 수동
-    UserForm1.Show
-    UserForm1.Caption = "매크로 헬퍼"
+    frmCapture.chkContinuous.Caption = "자동 입력 모드 (Auto-Fill)"
+    frmCapture.chkContinuous.value = False ' 기본은 수동
+    frmCapture.Show
+    frmCapture.Caption = "매크로 헬퍼"
     
     isRecorded = False
     
     ' 유저폼 실행 중 루프
-    Do While UserForm1.Visible
+    Do While frmCapture.Visible
         DoEvents
         
         ' 1. 상태 및 좌표 확인
         capsOn = (GetKeyState(VK_CAPITAL) And 1) = 1
-        isAutoMode = UserForm1.chkContinuous.value
+        isAutoMode = frmCapture.chkContinuous.value
         
         ' 2. Caps Lock이 켜져 있는 경우 (캡처 시도)
         If capsOn Then
@@ -109,9 +109,9 @@ Sub StartHUD_Final()
                         .offset(1, 0).Select
                     End With
                     
-                    UserForm1.Label1.Caption = "▶ 시트 입력 완료! ◀" & vbCrLf & _
+                    frmCapture.Label1.Caption = "▶ 시트 입력 완료! ◀" & vbCrLf & _
                                                "X:" & pt.x & " Y:" & pt.y & " CLR: " & hexColor
-                    UserForm1.BackColor = RGB(200, 255, 200) ' 녹색 피드백
+                    frmCapture.BackColor = RGB(200, 255, 200) ' 녹색 피드백
                     
                 Else
                     ' [B] 수동 모드: 클립보드 복사만
@@ -120,9 +120,9 @@ Sub StartHUD_Final()
                     DataObj.SetText strInfo
                     DataObj.PutInClipboard
                     
-                    UserForm1.Label1.Caption = "▶ 클립보드 복사됨 ◀" & vbCrLf & _
+                    frmCapture.Label1.Caption = "▶ 클립보드 복사됨 ◀" & vbCrLf & _
                                                "(붙여넣기 하세요)"
-                    UserForm1.BackColor = RGB(255, 200, 200) ' 붉은색 피드백
+                    frmCapture.BackColor = RGB(255, 200, 200) ' 붉은색 피드백
                 End If
                 
                 ' 기록 완료 플래그 세움 (Caps Lock 끌 때까지 재실행 방지)
@@ -142,12 +142,12 @@ Sub StartHUD_Final()
             ReleaseDC 0, hdc
             hexColor = Right("000000" & hex(pColor), 6)
             
-            UserForm1.BackColor = &H8000000F ' 기본색 복귀
-            UserForm1.Label1.Caption = "탐색 중..." & vbCrLf & _
+            frmCapture.BackColor = &H8000000F ' 기본색 복귀
+            frmCapture.Label1.Caption = "탐색 중..." & vbCrLf & _
                                        "X: " & pt.x & vbCrLf & _
                                        "Y: " & pt.y & vbCrLf & _
                                        "CLR: " & hexColor
-            UserForm1.Label2.BackColor = pColor
+            frmCapture.Label2.BackColor = pColor
         End If
         
         Sleep 50

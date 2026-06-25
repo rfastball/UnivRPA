@@ -15,6 +15,6 @@ Option Explicit
 '   R    = 현재 줄 번호
 '   args = ParamSpec.ResolveMode에 따라 디스패처가 미리 디코드한 슬롯(1..3)
 '          RAW 슬롯은 원본, RESOLVE 슬롯은 토큰 치환본
-'   반환 = CMD_NEXT_LINE(0) / 양수(점프 줄) / CMD_ERROR(-1)
+'   반환 = CMD_NEXT_LINE(0) / 양수(점프 줄) / CMD_HALT(-2) / CMD_ERROR(-1)
 Public Function Execute(ByVal cmd As String, ByVal R As Long, ByRef args() As String) As Long
 End Function

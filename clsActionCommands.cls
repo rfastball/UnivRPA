@@ -48,6 +48,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 CleanUp:
     Exit Function
 ErrHandler:
-    MsgBox "Error " & Err.Number & ": " & Err.Description
+    modActions.Action_ShowNotification "[에러] ACTION " & cmd & ": " & Err.Description, 3
+    ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function
