@@ -537,7 +537,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
                 If UCase(caseVal) = "ELSE" Or caseVal = "" Then
                     fallbackLine = scanR
                 Else
-                    If modActions.Action_CheckCondition(selVal, "==", caseVal) Then
+                    If modActions.Action_CheckCondition(selVal, "EQ", caseVal) Then
                         ResolveSelectTarget = scanR + 1
                      GoTo CleanUp
                     End If

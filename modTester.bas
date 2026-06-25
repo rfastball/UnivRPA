@@ -197,17 +197,17 @@ Sub Run_System_SelfDiagnosis()
 
     '==========================================================================
     ' [Test 8] IF (참 갈래는 단일 라인으로 검증: 다음 줄 반환)
-    '   IF {$PIXEL:x,y} == <현재색>  -> 참 -> 0 반환 (m_arrMain 불필요)
+    '   IF {$PIXEL:x,y} EQ <현재색>  -> 참 -> 0 반환 (m_arrMain 불필요)
     '==========================================================================
     Debug.Print "--- [Test 8] IF (true branch) ---"
 
-    Call MakeCmd(arrCmd, 1, "IF", "{$PIXEL:" & screenX & "," & screenY & "}", "==", actualColor)
+    Call MakeCmd(arrCmd, 1, "IF", "{$PIXEL:" & screenX & "," & screenY & "}", "EQ", actualColor)
     nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
 
     If nextLine = 0 Then
-        LogPass "IF == (true -> next line)"
+        LogPass "IF EQ (true -> next line)"
     Else
-        LogFail "IF ==", "0 (next)", "Line=" & nextLine: failCount = failCount + 1
+        LogFail "IF EQ", "0 (next)", "Line=" & nextLine: failCount = failCount + 1
     End If
 
     '==========================================================================
@@ -253,25 +253,46 @@ Sub Run_System_SelfDiagnosis()
 
     '==========================================================================
     ' [Test 11] 조건 연산자 단위 검증 (Action_CheckCondition 직접 호출)
-    '   == 정확비교 / LIKE 패턴 / STARTS / ENDS / CONTAINS / 맨 '=' 금지
+    '   EQ 정확비교 / LIKE 패턴 / STARTS / ENDS / CONTAINS / 맨 '=' 금지
+    '   Excel 셀에는 ==를 그대로 입력할 수 없고, 사용하려면 '==로 입력해야 한다.
     '==========================================================================
     Debug.Print "--- [Test 11] Condition operators ---"
 
     AssertCond "num >", "5", ">", "3", True, failCount
-    AssertCond "== exact", "abc", "==", "abc", True, failCount
-    AssertCond "== star literal", "abc", "==", "ab*", False, failCount   ' * 는 리터럴
+    AssertCond "EQ exact", "abc", "EQ", "abc", True, failCount
+    AssertCond "EQ star literal", "abc", "EQ", "ab*", False, failCount   ' * 는 리터럴
+    AssertCond "== compatibility", "abc", "==", "abc", True, failCount
     AssertCond "LIKE pattern", "abc", "LIKE", "a*", True, failCount
     AssertCond "STARTS", "abcdef", "STARTS", "abc", True, failCount
     AssertCond "ENDS", "abcdef", "ENDS", "def", True, failCount
     AssertCond "CONTAINS", "abcdef", "CONTAINS", "cd", True, failCount
     AssertCond "bare = banned", "5", "=", "5", False, failCount          ' 맨 '=' 금지 -> False
+    AssertCond "unknown operator", "5", "EQUALS", "5", False, failCount
+
+    If modDevTools.ValidateLine("IF", "abc", "EQ", "abc") Then
+        LogPass "ValidateLine EQ"
+    Else
+        LogFail "ValidateLine EQ", "True", "False": failCount = failCount + 1
+    End If
+
+    If modDevTools.ValidateLine("IF", "abc", "==", "abc") Then
+        LogPass "ValidateLine == compatibility"
+    Else
+        LogFail "ValidateLine ==", "True", "False": failCount = failCount + 1
+    End If
+
+    If Not modDevTools.ValidateLine("IF", "abc", "EQUALS", "abc") Then
+        LogPass "ValidateLine unknown operator"
+    Else
+        LogFail "ValidateLine unknown operator", "False", "True": failCount = failCount + 1
+    End If
 
     '==========================================================================
     ' [Test 12] INC / DEC (정수 read-modify-write, {$LOOP} 비대칭 닫힘)
     '==========================================================================
     Debug.Print "--- [Test 12] INC / DEC ---"
 
-    ' 미정의 변수 INC -> 1 (missing==empty -> 0 +1)
+    ' 미정의 변수 INC -> 1 (missing empty -> 0 +1)
     Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
     modEngine.ExecuteSmartAction arrCmd, 1
     If modContext.GetVar("n") = "1" Then

@@ -171,11 +171,11 @@ Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As 
 
     ValidateLine = True
 
-    ' 2. 조건 연산자: 맨 '=' 금지 (== 강제)
-    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사 ? 데이터로 일반화
+    ' 2. 조건 연산자: 허용 목록 기준
+    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사
     If Not def.p2 Is Nothing Then
         If def.p2.IsRaw Then
-            If Trim(CStr(p2)) = "=" Then ValidateLine = False
+            If Not modActions.IsConditionOperator(CStr(p2)) Then ValidateLine = False
         End If
     End If
 End Function

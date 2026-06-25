@@ -119,7 +119,7 @@ Negative Scope 모듈에 대해 "시그니처 보존 가시성 승격(Private→
 
 modDevTools.ValidateLine
 → 소비자: modScriptAssist.ValidateCommandCell
-→ 사유: IF/WHILE 연산자 슬롯의 "맨 '=' 금지(== 강제)" 검사를 엔진과 단일 기준으로 공유. GetCmdDef 단독 호출로는 이 뉘앙스가 누락됨.
+→ 사유: IF/WHILE 연산자 슬롯의 허용 연산자 검사를 엔진과 단일 기준으로 공유. GetCmdDef 단독 호출로는 이 뉘앙스가 누락됨.
 
 modDevTools.EnsureHeaders
 → 소비자: modScriptAssist.SetupScriptSheet
@@ -325,7 +325,7 @@ COMMAND 수정 후 ValidateCommandCell(Target)이 다음 순서로 판정한다.
 
 미등록 / 위반 명령어 (오류)
 
-예: CLCIK / FOUCS / ENF_IF / IF의 맨 '=' 위반
+예: CLCIK / FOUCS / ENF_IF / IF의 미허용 연산자 위반
 
 → Assist Note 부착 (오류 마커)
 → 오타 후보 계산
@@ -468,9 +468,9 @@ Note/StatusBar만 조작하므로 SheetChange가 재귀 발화하지 않는다.
 * 사용자 Note가 점유한 COMMAND 셀에서는 Assist가 Note를 덮지 않고 StatusBar로만 오류를 알린다.
 * SheetChange가 다중 셀 입력(열 붙여넣기 등)에서도 누락 없이 동작한다.
 * 레지스트리에 새 명령어를 추가하면 검증·힌트·오타 후보가 자동 반영된다.
-* modDevTools의 함수 본문은 수정하지 않는다. ValidateLine / EnsureHeaders의 Private→Public 가시성 승격만 예외로 허용하며, 본문·시그니처는 보존된다.
+* modDevTools.ValidateLine은 IF/WHILE 연산자 슬롯을 허용 목록 기준으로 검사한다.
 * IsBlockStarter / IsBlockEnder는 승격하지 않고 Private을 유지한다.
-* modCmdRegistry, modEngine, modContext, modActions, modHelper 어느 줄도 수정하지 않는다.
+* 조건 연산자 개선은 modActions의 허용 목록과 modEngine의 내부 비교 호출에 반영한다.
 
 ⸻
 

@@ -507,8 +507,9 @@ Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, By
     op = UCase(Trim(op))
 
     Select Case op
-        ' [Equal] 정확히 같다 (== : *, ? 도 리터럴로 취급,  아님)
-        Case "=="
+        ' [Equal] 정확히 같다 (EQ 권장, *, ? 도 리터럴로 취급)
+        ' Excel 셀에는 ==를 그대로 입력할 수 없고, 사용하려면 '==로 입력해야 한다.
+        Case "EQ", "=="
             If isNum Then
                 Action_CheckCondition = (d1 = d2)
             Else
@@ -571,6 +572,13 @@ CleanUp:
 ErrHandler:
     Err.Raise Err.Number, "modActions.Action_CheckCondition", Err.Description
     Resume CleanUp
+End Function
+
+Public Function IsConditionOperator(ByVal op As String) As Boolean
+    Select Case UCase$(Trim$(op))
+        Case "EQ", "==", "!=", ">", "<", ">=", "<=", "LIKE", "STARTS", "ENDS", "CONTAINS"
+            IsConditionOperator = True
+    End Select
 End Function
 
 ' [알림 표시] 비차단형 메시지박스 (실행 흐름을 막지 않음)
