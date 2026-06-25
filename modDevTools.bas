@@ -28,6 +28,12 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
 
     Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.count, 2).End(xlUp).Row
     Dim R As Long, pureCmd As String, depth As Integer: depth = 0
+    Dim baseDepths() As Long
+    Dim subDepths() As Long
+    Dim subStartRows As Object
+    Dim subEndRows As Object
+    Dim invalidRows As Object
+    Call AnalyzeSubroutineFlow(ws, lastRow, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
 
     ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
     Dim clearLastRow As Long
@@ -38,6 +44,8 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     If clearLastRow > lastRow Then
         ws.Range(ws.Cells(lastRow + 1, 1), ws.Cells(clearLastRow, 6)).Clear
     End If
+
+    If lastRow < 2 Then GoTo CleanExit
 
     ' 1. 기본 스타일 및 명확한 격자 초기화
     With ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 6))
@@ -85,6 +93,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                 ' [수정] Else 문 들여쓰기 보정 (출력 시에만 깊이 -1 적용)
                 Dim printDepth As Integer: printDepth = depth
                 If pureCmd = "ELSE" Or pureCmd = "CASE" Then printDepth = IIf(depth > 0, depth - 1, 0)
+                printDepth = printDepth + subDepths(R)
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
                     ws.Cells(R, 2).value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
@@ -92,9 +101,14 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                     ' [추가] 문법 및 파라미터 검사
                     Dim isValid As Boolean
                     isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
+                    If invalidRows.exists(CStr(R)) Then isValid = False
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
-                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth, isValid)
+                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid)
+                    Call ApplySubroutineBoundaryStyle(ws.Cells(R, 2).Resize(1, 4), _
+                                                       subStartRows.exists(CStr(R)), _
+                                                       subEndRows.exists(CStr(R)), _
+                                                       Not isValid)
 
                     ' 4. 깊이 증가
                     If IsBlockStarter(pureCmd) Then depth = depth + 1
@@ -164,6 +178,25 @@ Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As 
             If Trim(CStr(p2)) = "=" Then ValidateLine = False
         End If
     End If
+End Function
+
+Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+    ValidateSheetFlowAt = True
+    If ws Is Nothing Then Exit Function
+    If rowNum < 2 Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.count, 2).End(xlUp).Row
+    If rowNum > lastRow Then Exit Function
+
+    Dim baseDepths() As Long
+    Dim subDepths() As Long
+    Dim subStartRows As Object
+    Dim subEndRows As Object
+    Dim invalidRows As Object
+    Call AnalyzeSubroutineFlow(ws, lastRow, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
+
+    ValidateSheetFlowAt = Not invalidRows.exists(CStr(rowNum))
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
@@ -261,6 +294,237 @@ Private Function ColorOf(ByVal cg As eColorGroup) As Long
         Case clrSYSTEM: ColorOf = RGB(242, 242, 242)  ' 연회
         Case Else:      ColorOf = RGB(245, 255, 245)
     End Select
+End Function
+
+Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, _
+                                  ByRef baseDepths() As Long, _
+                                  ByRef subDepths() As Long, _
+                                  ByRef subStartRows As Object, _
+                                  ByRef subEndRows As Object, _
+                                  ByRef invalidRows As Object)
+    ReDim baseDepths(1 To lastRow)
+    ReDim subDepths(1 To lastRow)
+
+    Set subStartRows = CreateObject("Scripting.Dictionary")
+    Set subEndRows = CreateObject("Scripting.Dictionary")
+    Set invalidRows = CreateObject("Scripting.Dictionary")
+    subStartRows.CompareMode = vbTextCompare
+    subEndRows.CompareMode = vbTextCompare
+    invalidRows.CompareMode = vbTextCompare
+
+    If lastRow < 2 Then Exit Sub
+
+    Call ComputeBaseDepths(ws, lastRow, baseDepths)
+
+    Dim labelRows As Object
+    Dim callTargets As Object
+    Set labelRows = BuildLabelRowMap(ws, lastRow)
+    Set callTargets = BuildCallTargetMap(ws, lastRow)
+
+    Call MarkMissingJumpTargets(ws, lastRow, labelRows, invalidRows)
+
+    Dim inSubroutineRows As Object
+    Set inSubroutineRows = CreateObject("Scripting.Dictionary")
+    inSubroutineRows.CompareMode = vbTextCompare
+
+    Dim R As Long
+    For R = 2 To lastRow
+        If PureCommandAt(ws, R) = "LABEL" Then
+            Dim labelName As String
+            labelName = LabelNameAt(ws, R)
+
+            If callTargets.exists(labelName) Then
+                subStartRows(CStr(R)) = True
+
+                Dim endRow As Long
+                endRow = FindSubroutineReturn(ws, R, lastRow, baseDepths(R), baseDepths)
+
+                If endRow > 0 Then
+                    subEndRows(CStr(endRow)) = True
+                    inSubroutineRows(CStr(R)) = True
+                    inSubroutineRows(CStr(endRow)) = True
+
+                    Dim innerRow As Long
+                    For innerRow = R + 1 To endRow - 1
+                        subDepths(innerRow) = subDepths(innerRow) + 1
+                        inSubroutineRows(CStr(innerRow)) = True
+                    Next innerRow
+                Else
+                    invalidRows(CStr(R)) = True
+                End If
+
+                If Not HasFlowBreakBefore(ws, R) Then invalidRows(CStr(R)) = True
+            End If
+        End If
+    Next R
+
+    For R = 2 To lastRow
+        If PureCommandAt(ws, R) = "RETURN" Then
+            If Not inSubroutineRows.exists(CStr(R)) Then invalidRows(CStr(R)) = True
+        End If
+    Next R
+End Sub
+
+Private Sub ComputeBaseDepths(ByVal ws As Worksheet, ByVal lastRow As Long, ByRef baseDepths() As Long)
+    Dim depth As Long
+    Dim R As Long
+
+    For R = 2 To lastRow
+        Dim cmd As String
+        cmd = PureCommandAt(ws, R)
+
+        If IsBlockEnder(cmd) Then depth = IIf(depth > 0, depth - 1, 0)
+
+        baseDepths(R) = depth
+        If cmd = "ELSE" Or cmd = "CASE" Then baseDepths(R) = IIf(depth > 0, depth - 1, 0)
+
+        If IsBlockStarter(cmd) Then depth = depth + 1
+    Next R
+End Sub
+
+Private Function BuildLabelRowMap(ByVal ws As Worksheet, ByVal lastRow As Long) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    result.CompareMode = vbTextCompare
+
+    Dim R As Long
+    For R = 2 To lastRow
+        If PureCommandAt(ws, R) = "LABEL" Then
+            Dim labelName As String
+            labelName = LabelNameAt(ws, R)
+            If Len(labelName) > 0 Then
+                Dim rows As Collection
+                If Not result.exists(labelName) Then
+                    Set rows = New Collection
+                    result.Add labelName, rows
+                Else
+                    Set rows = result(labelName)
+                End If
+                rows.Add R
+            End If
+        End If
+    Next R
+
+    Set BuildLabelRowMap = result
+End Function
+
+Private Function BuildCallTargetMap(ByVal ws As Worksheet, ByVal lastRow As Long) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    result.CompareMode = vbTextCompare
+
+    Dim R As Long
+    For R = 2 To lastRow
+        If PureCommandAt(ws, R) = "CALL" Then
+            Dim target As String
+            target = JumpTargetAt(ws, R)
+            If IsStaticLabelTarget(target) Then result(target) = True
+        End If
+    Next R
+
+    Set BuildCallTargetMap = result
+End Function
+
+Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long, _
+                                   ByVal labelRows As Object, ByVal invalidRows As Object)
+    Dim R As Long
+    For R = 2 To lastRow
+        Dim cmd As String
+        cmd = PureCommandAt(ws, R)
+
+        If cmd = "CALL" Or cmd = "GOTO" Then
+            Dim target As String
+            target = JumpTargetAt(ws, R)
+            If IsStaticLabelTarget(target) Then
+                If Not labelRows.exists(target) Then invalidRows(CStr(R)) = True
+            End If
+        End If
+    Next R
+End Sub
+
+Private Function FindSubroutineReturn(ByVal ws As Worksheet, ByVal startRow As Long, _
+                                      ByVal lastRow As Long, ByVal labelDepth As Long, _
+                                      ByRef baseDepths() As Long) As Long
+    Dim R As Long
+    For R = startRow + 1 To lastRow
+        Dim cmd As String
+        cmd = PureCommandAt(ws, R)
+        If Not IsExecutableCommand(cmd) Then GoTo NextRow
+
+        If baseDepths(R) < labelDepth Then Exit Function
+
+        If baseDepths(R) = labelDepth Then
+            Select Case cmd
+                Case "RETURN"
+                    FindSubroutineReturn = R
+                    Exit Function
+                Case "LABEL"
+                    Exit Function
+            End Select
+        End If
+
+NextRow:
+    Next R
+End Function
+
+Private Function HasFlowBreakBefore(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+    Dim R As Long
+    For R = rowNum - 1 To 2 Step -1
+        Dim cmd As String
+        cmd = PureCommandAt(ws, R)
+        If IsExecutableCommand(cmd) Then
+            HasFlowBreakBefore = (cmd = "EXIT" Or cmd = "GOTO" Or cmd = "RETURN")
+            Exit Function
+        End If
+    Next R
+End Function
+
+Private Sub ApplySubroutineBoundaryStyle(ByVal rng As Range, ByVal isStart As Boolean, _
+                                         ByVal isEnd As Boolean, ByVal isInvalid As Boolean)
+    If Not isStart And Not isEnd Then Exit Sub
+
+    Dim borderColor As Long
+    If isInvalid Then
+        borderColor = RGB(192, 0, 0)
+    Else
+        borderColor = RGB(90, 90, 90)
+    End If
+
+    If isStart Then
+        With rng.Borders(xlEdgeTop)
+            .LineStyle = xlContinuous
+            .Weight = xlMedium
+            .color = borderColor
+        End With
+    End If
+
+    If isEnd Then
+        With rng.Borders(xlEdgeBottom)
+            .LineStyle = xlContinuous
+            .Weight = xlMedium
+            .color = borderColor
+        End With
+    End If
+End Sub
+
+Private Function PureCommandAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
+    PureCommandAt = UCase$(Trim$(Replace(Trim$(CStr(ws.Cells(rowNum, 2).value)), ">", "")))
+End Function
+
+Private Function LabelNameAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
+    LabelNameAt = UCase$(Trim$(CStr(ws.Cells(rowNum, 5).value)))
+End Function
+
+Private Function JumpTargetAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
+    JumpTargetAt = UCase$(Trim$(CStr(ws.Cells(rowNum, 5).value)))
+End Function
+
+Private Function IsExecutableCommand(ByVal cmd As String) As Boolean
+    IsExecutableCommand = (Len(cmd) > 0 And Left$(cmd, 1) <> "#")
+End Function
+
+Private Function IsStaticLabelTarget(ByVal target As String) As Boolean
+    IsStaticLabelTarget = (Len(target) > 0 And Not IsNumeric(target) And InStr(1, target, "{", vbTextCompare) = 0)
 End Function
 
 ' [파생] 블록 시작 판정 → BlockRole = STARTER

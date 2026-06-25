@@ -165,7 +165,8 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     Dim cmd As String
     cmd = NormalizeCmd(rawCmd)
 
-    If modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value) Then
+    If modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value) _
+       And modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row) Then
         ClearAssistNote Target
     Else
         Dim suggestion As String

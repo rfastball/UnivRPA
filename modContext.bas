@@ -108,7 +108,7 @@ Public Function PopStack() As Long
         PopStack = CallStack.item(CallStack.count)
         CallStack.Remove CallStack.count
     Else
-        LogStatus "빈 콜스택 RETURN: 복귀할 곳이 없어 실행을 종료합니다."
+        LogStatus "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
         PopStack = 0
     End If
 End Function

@@ -33,7 +33,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "RETURN"
             Dim retLine As Long
             retLine = modContext.PopStack()
-            If retLine > 0 Then ICommand_Execute = retLine Else ICommand_Execute = CMD_HALT
+            If retLine > 0 Then ICommand_Execute = retLine Else ICommand_Execute = CMD_ERROR
 
          Case "IF"
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
