@@ -85,7 +85,7 @@ NextRow:
 End Sub
 
 ' [신규] 헤더가 없으면 생성
-Private Sub EnsureHeaders(ws As Worksheet)
+Public Sub EnsureHeaders(ws As Worksheet)
     If ws.Cells(1, 2).Value = "" Then
         Dim headers As Variant
         headers = Array("ROW", "COMMAND", "PARAM1", "PARAM2", "PARAM3", "COMMENT")
@@ -107,7 +107,7 @@ Private Sub EnsureHeaders(ws As Worksheet)
 End Sub
 
 ' [파생] 명령어 및 파라미터 유효성 검사 → GetCmdDef 게이트로 환원
-Private Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
+Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
     Dim def As CmdDef
     Set def = modCmdRegistry.GetCmdDef(cmd)
 
