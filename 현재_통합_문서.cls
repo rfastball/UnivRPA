@@ -9,6 +9,14 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
 Private Const MAX_VALIDATE_CELLS As Long = 500
 
+Private Sub Workbook_Open()
+    modScriptAssist.RegisterScriptAssistHotkeys
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    modScriptAssist.UnregisterScriptAssistHotkeys
+End Sub
+
 Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)
     If Target Is Nothing Then
         Application.StatusBar = False

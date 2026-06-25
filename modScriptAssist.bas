@@ -5,6 +5,7 @@ Option Explicit
 
 Private Const ASSIST_PREFIX As String = "[ScriptAssist]"
 Private Const CMD_COL As Long = 2
+Private Const COMMENT_PREFIX As String = "# "
 
 Public Function ResolveCmdCol(ByVal Sh As Worksheet) As Long
     If IsScriptSheet(Sh) Then ResolveCmdCol = CMD_COL
@@ -19,6 +20,132 @@ End Function
 
 Public Sub SetupScriptSheet(ByVal Sh As Worksheet)
     modDevTools.EnsureHeaders Sh
+End Sub
+
+Public Sub RegisterScriptAssistHotkeys()
+    Application.OnKey "^+/", "ToggleSelectedCommandComment"
+    Application.OnKey "^+F", "FormatRPAScript_Final"
+    Application.OnKey "^+W", "RunRPA"
+    Application.OnKey "^+E", "StartHUD_Final"
+End Sub
+
+Public Sub UnregisterScriptAssistHotkeys()
+    Application.OnKey "^+/"
+    Application.OnKey "^+F"
+    Application.OnKey "^+W"
+    Application.OnKey "^+E"
+End Sub
+
+Public Sub ToggleSelectedCommandComment()
+    Dim activeObject As Object
+    Set activeObject = ActiveSheet
+
+    If Not TypeOf activeObject Is Worksheet Then
+        Application.StatusBar = "Script Assist: worksheet에서만 사용할 수 있습니다."
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = activeObject
+
+    Dim cmdCol As Long
+    cmdCol = ResolveCmdCol(ws)
+    If cmdCol = 0 Then
+        Application.StatusBar = "Script Assist: 스크립트 시트에서만 사용할 수 있습니다."
+        Exit Sub
+    End If
+
+    Dim selectedObject As Object
+    Set selectedObject = Selection
+
+    If Not TypeOf selectedObject Is Range Then
+        Application.StatusBar = "Script Assist: 셀 범위를 선택해 주세요."
+        Exit Sub
+    End If
+
+    Dim selectedRange As Range
+    Set selectedRange = selectedObject
+
+    If selectedRange.Areas.count <> 1 Then
+        Application.StatusBar = "Script Assist: 연속된 범위만 주석 토글할 수 있습니다."
+        Exit Sub
+    End If
+
+    Dim commandRange As Range
+    Set commandRange = CommandRangeFromSelection(ws, selectedRange.Areas(1), cmdCol)
+    If commandRange Is Nothing Then
+        Application.StatusBar = "Script Assist: 토글할 COMMAND 셀이 없습니다."
+        Exit Sub
+    End If
+
+    Dim cell As Range
+    Dim targetCount As Long
+    Dim allCommented As Boolean
+    allCommented = True
+
+    For Each cell In commandRange.Cells
+        If Not IsBlankCommand(cell.value) Then
+            targetCount = targetCount + 1
+            If Not IsCommentCommand(cell.value) Then allCommented = False
+        End If
+    Next cell
+
+    If targetCount = 0 Then
+        Application.StatusBar = "Script Assist: 토글할 COMMAND 셀이 없습니다."
+        Exit Sub
+    End If
+
+    Dim prevEnableEvents As Boolean
+    Dim prevScreenUpdating As Boolean
+    Dim changedCount As Long
+    Dim failNumber As Long
+    Dim failSource As String
+    Dim failDescription As String
+    Dim failHelpFile As String
+    Dim failHelpContext As Long
+
+    prevEnableEvents = Application.EnableEvents
+    prevScreenUpdating = Application.ScreenUpdating
+
+    On Error GoTo CleanFail
+    Application.EnableEvents = False
+    Application.ScreenUpdating = False
+
+    For Each cell In commandRange.Cells
+        If Not IsBlankCommand(cell.value) Then
+            If allCommented Then
+                cell.value = UncommentCommandText(cell.value)
+            ElseIf Not IsCommentCommand(cell.value) Then
+                cell.value = CommentCommandText(cell.value)
+            End If
+            ValidateCommandCell cell
+            changedCount = changedCount + 1
+        End If
+    Next cell
+
+CleanExit:
+    Application.ScreenUpdating = prevScreenUpdating
+    Application.EnableEvents = prevEnableEvents
+    If changedCount > 0 Then
+        If allCommented Then
+            Application.StatusBar = "Script Assist: " & changedCount & "줄 주석 해제"
+        Else
+            Application.StatusBar = "Script Assist: " & changedCount & "줄 주석 처리"
+        End If
+    End If
+    Exit Sub
+
+CleanFail:
+    failNumber = Err.Number
+    failSource = Err.Source
+    failDescription = Err.Description
+    failHelpFile = Err.HelpFile
+    failHelpContext = Err.HelpContext
+    On Error Resume Next
+    Application.ScreenUpdating = prevScreenUpdating
+    Application.EnableEvents = prevEnableEvents
+    On Error GoTo 0
+    Err.Raise failNumber, failSource, failDescription, failHelpFile, failHelpContext
 End Sub
 
 Public Sub ValidateCommandCell(ByVal Target As Range)
@@ -184,6 +311,62 @@ Private Function AssistCommandCell(ByVal Target As Range) As Range
 
     If Target.Column < cmdCol Or Target.Column > cmdCol + 3 Then Exit Function
     Set AssistCommandCell = Target.Worksheet.Cells(Target.Row, cmdCol)
+End Function
+
+Private Function CommandRangeFromSelection(ByVal ws As Worksheet, ByVal selectedRange As Range, ByVal cmdCol As Long) As Range
+    Dim firstRow As Long
+    Dim lastSelectedRow As Long
+    Dim lastCommandRow As Long
+    Dim lastRow As Long
+
+    firstRow = selectedRange.Row
+    If firstRow < 2 Then firstRow = 2
+
+    lastSelectedRow = selectedRange.Row + selectedRange.Rows.count - 1
+    lastCommandRow = ws.Cells(ws.Rows.count, cmdCol).End(xlUp).Row
+    lastRow = lastSelectedRow
+    If lastRow > lastCommandRow Then lastRow = lastCommandRow
+
+    If firstRow > lastRow Then Exit Function
+    Set CommandRangeFromSelection = ws.Range(ws.Cells(firstRow, cmdCol), ws.Cells(lastRow, cmdCol))
+End Function
+
+Private Function CommentCommandText(ByVal rawCmd As Variant) As String
+    CommentCommandText = SafeText(rawCmd)
+    If IsBlankCommand(CommentCommandText) Or IsCommentCommand(CommentCommandText) Then Exit Function
+    CommentCommandText = COMMENT_PREFIX & CommentCommandText
+End Function
+
+Private Function UncommentCommandText(ByVal rawCmd As Variant) As String
+    Dim text As String
+    text = SafeText(rawCmd)
+    UncommentCommandText = text
+    If Not IsCommentCommand(text) Then Exit Function
+
+    Dim markerPos As Long
+    markerPos = CommentMarkerPos(text)
+    If markerPos = 0 Then Exit Function
+
+    text = Left$(text, markerPos - 1) & Mid$(text, markerPos + 1)
+    If Mid$(text, markerPos, 1) = " " Then
+        text = Left$(text, markerPos - 1) & Mid$(text, markerPos + 1)
+    End If
+    UncommentCommandText = text
+End Function
+
+Private Function CommentMarkerPos(ByVal text As String) As Long
+    Dim idx As Long
+    For idx = 1 To Len(text)
+        Select Case Mid$(text, idx, 1)
+            Case " ", vbTab, ">"
+                ' keep scanning through visual indentation
+            Case "#"
+                CommentMarkerPos = idx
+                Exit Function
+            Case Else
+                Exit Function
+        End Select
+    Next idx
 End Function
 
 Private Function IsAssistNote(ByVal note As Comment) As Boolean
