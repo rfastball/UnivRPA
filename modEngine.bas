@@ -183,35 +183,8 @@ Private Function NextPointer(ByVal curLine As Long, ByVal retCode As Long) As Lo
     End If
 End Function
 
-' [진짜 엔진이 호출하는 입구]
-' 로그 기록 ON/OFF 용
-Public Function ExecuteSmartAction(arr As Variant, R As Long) As Long
-    On Error GoTo ErrHandler
-    Dim res As Long
-
-    ' 1. 원래 하던 대로 실행 (Core 호출)
-    res = ExecuteSmartAction_Core(arr, R)
-
-    Dim status As String
-    If res = CMD_ERROR Then status = "FAIL" Else status = "SUCCESS"
-
-        ' rP3 등의 변수를 가져오기 번거로우면 그냥 원본(arr(r, 5))을 남겨도 충분합니다.
-        'Call modContext.WriteLog(r, arr(r, 2), arr(r, 5), status)
-
-        ' 3. 결과값 그대로 반환
-        ExecuteSmartAction = res
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
-    ExecuteSmartAction = CMD_ERROR
-    Resume CleanUp
-End Function
-
-
 ' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환
-Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
+Public Function ExecuteSmartAction(arr As Variant, R As Long) As Long
     On Error GoTo ErrHandler
     Dim sType As String
 
@@ -220,7 +193,7 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
 
     ' [주석] #으로 시작하면 파라미터 해석 없이 즉시 다음 줄로 이동
     If Left(sType, 1) = "#" Then
-        ExecuteSmartAction_Core = CMD_NEXT_LINE
+        ExecuteSmartAction = CMD_NEXT_LINE
      GoTo CleanUp
     End If
 
@@ -233,7 +206,7 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
     If def Is Nothing Then
         ' 미등록 명령어 (무인 환경: 비차단 알림)
         modActions.Action_ShowNotification "알 수 없는 명령어: " & sType, 3
-        ExecuteSmartAction_Core = CMD_ERROR
+        ExecuteSmartAction = CMD_ERROR
      GoTo CleanUp
     End If
 
@@ -247,13 +220,13 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
     Set handler = modCmdRegistry.handler(def.Category)
-    ExecuteSmartAction_Core = handler.Execute(sType, R, args)
+    ExecuteSmartAction = handler.Execute(sType, R, args)
 
 CleanUp:
     Exit Function
 ErrHandler:
     modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
-    ExecuteSmartAction_Core = CMD_ERROR
+    ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
 End Function
 
