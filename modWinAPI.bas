@@ -26,6 +26,8 @@ Public Declare PtrSafe Function ReleaseDC Lib "user32" (ByVal hwnd As LongPtr, B
 Public Declare PtrSafe Function GetCursorPos Lib "user32" (lpPoint As POINTAPI) As Long
 Public Declare PtrSafe Function GetSystemMetrics Lib "user32" (ByVal nIndex As Long) As Long
 Public Declare PtrSafe Function SetProcessDPIAware Lib "user32" () As Long
+Public Declare PtrSafe Function GetDeviceCaps Lib "gdi32" (ByVal hdc As LongPtr, ByVal nIndex As Long) As Long
+Public Declare PtrSafe Function SystemParametersInfo Lib "user32" Alias "SystemParametersInfoA" (ByVal uAction As Long, ByVal uParam As Long, ByRef lpvParam As Any, ByVal fuWinIni As Long) As Long
 
 ' [창 제어]
 Public Declare PtrSafe Function FindWindow Lib "user32" Alias "FindWindowA" (ByVal lpClassName As String, ByVal lpWindowName As String) As LongPtr
@@ -36,6 +38,7 @@ Public Declare PtrSafe Function SetForegroundWindow Lib "user32" (ByVal hwnd As 
 Public Declare PtrSafe Function ShowWindow Lib "user32" (ByVal hwnd As LongPtr, ByVal nCmdShow As Long) As Long
 Public Declare PtrSafe Function IsIconic Lib "user32" (ByVal hwnd As LongPtr) As Long
 Public Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
+Public Declare PtrSafe Function SetWindowPos Lib "user32" (ByVal hwnd As LongPtr, ByVal hWndInsertAfter As LongPtr, ByVal x As Long, ByVal y As Long, ByVal cx As Long, ByVal cy As Long, ByVal wFlags As Long) As Long
 
 ' [메시지 박스 (Timer)]
 Public Declare PtrSafe Function MessageBoxTimeout Lib "user32" Alias "MessageBoxTimeoutA" (ByVal hwnd As LongPtr, ByVal lpText As String, ByVal lpCaption As String, ByVal wType As Long, ByVal wLanguageId As Integer, ByVal dwMilliseconds As Long) As Long
@@ -64,6 +67,13 @@ Public Declare PtrSafe Function GetKeyState Lib "user32" (ByVal nVirtKey As Long
 Public Type POINTAPI
     x As Long
     y As Long
+End Type
+
+Private Type RECT
+    Left As Long
+    Top As Long
+    Right As Long
+    Bottom As Long
 End Type
 
 ' [SendInput 관련 구조체]
@@ -115,6 +125,14 @@ Public Const MOUSEEVENTF_ABSOLUTE = &H8000
 Public Const GW_HWNDNEXT = 2
 Public Const SW_RESTORE = 9
 
+Private Const SPI_GETWORKAREA As Long = 48
+Private Const LOGPIXELSX As Long = 88
+Private Const LOGPIXELSY As Long = 90
+Private Const HWND_TOPMOST As Long = -1
+Private Const SWP_NOSIZE As Long = &H1
+Private Const SWP_NOMOVE As Long = &H2
+Private Const SWP_NOACTIVATE As Long = &H10
+
 ' 메시지박스 옵션
 Public Const MB_ICONINFO = &H40
 Public Const MB_TOPMOST = &H40000
@@ -137,14 +155,15 @@ Public Const SM_CYVIRTUALSCREEN = 79 ' 전체 모니터(가상) 세로 해상도
 
 ' [Vision] 화면의 특정 좌표 색상을 Hex String으로 반환 (DC 관리 포함)
 Public Function GetColorHexAt(x As Long, y As Long) As String
+    GetColorHexAt = Right("000000" & hex(GetColorAt(x, y)), 6)
+End Function
+
+Public Function GetColorAt(ByVal x As Long, ByVal y As Long) As Long
     Dim hdc As LongPtr
-    Dim colorVal As Long
     
     hdc = GetDC(0)
-    colorVal = GetPixel(hdc, x, y)
+    GetColorAt = GetPixel(hdc, x, y)
     ReleaseDC 0, hdc
-    
-    GetColorHexAt = Right("000000" & hex(colorVal), 6)
 End Function
 
 
@@ -152,6 +171,32 @@ End Function
 Public Function IsKeyDown(ByVal vKey As Long) As Boolean
     IsKeyDown = (GetAsyncKeyState(vKey) And &H8000) <> 0
 End Function
+
+Public Function IsToggleKeyOn(ByVal vKey As Long) As Boolean
+    IsToggleKeyOn = (GetKeyState(vKey) And 1) = 1
+End Function
+
+Public Sub MoveFormToWorkAreaTopLeftTopMost(ByVal formView As Object)
+    Dim workArea As RECT
+    Dim hdc As LongPtr
+    Dim dpiX As Long
+    Dim dpiY As Long
+    Dim hWndForm As LongPtr
+
+    SystemParametersInfo SPI_GETWORKAREA, 0, workArea, 0
+    hdc = GetDC(0)
+    dpiX = GetDeviceCaps(hdc, LOGPIXELSX)
+    dpiY = GetDeviceCaps(hdc, LOGPIXELSY)
+    ReleaseDC 0, hdc
+
+    If dpiX > 0 Then formView.Left = (workArea.Left * 72 / dpiX)
+    If dpiY > 0 Then formView.Top = (workArea.Top * 72 / dpiY)
+
+    hWndForm = FindWindow("ThunderDFrame", formView.Caption)
+    If hWndForm <> 0 Then
+        SetWindowPos hWndForm, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE Or SWP_NOACTIVATE
+    End If
+End Sub
 
 ' [Clipboard] 텍스트 가져오기 (API 방식 - 안정적)
 Public Function GetClipboardText() As String

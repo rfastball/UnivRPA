@@ -1,4 +1,4 @@
-﻿VERSION 5.00
+VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmRPAStatus 
    Caption         =   "UserForm2"
    ClientHeight    =   2848
@@ -17,37 +17,6 @@ Attribute VB_Exposed = False
 
 
 Option Explicit
-
-' [API] 화면 해상도 및 작업 영역 감지
-#If VBA7 Then
-    Private Declare PtrSafe Function SystemParametersInfo Lib "user32" Alias "SystemParametersInfoA" (ByVal uAction As Long, ByVal uParam As Long, ByRef lpvParam As Any, ByVal fuWinIni As Long) As Long
-    Private Declare PtrSafe Function GetDC Lib "user32" (ByVal hwnd As LongPtr) As LongPtr
-    Private Declare PtrSafe Function ReleaseDC Lib "user32" (ByVal hwnd As LongPtr, ByVal hdc As LongPtr) As Long
-    Private Declare PtrSafe Function GetDeviceCaps Lib "gdi32" (ByVal hdc As LongPtr, ByVal nIndex As Long) As Long
-    Private Declare PtrSafe Function SetWindowPos Lib "user32" (ByVal hwnd As LongPtr, ByVal hWndInsertAfter As LongPtr, ByVal x As Long, ByVal y As Long, ByVal cx As Long, ByVal cy As Long, ByVal wFlags As Long) As Long
-    Private Declare PtrSafe Function FindWindow Lib "user32" Alias "FindWindowA" (ByVal lpClassName As String, ByVal lpWindowName As String) As LongPtr
-#Else
-    Private Declare Function SystemParametersInfo Lib "user32" Alias "SystemParametersInfoA" (ByVal uAction As Long, ByVal uParam As Long, ByRef lpvParam As Any, ByVal fuWinIni As Long) As Long
-    Private Declare Function GetDC Lib "user32" (ByVal hWnd As Long) As Long
-    Private Declare Function ReleaseDC Lib "user32" (ByVal hWnd As Long, ByVal hDC As Long) As Long
-    Private Declare Function GetDeviceCaps Lib "gdi32" (ByVal hDC As Long, ByVal nIndex As Long) As Long
-    Private Declare Function SetWindowPos Lib "user32" (ByVal hWnd As Long, ByVal hWndInsertAfter As Long, ByVal x As Long, ByVal y As Long, ByVal cx As Long, ByVal cy As Long, ByVal wFlags As Long) As Long
-    Private Declare Function FindWindow Lib "user32" Alias "FindWindowA" (ByVal lpClassName As String, ByVal lpWindowName As String) As Long
-#End If
-
-Private Type RECT
-    Left As Long
-    Top As Long
-    Right As Long
-    Bottom As Long
-End Type
-Private Const SPI_GETWORKAREA As Long = 48
-Private Const LOGPIXELSX As Long = 88
-Private Const LOGPIXELSY As Long = 90
-Private Const HWND_TOPMOST As Long = -1
-Private Const SWP_NOSIZE As Long = &H1
-Private Const SWP_NOMOVE As Long = &H2
-Private Const SWP_NOACTIVATE As Long = &H10
 
 ' 동적 컨트롤 변수
 Private lblProgress As Object
@@ -81,43 +50,14 @@ Private Sub UserForm_Initialize()
     End With
 End Sub
 
-' [신규] 외부에서 호출 가능한 위치 이동 메서드
-Public Sub MoveToBottomRight()
-    #If VBA7 Then
-        Dim hdc As LongPtr
-        Dim hWndForm As LongPtr
-    #Else
-        Dim hdc As Long
-        Dim hWndForm As Long
-    #End If
-    Dim R As RECT
-    Dim dpiX As Long, dpiY As Long
-    
-    ' 1. 작업 영역(WorkArea) 및 DPI 가져오기
-    SystemParametersInfo SPI_GETWORKAREA, 0, R, 0
-    hdc = GetDC(0)
-    dpiX = GetDeviceCaps(hdc, LOGPIXELSX)
-    dpiY = GetDeviceCaps(hdc, LOGPIXELSY)
-    ReleaseDC 0, hdc
-
-    ' 2. 좌표 계산 (폼이 Show된 후 호출해야 정확함)
-    ' [수정] 좌상단으로 이동 (여백 최소화)
-    Me.Left = (R.Left * 72 / dpiX)
-    Me.Top = (R.Top * 72 / dpiY)
-
-    ' 3. [New] 항상 위에 표시 (TopMost)
-    hWndForm = FindWindow("ThunderDFrame", Me.Caption)
-    If hWndForm <> 0 Then
-        SetWindowPos hWndForm, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE Or SWP_NOACTIVATE
-    End If
-End Sub
-
-Public Sub InitStatus(total As Long)
+Public Sub Prepare(ByVal total As Long)
     m_TotalLines = total
+    Me.Show vbModeless
+    modWinAPI.MoveFormToWorkAreaTopLeftTopMost Me
     lblProgress.Caption = "Ready (Total: " & total & ")"
 End Sub
 
-Public Sub UpdateInfo(curLine As Long, detailText As String)
+Public Sub RenderProgress(ByVal curLine As Long, ByVal detailText As String)
     ' 진행률 표시
     lblProgress.Caption = "Line " & curLine & "/" & m_TotalLines
     ' 실행중인 열 정보 (명령어 + 파라미터)

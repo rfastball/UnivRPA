@@ -24,9 +24,9 @@ End Sub
 
 Public Sub RegisterScriptAssistHotkeys()
     Application.OnKey "^+/", "ToggleSelectedCommandComment"
-    Application.OnKey "^+F", "FormatRPAScript_Final"
+    Application.OnKey "^+F", "FormatRPAScript"
     Application.OnKey "^+W", "RunRPA"
-    Application.OnKey "^+E", "StartHUD_Final"
+    Application.OnKey "^+E", "StartHUD"
 End Sub
 
 Public Sub UnregisterScriptAssistHotkeys()

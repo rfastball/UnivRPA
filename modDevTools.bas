@@ -3,8 +3,8 @@
 ' @depends modCmdRegistry
 Option Explicit
 
-Public Sub FormatRPAScript_Final()
-Attribute FormatRPAScript_Final.VB_ProcData.VB_Invoke_Func = "F\n14"
+Public Sub FormatRPAScript()
+Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim prevScreenUpdating As Boolean
     Dim prevEnableEvents As Boolean
     Dim prevCalculation As XlCalculation

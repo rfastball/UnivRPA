@@ -73,9 +73,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     PreScanLabels m_arrMain, totalLines
 
     ' [UI] 상태 표시 폼 로드
-    frmRPAStatus.Show vbModeless
-    frmRPAStatus.MoveToBottomRight ' [Fix] 폼이 뜬 직후 위치 강제 이동
-    frmRPAStatus.InitStatus totalLines
+    modHelper.ShowRpaStatus frmRPAStatus, totalLines
 
     modContext.LogStatus "매크로 실행 중..."
     currentLine = 1
@@ -98,7 +96,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
         stepInfo = pureCmd & " " & m_arrMain(currentLine, 3) & " " & m_arrMain(currentLine, 4) & " " & m_arrMain(currentLine, 5)
 
         ' [UI] 폼 업데이트
-        frmRPAStatus.UpdateInfo currentLine, stepInfo
+        modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo
         DoEvents
 
         '----------------------------------------------------------
@@ -130,7 +128,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
 CleanUp:
     On Error Resume Next
-    Unload frmRPAStatus
+    modHelper.CloseRpaStatus frmRPAStatus
     modContext.ResetContext
     modActions.Action_ShowNotification finalMessage, 1
     On Error GoTo 0
