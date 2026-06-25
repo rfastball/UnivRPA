@@ -60,18 +60,20 @@ Public Sub ShowParamHint(ByVal Target As Range)
         Exit Sub
     End If
 
-    If ResolveCmdCol(Target.Worksheet) <> Target.Column Then
+    Dim cmdCell As Range
+    Set cmdCell = AssistCommandCell(Target)
+    If cmdCell Is Nothing Then
         ClearStatusBar
         Exit Sub
     End If
 
-    If IsBlankCommand(Target.Value) Or IsCommentCommand(Target.Value) Then
+    If IsBlankCommand(cmdCell.Value) Or IsCommentCommand(cmdCell.Value) Then
         ClearStatusBar
         Exit Sub
     End If
 
     Dim def As CmdDef
-    Set def = modCmdRegistry.GetCmdDef(Target.Value)
+    Set def = modCmdRegistry.GetCmdDef(cmdCell.Value)
     If def Is Nothing Then
         ClearStatusBar
         Exit Sub
@@ -170,6 +172,19 @@ End Function
 Private Sub ClearStatusBar()
     Application.StatusBar = False
 End Sub
+
+Private Function AssistCommandCell(ByVal Target As Range) As Range
+    If Target Is Nothing Then Exit Function
+    If Target.Cells.count <> 1 Then Exit Function
+    If Target.Row <= 1 Then Exit Function
+
+    Dim cmdCol As Long
+    cmdCol = ResolveCmdCol(Target.Worksheet)
+    If cmdCol = 0 Then Exit Function
+
+    If Target.Column < cmdCol Or Target.Column > cmdCol + 3 Then Exit Function
+    Set AssistCommandCell = Target.Worksheet.Cells(Target.Row, cmdCol)
+End Function
 
 Private Function IsAssistNote(ByVal note As Comment) As Boolean
     If note Is Nothing Then Exit Function

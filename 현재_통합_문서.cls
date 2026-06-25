@@ -29,7 +29,7 @@ Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Ra
         Exit Sub
     End If
 
-    If Target.Cells.count <> 1 Or Target.Column <> cmdCol Then
+    If Target.Cells.count <> 1 Or Target.Column < cmdCol Or Target.Column > cmdCol + 3 Then
         Application.StatusBar = False
         Exit Sub
     End If
