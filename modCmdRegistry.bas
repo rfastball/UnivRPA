@@ -1,4 +1,4 @@
-Attribute VB_Name = "modCmdRegistry"
+﻿Attribute VB_Name = "modCmdRegistry"
 ' @desc 명령어 메타데이터 레지스트리 빌드 및 GetCmdDef 단일 게이트 제공 담당
 ' @depends CmdDef, ParamSpec
 Option Explicit
@@ -16,7 +16,7 @@ Public Enum eCategory
     FLOW = 1
     ACTION = 2
     VISION = 3
-    MEMORY = 4
+    Memory = 4
     SYSTEM = 5
 End Enum
 
@@ -36,7 +36,7 @@ End Enum
 
 Public Enum ePaintScope
     FULLROW = 1     ' 줄 전체(B~E) 칠
-    CMDCELL = 2     ' B열만 칠 + 중첩 시 C~E 연녹 배경
+    cmdCell = 2     ' B열만 칠 + 중첩 시 C~E 연녹 배경
 End Enum
 
 Public Enum eResolveMode
@@ -98,9 +98,9 @@ Public Function AllCommands() As Variant
 End Function
 
 ' @desc 카테고리 받아 담당 ICommand 핸들러 인스턴스 반환 (1단 디스패치)
-Public Function Handler(ByVal cat As eCategory) As ICommand
+Public Function handler(ByVal cat As eCategory) As ICommand
     EnsureHandlers
-    Set Handler = m_handlers(cat)
+    Set handler = m_handlers(cat)
 End Function
 
 ' @desc 카테고리별 핸들러 인스턴스를 1회 생성 배선함 (SYSTEM/MEMORY 1:1, 총 5클래스)
@@ -110,7 +110,7 @@ Private Sub EnsureHandlers()
     Set m_handlers(FLOW) = New clsFlowCommands
     Set m_handlers(ACTION) = New clsActionCommands
     Set m_handlers(VISION) = New clsVisionCommands
-    Set m_handlers(MEMORY) = New clsMemoryCommands
+    Set m_handlers(Memory) = New clsMemoryCommands
     Set m_handlers(SYSTEM) = New clsSystemCommands
 End Sub
 
@@ -131,11 +131,11 @@ Private Sub Reg(ByVal canon As String, ByVal cat As eCategory, ByVal role As eBl
 End Sub
 
 ' [P] New ParamSpec + Init 후 반환 (decode 슬롯 정의)
-Private Function P(ByVal meaning As String, ByVal dtype As eDataType, _
-                   ByVal rmode As eResolveMode, ByVal required As Boolean) As ParamSpec
+Private Function P(ByVal Meaning As String, ByVal dtype As eDataType, _
+                   ByVal rmode As eResolveMode, ByVal Required As Boolean) As ParamSpec
     Dim s As ParamSpec
     Set s = New ParamSpec
-    Set P = s.Init(meaning, dtype, rmode, required)
+    Set P = s.Init(Meaning, dtype, rmode, Required)
 End Function
 
 '==============================================================================
@@ -172,43 +172,43 @@ Private Sub BuildRegistry()
         sp3:=P("라벨명", DT_STR, RESOLVE, True)
 
     '--- [ACTION] 5개 -----------------------------------------------------------
-    Reg "CLICK", ACTION, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "CLICK", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("사후대기ms", DT_NUM, RESOLVE, False)
-    Reg "RCLICK", ACTION, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "RCLICK", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("사후대기ms", DT_NUM, RESOLVE, False)
-    Reg "KEY", ACTION, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "KEY", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("키코드/이름", DT_STR, RESOLVE, True), Nothing, P("사후대기ms", DT_NUM, RESOLVE, False)
-    Reg "COMBO", ACTION, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "COMBO", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("key1", DT_STR, RESOLVE, True), P("key2", DT_STR, RESOLVE, True), P("사후대기ms", DT_NUM, RESOLVE, False)
-    Reg "TYPE", ACTION, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "TYPE", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
         P("딜레이ms", DT_NUM, RESOLVE, False), Nothing, P("텍스트", DT_STR, RESOLVE, True)
 
     '--- [MEMORY] lvalue-writer 3개 (SET 현행 + INC/DEC 신규) --------------------
     '   P1은 RAW(좌변=주소). ColorGroup은 현행 SET을 따라 clrACTION(연청).
-    Reg "SET", MEMORY, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "SET", Memory, NOBLOCK, "", clrACTION, cmdCell, _
         P("좌변/주소", DT_STR, RAW, True), Nothing, P("값", DT_STR, RESOLVE, True)
-    Reg "INC", MEMORY, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "INC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
         P("좌변/주소", DT_STR, RAW, True), Nothing, P("증분(기본1)", DT_NUM, RESOLVE, False)
-    Reg "DEC", MEMORY, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "DEC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
         P("좌변/주소", DT_STR, RAW, True), Nothing, P("감분(기본1)", DT_NUM, RESOLVE, False)
 
     '--- [SYSTEM] 4개 (FOCUS/SLEEP는 clrACTION, NOTIFY/EXIT는 clrSYSTEM) ---------
-    Reg "FOCUS", SYSTEM, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "FOCUS", SYSTEM, NOBLOCK, "", clrACTION, cmdCell, _
         sp3:=P("창제목", DT_STR, RESOLVE, True)
-    Reg "SLEEP", SYSTEM, NOBLOCK, "", clrACTION, CMDCELL, _
+    Reg "SLEEP", SYSTEM, NOBLOCK, "", clrACTION, cmdCell, _
         sp3:=P("대기ms", DT_NUM, RESOLVE, True)
     Reg "NOTIFY", SYSTEM, NOBLOCK, "", clrSYSTEM, FULLROW, _
         sp3:=P("메시지[|초]", DT_STR, RESOLVE, True)
     Reg "EXIT", SYSTEM, NOBLOCK, "", clrSYSTEM, FULLROW
 
     '--- [VISION] 4개 -----------------------------------------------------------
-    Reg "WAIT_APPEAR", VISION, NOBLOCK, "", clrVISION, CMDCELL, _
+    Reg "WAIT_APPEAR", VISION, NOBLOCK, "", clrVISION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("hexColor", DT_STR, RESOLVE, True)
-    Reg "WAIT_VANISH", VISION, NOBLOCK, "", clrVISION, CMDCELL, _
+    Reg "WAIT_VANISH", VISION, NOBLOCK, "", clrVISION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("hexColor", DT_STR, RESOLVE, True)
-    Reg "CLICK_SYNC", VISION, NOBLOCK, "", clrVISION, CMDCELL, _
+    Reg "CLICK_SYNC", VISION, NOBLOCK, "", clrVISION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True)
-    Reg "ASSERT", VISION, NOBLOCK, "", clrVISION, CMDCELL, _
+    Reg "ASSERT", VISION, NOBLOCK, "", clrVISION, cmdCell, _
         P("x", DT_NUM, RESOLVE, True), P("y", DT_NUM, RESOLVE, True), P("조건(!=금지색)", DT_STR, RESOLVE, True)
 
 End Sub

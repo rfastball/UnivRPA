@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -25,9 +25,9 @@ Public ColorGroup As eColorGroup  ' clrFLOW/clrACTION/clrVISION/clrSYSTEM
 Public PaintScope As ePaintScope  ' FULLROW / CMDCELL
 
 ' [파라미터] 각각 ParamSpec (없으면 Nothing)
-Public P1 As ParamSpec
-Public P2 As ParamSpec
-Public P3 As ParamSpec
+Public p1 As ParamSpec
+Public p2 As ParamSpec
+Public p3 As ParamSpec
 
 ' @desc 식별/구조/서식/파라미터 일괄 받아 레코드에 세팅 후 Me 반환 (생성자 대용 팩토리)
 Public Function Init(ByVal vCanon As String, ByVal vCat As eCategory, ByVal vRole As eBlockRole, _
@@ -41,17 +41,17 @@ Public Function Init(ByVal vCanon As String, ByVal vCat As eCategory, ByVal vRol
     BlockGroup = vGroup
     ColorGroup = vColor
     PaintScope = vScope
-    Set P1 = sp1
-    Set P2 = sp2
-    Set P3 = sp3
+    Set p1 = sp1
+    Set p2 = sp2
+    Set p3 = sp3
     Set Init = Me
 End Function
 
 ' [편의] 슬롯 번호(1/2/3)로 ParamSpec 반환 (없으면 Nothing)
 Public Function Param(ByVal idx As Long) As ParamSpec
     Select Case idx
-        Case 1: Set Param = P1
-        Case 2: Set Param = P2
-        Case 3: Set Param = P3
+        Case 1: Set Param = p1
+        Case 2: Set Param = p2
+        Case 3: Set Param = p3
     End Select
 End Function

@@ -145,10 +145,10 @@ Sub Run_System_SelfDiagnosis()
     modEngine.ExecuteSmartAction arrCmd, 1
 
     DoEvents
-    If wsTest.Range("A1").Value = "HelloRPA" Then
+    If wsTest.Range("A1").value = "HelloRPA" Then
         LogPass "TYPE + KEY (Cell Input)"
     Else
-        LogFail "TYPE", "HelloRPA", wsTest.Range("A1").Value: failCount = failCount + 1
+        LogFail "TYPE", "HelloRPA", wsTest.Range("A1").value: failCount = failCount + 1
     End If
 
     '==========================================================================
@@ -166,10 +166,10 @@ Sub Run_System_SelfDiagnosis()
     modEngine.ExecuteSmartAction arrCmd, 1
 
     DoEvents
-    If wsTest.Range("A2").Value = "DynamicValue" Then
+    If wsTest.Range("A2").value = "DynamicValue" Then
         LogPass "TYPE {name} (Var -> Cell)"
     Else
-        LogFail "TYPE {name}", "DynamicValue", wsTest.Range("A2").Value: failCount = failCount + 1
+        LogFail "TYPE {name}", "DynamicValue", wsTest.Range("A2").value: failCount = failCount + 1
     End If
 
     '==========================================================================
@@ -309,7 +309,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     '==========================================================================
-    ' [Test 13] 역검증 — 레지스트리<->핸들러 동기화 파수꾼 (설계 §7)
+    ' [Test 13] 역검증 ? 레지스트리<->핸들러 동기화 파수꾼 (설계 §7)
     '==========================================================================
     Debug.Print "--- [Test 13] Registry/Handler sync ---"
     Dim syncFails As Long
@@ -337,7 +337,7 @@ End Sub
 
 ' @desc 등록 명령어 전수 순회로 레지스트리<->핸들러 라우팅 동기화 검증, 실패 개수 반환
 '   '테이블엔 있는데 핸들러 없음'(카테고리 미배선/오타)을 구조적으로 막는 파수꾼 (설계 §7).
-'   부작용 없이 라우팅 무결성만 확인 — 실제 실행(클릭/대기)은 자가진단/시트 검증이 담당.
+'   부작용 없이 라우팅 무결성만 확인 ? 실제 실행(클릭/대기)은 자가진단/시트 검증이 담당.
 Public Function Test_RegistryDispatchSync() As Long
     Dim cmds As Variant: cmds = modCmdRegistry.AllCommands()
     Dim i As Long, fails As Long
@@ -350,7 +350,7 @@ Public Function Test_RegistryDispatchSync() As Long
             Debug.Print "[FAIL] 게이트 미해석: " & cmd
             fails = fails + 1
         Else
-            Set h = modCmdRegistry.Handler(def.Category)
+            Set h = modCmdRegistry.handler(def.Category)
             If h Is Nothing Then
                 Debug.Print "[FAIL] 핸들러 없음 (category=" & def.Category & "): " & cmd
                 fails = fails + 1

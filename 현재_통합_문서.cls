@@ -7,7 +7,6 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
-
 Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)
     If Target Is Nothing Then
         Application.StatusBar = False
@@ -57,3 +56,5 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
         If cell.Row > 1 Then modScriptAssist.ValidateCommandCell cell
     Next cell
 End Sub
+
+

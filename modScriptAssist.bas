@@ -1,4 +1,4 @@
-Attribute VB_Name = "modScriptAssist"
+﻿Attribute VB_Name = "modScriptAssist"
 ' @desc Script Assist: COMMAND validation, parameter hints, typo suggestions, and Assist-owned notes
 ' @depends modCmdRegistry, modDevTools, CmdDef, ParamSpec
 Option Explicit
@@ -12,8 +12,8 @@ End Function
 
 Public Function IsScriptSheet(ByVal Sh As Worksheet) As Boolean
     On Error GoTo SafeExit
-    IsScriptSheet = (UCase$(Trim$(CStr(Sh.Cells(1, 1).Value))) = "ROW" _
-                  And UCase$(Trim$(CStr(Sh.Cells(1, 2).Value))) = "COMMAND")
+    IsScriptSheet = (UCase$(Trim$(CStr(Sh.Cells(1, 1).value))) = "ROW" _
+                  And UCase$(Trim$(CStr(Sh.Cells(1, 2).value))) = "COMMAND")
 SafeExit:
 End Function
 
@@ -27,7 +27,7 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     If ResolveCmdCol(Target.Worksheet) <> Target.Column Then Exit Sub
 
     Dim rawCmd As Variant
-    rawCmd = Target.Value
+    rawCmd = Target.value
 
     If IsBlankCommand(rawCmd) Or IsCommentCommand(rawCmd) Then
         ClearAssistNote Target
@@ -38,7 +38,7 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     Dim cmd As String
     cmd = NormalizeCmd(rawCmd)
 
-    If modDevTools.ValidateLine(cmd, Target.offset(0, 1).Value, Target.offset(0, 2).Value, Target.offset(0, 3).Value) Then
+    If modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value) Then
         ClearAssistNote Target
     Else
         Dim suggestion As String
@@ -67,13 +67,13 @@ Public Sub ShowParamHint(ByVal Target As Range)
         Exit Sub
     End If
 
-    If IsBlankCommand(cmdCell.Value) Or IsCommentCommand(cmdCell.Value) Then
+    If IsBlankCommand(cmdCell.value) Or IsCommentCommand(cmdCell.value) Then
         ClearStatusBar
         Exit Sub
     End If
 
     Dim def As CmdDef
-    Set def = modCmdRegistry.GetCmdDef(cmdCell.Value)
+    Set def = modCmdRegistry.GetCmdDef(cmdCell.value)
     If def Is Nothing Then
         ClearStatusBar
         Exit Sub
@@ -135,9 +135,9 @@ Public Sub ApplyErrorNote(ByVal Target As Range, ByVal rawCmd As Variant, ByVal 
     body = BuildErrorMessage(rawCmd, suggestion)
 
     If Target.Comment Is Nothing Then
-        Target.AddComment Text:=body
+        Target.AddComment text:=body
     ElseIf IsAssistNote(Target.Comment) Then
-        Target.Comment.Text Text:=body
+        Target.Comment.text text:=body
     Else
         Application.StatusBar = Replace(body, vbCrLf, " ")
     End If
@@ -188,7 +188,7 @@ End Function
 
 Private Function IsAssistNote(ByVal note As Comment) As Boolean
     If note Is Nothing Then Exit Function
-    IsAssistNote = (Left$(note.Text, Len(ASSIST_PREFIX)) = ASSIST_PREFIX)
+    IsAssistNote = (Left$(note.text, Len(ASSIST_PREFIX)) = ASSIST_PREFIX)
 End Function
 
 Private Function BuildErrorMessage(ByVal rawCmd As Variant, ByVal suggestion As String) As String
@@ -232,8 +232,8 @@ Private Function FormatParamHint(ByVal def As CmdDef) As String
     FormatParamHint = result
 End Function
 
-Private Function DataTypeLabel(ByVal dataType As eDataType) As String
-    Select Case dataType
+Private Function DataTypeLabel(ByVal DataType As eDataType) As String
+    Select Case DataType
         Case DT_NUM
             DataTypeLabel = "num"
         Case Else

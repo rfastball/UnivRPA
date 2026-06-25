@@ -53,9 +53,9 @@ Public Sub FormatRPAScript_Final()
 
     For R = 2 To lastRow
         ' 0. 줄번호 자동 생성
-        ws.Cells(R, 1).Value = R - 1
+        ws.Cells(R, 1).value = R - 1
 
-        pureCmd = UCase(Trim(Replace(ws.Cells(R, 2).Value, ">", "")))
+        pureCmd = UCase(Trim(Replace(ws.Cells(R, 2).value, ">", "")))
         If pureCmd = "" Then GoTo NextRow
 
             ' 2. 깊이 계산
@@ -66,11 +66,11 @@ Public Sub FormatRPAScript_Final()
                 If pureCmd = "ELSE" Or pureCmd = "CASE" Then printDepth = IIf(depth > 0, depth - 1, 0)
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
-                    ws.Cells(R, 2).Value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
+                    ws.Cells(R, 2).value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
 
                     ' [추가] 문법 및 파라미터 검사
                     Dim isValid As Boolean
-                    isValid = ValidateLine(pureCmd, ws.Cells(R, 3).Value, ws.Cells(R, 4).Value, ws.Cells(R, 5).Value)
+                    isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
                     Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth, isValid)
@@ -86,12 +86,12 @@ End Sub
 
 ' [신규] 헤더가 없으면 생성
 Public Sub EnsureHeaders(ws As Worksheet)
-    If ws.Cells(1, 2).Value = "" Then
+    If ws.Cells(1, 2).value = "" Then
         Dim headers As Variant
         headers = Array("ROW", "COMMAND", "PARAM1", "PARAM2", "PARAM3", "COMMENT")
 
         With ws.Range("A1:F1")
-            .Value = headers
+            .value = headers
             .Font.name = "돋움체"
             .Font.Size = 10
             .Font.Bold = True
@@ -120,9 +120,9 @@ Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As 
     ValidateLine = True
 
     ' 2. 조건 연산자: 맨 '=' 금지 (== 강제)
-    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사 — 데이터로 일반화
-    If Not def.P2 Is Nothing Then
-        If def.P2.IsRaw Then
+    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사 ? 데이터로 일반화
+    If Not def.p2 Is Nothing Then
+        If def.p2.IsRaw Then
             If Trim(CStr(p2)) = "=" Then ValidateLine = False
         End If
     End If
@@ -194,7 +194,7 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Opti
     '----------------------------------------------------------
     cmdCell.Font.Bold = True ' 명령어는 다시 굵게
 
-    ' [파생] ColorGroup(무슨 색) / PaintScope(칠하는 범위) — 두 독립 축을 게이트에서 조회
+    ' [파생] ColorGroup(무슨 색) / PaintScope(칠하는 범위) ? 두 독립 축을 게이트에서 조회
     Dim def As CmdDef
     Set def = modCmdRegistry.GetCmdDef(cmd)
     If def Is Nothing Then

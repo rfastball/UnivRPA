@@ -105,7 +105,7 @@ End Sub
 Public Function PopStack() As Long
     If CallStack.count > 0 Then
         ' 컬렉션의 마지막 아이템을 가져옴 (LIFO)
-        PopStack = CallStack.Item(CallStack.count)
+        PopStack = CallStack.item(CallStack.count)
         CallStack.Remove CallStack.count
     Else
         LogError "Call Stack Underflow: 돌아갈 곳이 없습니다. (RETURN 매칭 오류)"
@@ -158,7 +158,7 @@ Public Sub AddLabel(ByVal sName As String, ByVal iLine As Long)
     ' 중복 체크: 이미 있으면 에러 (Collection 특성상 키 중복 시 런타임 에러 발생하므로 선제적 방어는 선택사항이나, 명확한 에러 메시지를 위해 추가)
     On Error Resume Next
     Dim check As Variant
-    check = LabelMap.Item(cleanName)
+    check = LabelMap.item(cleanName)
     If Err.Number = 0 Then
         MsgBox "오류: 중복된 라벨 이름이 있습니다 -> " & sName, vbCritical
         End ' 강제 종료
@@ -174,7 +174,7 @@ Public Function GetLabel(ByVal sName As String) As Long
     cleanName = UCase(Trim(sName))
     
     On Error Resume Next
-    GetLabel = LabelMap.Item(cleanName)
+    GetLabel = LabelMap.item(cleanName)
     
     If Err.Number <> 0 Then
         ' 라벨을 못 찾았을 경우
@@ -258,7 +258,7 @@ Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Varian
     If wsLog Is Nothing Then
         Set wsLog = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
         wsLog.name = "RPA_LOG"
-        wsLog.Range("A1:E1").Value = Array("Time", "Loop", "Line", "Command", "Message")
+        wsLog.Range("A1:E1").value = Array("Time", "Loop", "Line", "Command", "Message")
         wsLog.Range("A1:E1").Font.Bold = True
     End If
     On Error GoTo 0
@@ -267,11 +267,11 @@ Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Varian
     NextRow = wsLog.Cells(wsLog.Rows.count, 1).End(xlUp).Row + 1
     
     With wsLog
-        .Cells(NextRow, 1).Value = Now
+        .Cells(NextRow, 1).value = Now
         ' 어떤 타입이 들어와도 & "" 가 문자로 안전하게 변환해줌
-        .Cells(NextRow, 2).Value = v1 & ""
-        .Cells(NextRow, 3).Value = v2 & ""
-        .Cells(NextRow, 4).Value = v3 & ""
-        .Cells(NextRow, 5).Value = v4 & ""
+        .Cells(NextRow, 2).value = v1 & ""
+        .Cells(NextRow, 3).value = v2 & ""
+        .Cells(NextRow, 4).value = v3 & ""
+        .Cells(NextRow, 5).value = v4 & ""
     End With
 End Sub

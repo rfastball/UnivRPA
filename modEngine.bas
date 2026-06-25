@@ -64,7 +64,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
         ' [중요] 2차원 배열로 메모리에 완전히 적재 (메모리 맵 생성)
         ' 이후 루프 안에서는 Cells나 Range를 쓰지 말고 오직 m_arrMain만 써야 합니다.
-        m_arrMain = rngTarget.Value
+        m_arrMain = rngTarget.value
         totalLines = UBound(m_arrMain, 1)
 
         ' [New] 0. 라벨 프리 스캔 (Pre-Scan)
@@ -237,13 +237,13 @@ Public Function ExecuteSmartAction_Core(arr As Variant, R As Long) As Long
     ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
     '    RAW = lvalue 주소(SET/INC/DEC P1) · 연산자(IF/WHILE P2). 그 외 = RESOLVE.
     Dim args(1 To 3) As String
-    args(1) = DecodeSlot(def.P1, CStr(arr(R, 3)))
-    args(2) = DecodeSlot(def.P2, CStr(arr(R, 4)))
-    args(3) = DecodeSlot(def.P3, CStr(arr(R, 5)))
+    args(1) = DecodeSlot(def.p1, CStr(arr(R, 3)))
+    args(2) = DecodeSlot(def.p2, CStr(arr(R, 4)))
+    args(3) = DecodeSlot(def.p3, CStr(arr(R, 5)))
 
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
-    Set handler = modCmdRegistry.Handler(def.Category)
+    Set handler = modCmdRegistry.handler(def.Category)
     ExecuteSmartAction_Core = handler.Execute(sType, R, args)
 
 CleanUp:
@@ -267,11 +267,11 @@ End Function
 
 ' [엔진 서비스] GOTO/CALL 점프 대상 해석 (숫자=줄번호, 아니면 라벨명)
 ' @desc 점프 대상 문자열 받아 줄번호 반환, 미해석 라벨 시 CMD_ERROR 반환
-Public Function ResolveJumpTarget(ByVal target As String) As Long
-    If IsNumeric(target) Then
-        ResolveJumpTarget = val(target)
+Public Function ResolveJumpTarget(ByVal Target As String) As Long
+    If IsNumeric(Target) Then
+        ResolveJumpTarget = val(Target)
     Else
-        Dim jt As Long: jt = modContext.GetLabel(target)
+        Dim jt As Long: jt = modContext.GetLabel(Target)
         If jt > 0 Then ResolveJumpTarget = jt Else ResolveJumpTarget = CMD_ERROR
     End If
 End Function

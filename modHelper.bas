@@ -65,7 +65,7 @@ Sub StartHUD_Final()
     
     ' 유저폼 초기화
     UserForm1.chkContinuous.Caption = "자동 입력 모드 (Auto-Fill)"
-    UserForm1.chkContinuous.Value = False ' 기본은 수동
+    UserForm1.chkContinuous.value = False ' 기본은 수동
     UserForm1.Show
     UserForm1.Caption = "매크로 헬퍼"
     
@@ -77,7 +77,7 @@ Sub StartHUD_Final()
         
         ' 1. 상태 및 좌표 확인
         capsOn = (GetKeyState(VK_CAPITAL) And 1) = 1
-        isAutoMode = UserForm1.chkContinuous.Value
+        isAutoMode = UserForm1.chkContinuous.value
         
         ' 2. Caps Lock이 켜져 있는 경우 (캡처 시도)
         If capsOn Then
@@ -97,9 +97,9 @@ Sub StartHUD_Final()
                 If isAutoMode Then
                     ' [A] 자동 입력 모드: 엑셀 셀에 값 꽂아넣기
                     With ActiveCell
-                        .Value = pt.x
-                        .offset(0, 1).Value = pt.y
-                        .offset(0, 2).Value = hexColor
+                        .value = pt.x
+                        .offset(0, 1).value = pt.y
+                        .offset(0, 2).value = hexColor
                         
                         ' 시각적 피드백 (배경색 살짝 변경)
                         .Interior.color = RGB(220, 255, 220)
