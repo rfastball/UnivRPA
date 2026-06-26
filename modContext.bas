@@ -76,16 +76,6 @@ Public Function GetVar(ByVal key As String) As String
     If Memory.exists(k) Then GetVar = Memory(k) Else GetVar = ""
 End Function
 
-' [전체 메모리 덤프] 디버깅용
-Public Sub DumpMemory()
-    Dim k As Variant
-    Debug.Print "=== Memory Dump ==="
-    For Each k In Memory.Keys
-        Debug.Print "Var(" & k & "): [" & Memory(k) & "]"
-    Next k
-    Debug.Print "==================="
-End Sub
-
 '==============================================================================
 ' 3. Call Stack Management (서브루틴 제어)
 '==============================================================================
@@ -124,13 +114,6 @@ End Function
 Public Sub LogStatus(ByVal msg As String)
     Application.StatusBar = "[RPA] " & msg
     DoEvents
-End Sub
-
-' [에러 로그] 치명적 오류 발생 시 (메시지박스 + 중단 권장)
-Public Sub LogError(ByVal msg As String)
-    Debug.Print "[ERROR] " & msg
-    modActions.Action_ShowNotification "오류: " & msg, 3
-    ' 필요 시 여기에 에러 기록 시트 작성 로직 추가 가능
 End Sub
 
 ' [실행 상태 확인] 외부(Engine)에서 루프 계속 여부 확인용
@@ -200,33 +183,3 @@ End Function
 Public Function LoopTopMax() As Long
     If LoopTop > 0 Then LoopTopMax = LoopStack(LoopTop).maxCount Else LoopTopMax = 0
 End Function
-
-' [modContext] 타입 오류 없는 안전한 로거
-Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Variant, ByVal v4 As Variant)
-    Dim wsLog As Worksheet
-    Dim NextRow As Long
-    
-    ' 1. 로그 시트 확보 (없으면 생성)
-
-    On Error Resume Next
-    Set wsLog = ThisWorkbook.Worksheets("RPA_LOG")
-    If wsLog Is Nothing Then
-        Set wsLog = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-        wsLog.name = "RPA_LOG"
-        wsLog.Range("A1:E1").value = Array("Time", "Loop", "Line", "Command", "Message")
-        wsLog.Range("A1:E1").Font.Bold = True
-    End If
-    On Error GoTo 0
-
-    ' 2. 마지막 행 찾기 (속도를 위해 가급적 효율적으로)
-    NextRow = wsLog.Cells(wsLog.rows.count, 1).End(xlUp).Row + 1
-    
-    With wsLog
-        .Cells(NextRow, 1).value = Now
-        ' 어떤 타입이 들어와도 & "" 가 문자로 안전하게 변환해줌
-        .Cells(NextRow, 2).value = v1 & ""
-        .Cells(NextRow, 3).value = v2 & ""
-        .Cells(NextRow, 4).value = v3 & ""
-        .Cells(NextRow, 5).value = v4 & ""
-    End With
-End Sub
