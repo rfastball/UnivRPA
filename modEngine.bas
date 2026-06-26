@@ -91,13 +91,13 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
         '----------------------------------------------------------
         ' [명령어 파싱 및 상태 업데이트]
         '----------------------------------------------------------
-        Dim fullCmdText As String
-        fullCmdText = m_program.RawCmdAt(currentLine)
-        pureCmd = m_program.CmdAt(currentLine)
+        Dim inst As clsInstruction
+        Set inst = m_program.InstructionAt(currentLine)
+        pureCmd = inst.cmd
 
         ' [UI] 표시할 상세 정보 조합 (명령어 + 파라미터)
         Dim stepInfo As String
-        stepInfo = pureCmd & " " & m_program.P1At(currentLine) & " " & m_program.P2At(currentLine) & " " & m_program.P3At(currentLine)
+        stepInfo = inst.cmd & " " & inst.P1 & " " & inst.P2 & " " & inst.P3
 
         ' [UI] 폼 업데이트
         modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo
@@ -116,7 +116,8 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
                 GoTo CleanUp
 
             Case CMD_ERROR
-                modActions.Action_ShowNotification "[에러] 라인 " & currentLine & " / " & pureCmd, 3
+                modActions.Action_ShowNotification _
+                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.SheetRow & " / " & inst.cmd, 3
                 GoTo CleanUp
 
             Case Is > 0
@@ -200,15 +201,14 @@ End Sub
 ' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환
 Public Function ExecuteSmartAction(ByVal R As Long) As Long
     On Error GoTo ErrHandler
-    Dim sType As String
     If m_program Is Nothing Then
         modActions.Action_ShowNotification "실행할 ProgramImage가 없습니다.", 3
         ExecuteSmartAction = CMD_ERROR
         GoTo CleanUp
     End If
 
-    ' 1. 명령어(Type) 추출
-    sType = m_program.RawCmdAt(R)
+    Dim inst As clsInstruction
+    Set inst = m_program.InstructionAt(R)
 
     ' [주석] #으로 시작하면 파라미터 해석 없이 즉시 다음 줄로 이동
     If m_program.IsBlankLine(R) Or m_program.IsCommentLine(R) Then
@@ -216,15 +216,11 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
      GoTo CleanUp
     End If
 
-    ' [들여쓰기 제거] ">" 기호 모두 제거 후 공백 제거 (예: ">> TYPE" -> "TYPE")
-    sType = m_program.CmdAt(R)
-
     ' 2. 레지스트리 게이트 조회 (모든 디스패치의 단일 통로)
-    Dim def As CmdDef
-    Set def = modCmdRegistry.GetCmdDef(sType)
-    If def Is Nothing Then
+    If inst.def Is Nothing Then
         ' 미등록 명령어 (무인 환경: 비차단 알림)
-        modActions.Action_ShowNotification "알 수 없는 명령어: " & sType, 3
+        modActions.Action_ShowNotification _
+            "알 수 없는 명령어: " & inst.cmd & " (라인 " & inst.RuntimeLine & ", 시트 행 " & inst.SheetRow & ")", 3
         ExecuteSmartAction = CMD_ERROR
      GoTo CleanUp
     End If
@@ -232,19 +228,24 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
     '    RAW = lvalue 주소(SET/INC/DEC P1) · 연산자(IF/WHILE P2). 그 외 = RESOLVE.
     Dim args(1 To 3) As String
-    args(1) = DecodeSlot(def.p1, m_program.P1At(R))
-    args(2) = DecodeSlot(def.p2, m_program.P2At(R))
-    args(3) = DecodeSlot(def.p3, m_program.P3At(R))
+    args(1) = DecodeSlot(inst.def.p1, inst.P1)
+    args(2) = DecodeSlot(inst.def.p2, inst.P2)
+    args(3) = DecodeSlot(inst.def.p3, inst.P3)
 
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
-    Set handler = modCmdRegistry.handler(def.Category)
-    ExecuteSmartAction = handler.Execute(sType, R, args)
+    Set handler = modCmdRegistry.handler(inst.def.Category)
+    ExecuteSmartAction = handler.Execute(inst.cmd, inst.RuntimeLine, args)
 
 CleanUp:
     Exit Function
 ErrHandler:
-    modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
+    If inst Is Nothing Then
+        modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
+    Else
+        modActions.Action_ShowNotification _
+            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.SheetRow & " / " & inst.cmd & ": " & Err.Description, 3
+    End If
     ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
 End Function
@@ -444,7 +445,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
     For i = 1 To block.CaseCount
         Dim caseLine As Long
         caseLine = block.CaseLineAt(i)
-        caseVal = ResolveParam(m_program.P1At(caseLine))
+        caseVal = ResolveParam(m_program.InstructionAt(caseLine).P1)
 
         ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
         If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then
