@@ -38,6 +38,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     Dim totalLines As Long
     Dim pureCmd As String
     Dim finalMessage As String
+    Dim fatalDesc As String
 
     finalMessage = "매크로가 종료되었습니다."
     modContext.InitContext
@@ -79,6 +80,11 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     ' [UI] 상태 표시 폼 로드
     modHelper.ShowRpaStatus frmRPAStatus, totalLines
 
+    ' [운용 로그] 세션 시작: 이전 jsonl 비우고 run_start 기록
+    LogShim.Reset
+    LogShim.LogEvent "run_start", _
+        Array("sheet", "total"), Array(wsSource.name, totalLines)
+
     modContext.LogStatus "매크로 실행 중..."
     currentLine = 1
 
@@ -106,6 +112,9 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
         '----------------------------------------------------------
         ' [액션 실행 및 반환 계약 해석]
         '----------------------------------------------------------
+        ' [운용 로그] 줄 실행 (DEBUG: 운용 시 MIN_LEVEL=INFO로 꺼짐)
+        LogShim.LogD "DEBUG", "line=" & inst.RuntimeLine & " cmd=" & inst.cmd
+
         nextLine = ExecuteSmartAction(currentLine)
 
         Select Case nextLine
@@ -116,6 +125,9 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
                 GoTo CleanUp
 
             Case CMD_ERROR
+                LogShim.LogEvent "cmd_error", _
+                    Array("line", "sheetRow", "cmd", "code"), _
+                    Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, CLng(nextLine))
                 modActions.Action_ShowNotification _
                     "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd, 3
                 GoTo CleanUp
@@ -133,6 +145,8 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
 CleanUp:
     On Error Resume Next
+    ' [운용 로그] 세션 종료 (finalMessage가 상태를 담음)
+    LogShim.LogEvent "run_end", Array("status"), Array(finalMessage)
     modHelper.CloseRpaStatus frmRPAStatus
     modContext.ResetContext
     Set m_program = Nothing
@@ -141,8 +155,12 @@ CleanUp:
     Exit Sub
 
 FatalError:
+    fatalDesc = Err.Description
+    LogShim.LogEvent "fatal_error", _
+        Array("line", "cmd", "desc"), _
+        Array(currentLine, pureCmd, fatalDesc)
     modActions.Action_ShowNotification _
-        "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & Err.Description, 3
+        "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & fatalDesc, 3
     finalMessage = "매크로가 종료되었습니다."
     Resume CleanUp
 End Sub
