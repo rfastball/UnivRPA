@@ -84,8 +84,12 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
         ' 0. 줄번호 자동 생성
         ws.Cells(R, 1).value = R - 1
 
-        pureCmd = UCase(Trim(Replace(ws.Cells(R, 2).value, ">", "")))
-        If pureCmd = "" Then GoTo NextRow
+        pureCmd = modCmdRegistry.NormalizeCommand(ws.Cells(R, 2).value)
+        If Len(Trim$(CStr(ws.Cells(R, 2).value))) = 0 Then GoTo NextRow
+        Dim rowIsComment As Boolean
+        Dim rowLooksLikeIndentedComment As Boolean
+        rowIsComment = IsCommentRow(ws, R)
+        rowLooksLikeIndentedComment = (Not rowIsComment And Left$(pureCmd, 1) = "#")
 
             ' 2. 깊이 계산
             If IsBlockEnder(pureCmd) Then depth = IIf(depth > 0, depth - 1, 0)
@@ -96,15 +100,21 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                 printDepth = printDepth + subDepths(R)
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
-                    ws.Cells(R, 2).value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
+                    If Not rowLooksLikeIndentedComment Then
+                        ws.Cells(R, 2).value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
+                    End If
 
                     ' [추가] 문법 및 파라미터 검사
                     Dim isValid As Boolean
-                    isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
+                    If rowIsComment Then
+                        isValid = True
+                    Else
+                        isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
+                    End If
                     If invalidRows.exists(CStr(R)) Then isValid = False
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
-                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid)
+                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid, rowIsComment)
                     Call ApplySubroutineBoundaryStyle(ws.Cells(R, 2).Resize(1, 4), _
                                                        subStartRows.exists(CStr(R)), _
                                                        subEndRows.exists(CStr(R)), _
@@ -200,7 +210,7 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
-Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Optional isValid As Boolean = True)
+Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Optional isValid As Boolean = True, Optional isComment As Boolean = False)
     Dim cmdCell As Range: Set cmdCell = rng.Cells(1, 1)
 
     '----------------------------------------------------------
@@ -255,7 +265,7 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Opti
     '----------------------------------------------------------
     ' 2. [주석 처리]
     '----------------------------------------------------------
-    If Left(cmd, 1) = "#" Then
+    If isComment Then
         rng.Font.color = RGB(180, 180, 180)
      Exit Sub
     End If
@@ -329,6 +339,7 @@ Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, 
 
     Dim R As Long
     For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
         If PureCommandAt(ws, R) = "LABEL" Then
             Dim labelName As String
             labelName = LabelNameAt(ws, R)
@@ -356,12 +367,15 @@ Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, 
                 If Not HasFlowBreakBefore(ws, R) Then invalidRows(CStr(R)) = True
             End If
         End If
+NextRow:
     Next R
 
     For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextReturnRow
         If PureCommandAt(ws, R) = "RETURN" Then
             If Not inSubroutineRows.exists(CStr(R)) Then invalidRows(CStr(R)) = True
         End If
+NextReturnRow:
     Next R
 End Sub
 
@@ -372,6 +386,7 @@ Private Sub ComputeBaseDepths(ByVal ws As Worksheet, ByVal lastRow As Long, ByRe
     For R = 2 To lastRow
         Dim cmd As String
         cmd = PureCommandAt(ws, R)
+        If IsCommentRow(ws, R) Then GoTo NextRow
 
         If IsBlockEnder(cmd) Then depth = IIf(depth > 0, depth - 1, 0)
 
@@ -379,6 +394,7 @@ Private Sub ComputeBaseDepths(ByVal ws As Worksheet, ByVal lastRow As Long, ByRe
         If cmd = "ELSE" Or cmd = "CASE" Then baseDepths(R) = IIf(depth > 0, depth - 1, 0)
 
         If IsBlockStarter(cmd) Then depth = depth + 1
+NextRow:
     Next R
 End Sub
 
@@ -389,6 +405,7 @@ Private Function BuildLabelRowMap(ByVal ws As Worksheet, ByVal lastRow As Long) 
 
     Dim R As Long
     For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
         If PureCommandAt(ws, R) = "LABEL" Then
             Dim labelName As String
             labelName = LabelNameAt(ws, R)
@@ -403,6 +420,7 @@ Private Function BuildLabelRowMap(ByVal ws As Worksheet, ByVal lastRow As Long) 
                 rows.Add R
             End If
         End If
+NextRow:
     Next R
 
     Set BuildLabelRowMap = result
@@ -415,11 +433,13 @@ Private Function BuildCallTargetMap(ByVal ws As Worksheet, ByVal lastRow As Long
 
     Dim R As Long
     For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
         If PureCommandAt(ws, R) = "CALL" Then
             Dim target As String
             target = JumpTargetAt(ws, R)
             If IsStaticLabelTarget(target) Then result(target) = True
         End If
+NextRow:
     Next R
 
     Set BuildCallTargetMap = result
@@ -429,6 +449,7 @@ Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long,
                                    ByVal labelRows As Object, ByVal invalidRows As Object)
     Dim R As Long
     For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
         Dim cmd As String
         cmd = PureCommandAt(ws, R)
 
@@ -439,6 +460,7 @@ Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long,
                 If Not labelRows.exists(target) Then invalidRows(CStr(R)) = True
             End If
         End If
+NextRow:
     Next R
 End Sub
 
@@ -447,6 +469,7 @@ Private Function FindSubroutineReturn(ByVal ws As Worksheet, ByVal startRow As L
                                       ByRef baseDepths() As Long) As Long
     Dim R As Long
     For R = startRow + 1 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
         Dim cmd As String
         cmd = PureCommandAt(ws, R)
         If Not IsExecutableCommand(cmd) Then GoTo NextRow
@@ -470,12 +493,14 @@ End Function
 Private Function HasFlowBreakBefore(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
     Dim R As Long
     For R = rowNum - 1 To 2 Step -1
+        If IsCommentRow(ws, R) Then GoTo NextRow
         Dim cmd As String
         cmd = PureCommandAt(ws, R)
         If IsExecutableCommand(cmd) Then
             HasFlowBreakBefore = (cmd = "EXIT" Or cmd = "GOTO" Or cmd = "RETURN")
             Exit Function
         End If
+NextRow:
     Next R
 End Function
 
@@ -508,7 +533,7 @@ Private Sub ApplySubroutineBoundaryStyle(ByVal rng As Range, ByVal isStart As Bo
 End Sub
 
 Private Function PureCommandAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
-    PureCommandAt = UCase$(Trim$(Replace(Trim$(CStr(ws.Cells(rowNum, 2).value)), ">", "")))
+    PureCommandAt = modCmdRegistry.NormalizeCommand(ws.Cells(rowNum, 2).value)
 End Function
 
 Private Function LabelNameAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
@@ -520,7 +545,13 @@ Private Function JumpTargetAt(ByVal ws As Worksheet, ByVal rowNum As Long) As St
 End Function
 
 Private Function IsExecutableCommand(ByVal cmd As String) As Boolean
-    IsExecutableCommand = (Len(cmd) > 0 And Left$(cmd, 1) <> "#")
+    IsExecutableCommand = (Len(cmd) > 0)
+End Function
+
+Private Function IsCommentRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+    Dim rawCmd As String
+    rawCmd = Trim$(CStr(ws.Cells(rowNum, 2).value))
+    IsCommentRow = (Len(rawCmd) > 0 And Left$(rawCmd, 1) = "#")
 End Function
 
 Private Function IsStaticLabelTarget(ByVal target As String) As Boolean

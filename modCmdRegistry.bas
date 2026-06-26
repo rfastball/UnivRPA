@@ -70,13 +70,21 @@ Public Function GetCmdDef(ByVal rawCmd As String) As CmdDef
 
     ' 정규화: Trim -> 들여쓰기(">") 제거 -> Trim -> UCase
     Dim cmd As String
-    cmd = UCase$(Trim$(Replace(Trim$(rawCmd), ">", "")))
+    cmd = NormalizeCommand(rawCmd)
 
     ' 주석(#) 또는 빈 줄은 명령어 아님
     If Len(cmd) = 0 Then Exit Function
     If Left$(cmd, 1) = "#" Then Exit Function
 
     If m_reg.exists(cmd) Then Set GetCmdDef = m_reg(cmd)
+End Function
+
+' @desc 명령어 문자열의 단일 정규화 규칙: Trim -> ">" 제거 -> Trim -> UCase
+Public Function NormalizeCommand(ByVal rawCmd As Variant) As String
+    On Error GoTo SafeExit
+    If IsError(rawCmd) Or IsNull(rawCmd) Or IsEmpty(rawCmd) Then Exit Function
+    NormalizeCommand = UCase$(Trim$(Replace(Trim$(CStr(rawCmd)), ">", "")))
+SafeExit:
 End Function
 
 ' @desc 레지스트리가 비어있으면 1회 빌드함 (지연 초기화)
@@ -170,7 +178,7 @@ Private Sub BuildRegistry()
         sp3:=P("라벨/줄번호", DT_STR, RESOLVE, True)
     Reg "RETURN", FLOW, NOBLOCK, "", clrFLOW, FULLROW
     Reg "LABEL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨명", DT_STR, RESOLVE, True)
+        sp3:=P("라벨명", DT_STR, RAW, True)
 
     '--- [ACTION] 6개 -----------------------------------------------------------
     Reg "MOVE", ACTION, NOBLOCK, "", clrACTION, cmdCell, _

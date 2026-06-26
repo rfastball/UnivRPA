@@ -161,7 +161,7 @@ Public Sub AddLabel(ByVal sName As String, ByVal iLine As Long)
     check = LabelMap.item(cleanName)
     If Err.Number = 0 Then
         MsgBox "오류: 중복된 라벨 이름이 있습니다 -> " & sName, vbCritical
-        End ' 강제 종료
+        Exit Sub
     End If
     On Error GoTo 0
     

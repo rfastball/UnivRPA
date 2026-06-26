@@ -21,14 +21,20 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
     ICommand_Execute = CMD_NEXT_LINE
 
     Select Case cmd
-         Case "LABEL": ' Pass (라벨은 PreScanLabels에서 사전 등록됨)
+         Case "LABEL": ' Pass (라벨은 clsScriptProgram에서 사전 인덱싱됨)
 
          Case "GOTO"
             ICommand_Execute = modEngine.ResolveJumpTarget(args(3))
 
          Case "CALL"
-            modContext.PushStack R + 1
-            ICommand_Execute = modEngine.ResolveJumpTarget(args(3))
+            Dim callTarget As Long
+            callTarget = modEngine.ResolveJumpTarget(args(3))
+            If callTarget > 0 Then
+                modContext.PushStack R + 1
+                ICommand_Execute = callTarget
+            Else
+                ICommand_Execute = CMD_ERROR
+            End If
 
          Case "RETURN"
             Dim retLine As Long
@@ -39,10 +45,10 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
                 ICommand_Execute = CMD_NEXT_LINE
             Else
-                Dim targetLine As Long: targetLine = modEngine.FindBlockPair(R, "IF", 1)
+                Dim targetLine As Long: targetLine = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
                 If targetLine > 0 Then
                     ' ELSE 면 그 다음 줄로, END_IF 면 그 줄로
-                    If modEngine.CmdAt(targetLine) = "ELSE" Then
+                    If modEngine.ActiveProgram().CmdAt(targetLine) = "ELSE" Then
                         ICommand_Execute = targetLine + 1
                     Else
                         ICommand_Execute = targetLine
@@ -53,7 +59,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "ELSE"
-            ICommand_Execute = modEngine.FindBlockPair(R, "IF", 1)
+            ICommand_Execute = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
 
          Case "END_IF", "END_SELECT"
             ICommand_Execute = CMD_NEXT_LINE
@@ -62,30 +68,35 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "WHILE"
             Dim whileEnd As Long
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
+                whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
+                If whileEnd <= 0 Then
+                    ICommand_Execute = CMD_ERROR
+                    GoTo CleanUp
+                End If
                 ' 참: 첫 진입이면 PUSH, 백엣지 재진입(top.header=R)이면 회차+1
                 If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then
                     modContext.LoopIncrement
                 Else
-                    modContext.LoopPush "WHILE", R, modEngine.FindBlockPair(R, "WHILE", 1), 0
+                    modContext.LoopPush "WHILE", R, whileEnd, 0
                 End If
                 ICommand_Execute = CMD_NEXT_LINE
             Else
                 ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
                 If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop
-                whileEnd = modEngine.FindBlockPair(R, "WHILE", 1)
+                whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
                 If whileEnd > 0 Then ICommand_Execute = whileEnd + 1 Else ICommand_Execute = CMD_ERROR
             End If
 
          Case "END_WHILE"
             ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
-            Dim wHead As Long: wHead = modEngine.FindBlockPair(R, "WHILE", -1)
+            Dim wHead As Long: wHead = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", -1)
             If wHead > 0 Then ICommand_Execute = wHead Else ICommand_Execute = CMD_ERROR
 
          '--- [Loop] REPEAT / END_REPEAT (N회 또는 무한 반복) ---
          Case "REPEAT"
             Dim repeatArg As String: repeatArg = Trim$(args(1))
             Dim maxCnt As Long
-            Dim rEndRepeat As Long: rEndRepeat = modEngine.FindBlockPair(R, "REPEAT", 1)
+            Dim rEndRepeat As Long: rEndRepeat = modEngine.ActiveProgram().FindBlockPair(R, "REPEAT", 1)
             If rEndRepeat <= 0 Then
                 ICommand_Execute = CMD_ERROR
                 GoTo CleanUp
@@ -110,7 +121,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "END_REPEAT"
-            Dim rHead As Long: rHead = modEngine.FindBlockPair(R, "REPEAT", -1)
+            Dim rHead As Long: rHead = modEngine.ActiveProgram().FindBlockPair(R, "REPEAT", -1)
             If rHead > 0 And modContext.LoopDepth() > 0 And _
                modContext.LoopTopKind() = "REPEAT" And modContext.LoopTopHeader() = rHead Then
                 If modContext.LoopTopMax() = 0 Then
@@ -147,13 +158,13 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 
          '--- [Structured Flow] SELECT / CASE / END_SELECT ---
          Case "SELECT"
-            ' 전방 스캔(m_arrMain 의존)은 modEngine 엔진 서비스에 위임
+            ' SELECT 실행 의미는 Engine, 구조 위치는 ActiveProgram 인덱스가 담당
             ICommand_Execute = modEngine.ResolveSelectTarget(R, args(1))
 
          Case "CASE"
             ' 실행 중 CASE 도달 = 폴스루 -> END_SELECT 로 점프
             Dim endSelLine As Long
-            endSelLine = modEngine.FindBlockPair(R, "SELECT", 1)
+            endSelLine = modEngine.ActiveProgram().EndSelectOfCase(R)
             If endSelLine > 0 Then ICommand_Execute = endSelLine Else ICommand_Execute = CMD_ERROR
 
          Case Else

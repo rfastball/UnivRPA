@@ -6,16 +6,16 @@ Option Explicit
 '==============================================================================
 ' [System] Full Integration Test Runner (v2 명령어셋)
 '==============================================================================
-' 주의: 단일 라인 하니스(ExecuteSmartAction(arrCmd,1))는 m_arrMain 을 채우지 못하므로
-'   블록 흐름(IF 거짓/WHILE/REPEAT/SELECT, BREAK/CONTINUE)은 여기서 검증하지 않는다.
-'   -> 해당 항목은 워크시트 프로그램으로 수동 검증 (spec Verification 참조).
-'   여기서는 m_arrMain 불필요한 것만: SET/메모리, 토크나이저, TYPE/KEY, CALL/RETURN,
+' 주의: 단일 라인 하니스는 배열을 clsScriptProgram으로 로드한 뒤 ExecuteSmartAction(1)을 호출한다.
+'   여기서는 액션/토큰/메모리와 ProgramImage 구조 인덱스를 함께 검증한다.
+'   워크시트 UI 동작은 별도 수동 검증 (spec Verification 참조).
+'   여기서는 SET/메모리, 토크나이저, TYPE/KEY, CALL/RETURN,
 '   비전(WAIT_VANISH/ASSERT), FOCUS, IF-참, 그리고 연산자 단위검증을 다룬다.
 '==============================================================================
 Sub Run_System_SelfDiagnosis()
     Dim wsTest As Worksheet
     Dim failCount As Long
-    Dim arrCmd(1 To 10, 1 To 5) As Variant
+    Dim arrCmd(1 To 60, 1 To 5) As Variant
     Dim nextLine As Long
 
     ' 1. 테스트 환경 준비
@@ -43,7 +43,7 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 1] Memory (SET / $BLANK) ---"
 
     Call MakeCmd(arrCmd, 1, "SET", "{score}", 0, "10")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("score") = "10" Then
         LogPass "SET (mem write)"
@@ -52,7 +52,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     Call MakeCmd(arrCmd, 1, "SET", "{score}", 0, "{$BLANK}")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("score") = "" Then
         LogPass "SET {$BLANK} (clear)"
@@ -66,9 +66,9 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 2] Tokenizer (interp + literal) ---"
 
     Call MakeCmd(arrCmd, 1, "SET", "{a}", 0, "hello")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     Call MakeCmd(arrCmd, 1, "SET", "{b}", 0, "{a}_world")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("b") = "hello_world" Then
         LogPass "Interpolation ({a}_world)"
@@ -77,7 +77,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     Call MakeCmd(arrCmd, 1, "SET", "{t}", 0, "A{$TAB}B")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("t") = "A" & vbTab & "B" Then
         LogPass "Literal token ({$TAB})"
@@ -91,7 +91,7 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 3] {$LOOP} outside loop = 0 ---"
 
     Call MakeCmd(arrCmd, 1, "SET", "{L}", 0, "{$LOOP}")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("L") = "0" Then
         LogPass "{$LOOP} (no loop -> 0)"
@@ -106,10 +106,10 @@ Sub Run_System_SelfDiagnosis()
 
     ' 쓰기: SET {$CLIP} 값  -> 읽기: SET {c} {$CLIP}
     Call MakeCmd(arrCmd, 1, "SET", "{$CLIP}", 0, "CLIP_RT")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     modActions.BetterWait 80
     Call MakeCmd(arrCmd, 1, "SET", "{c}", 0, "{$CLIP}")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("c") = "CLIP_RT" Then
         LogPass "SET {$CLIP} (write/read)"
@@ -123,7 +123,7 @@ Sub Run_System_SelfDiagnosis()
     actualColor = modWinAPI.GetColorHexAt(screenX, screenY)
 
     Call MakeCmd(arrCmd, 1, "SET", "{px}", 0, "{$PIXEL:" & screenX & "," & screenY & "}")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("px") = actualColor Then
         LogPass "{$PIXEL:x,y} (color read)"
@@ -140,9 +140,9 @@ Sub Run_System_SelfDiagnosis()
     wsTest.Range("A1").Select
 
     Call MakeCmd(arrCmd, 1, "TYPE", 10, 0, "HelloRPA") ' P1=딜레이10ms, P3=텍스트
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     Call MakeCmd(arrCmd, 1, "KEY", 13, 0, "")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     DoEvents
     If wsTest.Range("A1").value = "HelloRPA" Then
@@ -157,13 +157,13 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 6] TYPE {name} ---"
 
     Call MakeCmd(arrCmd, 1, "SET", "{dyn}", 0, "DynamicValue")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     wsTest.Range("A2").Select
     Call MakeCmd(arrCmd, 1, "TYPE", 10, 0, "{dyn}")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     Call MakeCmd(arrCmd, 1, "KEY", 13, 0, "")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
 
     DoEvents
     If wsTest.Range("A2").value = "DynamicValue" Then
@@ -178,13 +178,13 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 7] Flow (CALL/RETURN) ---"
 
     Call MakeCmd(arrCmd, 1, "CALL", 0, 0, "50")
-    nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
+    nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine = 50 And modContext.GetStackDepth() = 1 Then
         LogPass "CALL (Stack Push & Jump)"
 
         Call MakeCmd(arrCmd, 1, "RETURN", 0, 0, "")
-        nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
+        nextLine = ExecuteArrayLine(arrCmd, 1)
 
         If nextLine = 2 And modContext.GetStackDepth() = 0 Then
             LogPass "RETURN (Stack Pop & Return)"
@@ -197,12 +197,12 @@ Sub Run_System_SelfDiagnosis()
 
     '==========================================================================
     ' [Test 8] IF (참 갈래는 단일 라인으로 검증: 다음 줄 반환)
-    '   IF {$PIXEL:x,y} EQ <현재색>  -> 참 -> 0 반환 (m_arrMain 불필요)
+    '   IF {$PIXEL:x,y} EQ <현재색>  -> 참 -> 0 반환
     '==========================================================================
     Debug.Print "--- [Test 8] IF (true branch) ---"
 
     Call MakeCmd(arrCmd, 1, "IF", "{$PIXEL:" & screenX & "," & screenY & "}", "EQ", actualColor)
-    nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
+    nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine = 0 Then
         LogPass "IF EQ (true -> next line)"
@@ -228,7 +228,7 @@ Sub Run_System_SelfDiagnosis()
 
     Dim tStart As Long, tEnd As Long
     tStart = modWinAPI.GetTickCount()
-    nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
+    nextLine = ExecuteArrayLine(arrCmd, 1)
     tEnd = modWinAPI.GetTickCount()
 
     If (tEnd - tStart) < 1000 And nextLine <> -1 Then
@@ -243,7 +243,7 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 10] FOCUS ---"
 
     Call MakeCmd(arrCmd, 1, "FOCUS", 0, 0, "Excel")
-    nextLine = modEngine.ExecuteSmartAction(arrCmd, 1)
+    nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine <> -1 Then
         LogPass "FOCUS (Find Window)"
@@ -294,7 +294,7 @@ Sub Run_System_SelfDiagnosis()
 
     ' 미정의 변수 INC -> 1 (missing empty -> 0 +1)
     Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "1" Then
         LogPass "INC (undefined -> 1)"
     Else
@@ -303,7 +303,7 @@ Sub Run_System_SelfDiagnosis()
 
     ' INC {n} 5 -> 6 (P3 RESOLVE)
     Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "5")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "6" Then
         LogPass "INC (+5 -> 6)"
     Else
@@ -312,7 +312,7 @@ Sub Run_System_SelfDiagnosis()
 
     ' DEC {n} -> 5 (기본 1 감분)
     Call MakeCmd(arrCmd, 1, "DEC", "{n}", 0, "")
-    modEngine.ExecuteSmartAction arrCmd, 1
+    ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "5" Then
         LogPass "DEC (-1 -> 5)"
     Else
@@ -322,7 +322,7 @@ Sub Run_System_SelfDiagnosis()
     ' 읽기전용 좌변 INC {$LOOP} -> CMD_ERROR(-1)
     Dim incErr As Long
     Call MakeCmd(arrCmd, 1, "INC", "{$LOOP}", 0, "")
-    incErr = modEngine.ExecuteSmartAction(arrCmd, 1)
+    incErr = ExecuteArrayLine(arrCmd, 1)
     If incErr = -1 Then
         LogPass "INC {$LOOP} (read-only -> ERROR)"
     Else
@@ -340,6 +340,12 @@ Sub Run_System_SelfDiagnosis()
     Else
         LogFail "Registry sync", "0 fails", CStr(syncFails) & " fails": failCount = failCount + syncFails
     End If
+
+    '==========================================================================
+    ' [Test 14] ScriptProgram 구조/SELECT/LABEL 인덱스
+    '==========================================================================
+    Debug.Print "--- [Test 14] ScriptProgram model ---"
+    failCount = failCount + Test_ScriptProgramModel()
 
     '==========================================================================
     ' 종료 처리
@@ -402,6 +408,156 @@ Private Sub MakeCmd(ByRef arr As Variant, R As Long, cmd As String, p1 As Varian
     arr(R, 3) = p1
     arr(R, 4) = p2
     arr(R, 5) = p3
+End Sub
+
+Private Function ExecuteArrayLine(ByRef arr As Variant, ByVal R As Long) As Long
+    modEngine.LoadProgramFromArray arr, 1
+    ExecuteArrayLine = modEngine.ExecuteSmartAction(R)
+End Function
+
+Private Function Test_ScriptProgramModel() As Long
+    Dim fails As Long
+    Dim arr(1 To 24, 1 To 5) As Variant
+
+    Call MakeCmd(arr, 1, "> IF", "1", "EQ", "0")
+    Call MakeCmd(arr, 2, "TYPE", 0, 0, "if-body")
+    Call MakeCmd(arr, 3, "ELSE", 0, 0, "")
+    Call MakeCmd(arr, 4, "TYPE", 0, 0, "else-body")
+    Call MakeCmd(arr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 6, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(arr, 7, "END_WHILE", 0, 0, "")
+    Call MakeCmd(arr, 8, "REPEAT", 2, 0, "")
+    Call MakeCmd(arr, 9, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr, 10, "SELECT", "A", 0, "")
+    Call MakeCmd(arr, 11, "CASE", "A", 0, "")
+    Call MakeCmd(arr, 12, "TYPE", 0, 0, "A")
+    Call MakeCmd(arr, 13, "SELECT", "B", 0, "")
+    Call MakeCmd(arr, 14, "CASE", "B", 0, "")
+    Call MakeCmd(arr, 15, "END_SELECT", 0, 0, "")
+    Call MakeCmd(arr, 16, "CASE", "ELSE", 0, "")
+    Call MakeCmd(arr, 17, "TYPE", 0, 0, "fallback")
+    Call MakeCmd(arr, 18, "END_SELECT", 0, 0, "")
+    Call MakeCmd(arr, 19, "LABEL", 0, 0, "LOGIN")
+    Call MakeCmd(arr, 20, "GOTO", 0, 0, "LOGIN")
+    Call MakeCmd(arr, 21, "# real comment", 0, 0, "")
+    Call MakeCmd(arr, 22, "> # not comment", 0, 0, "")
+    Call MakeCmd(arr, 23, ">", 0, 0, "")
+    Call MakeCmd(arr, 24, "", 0, 0, "")
+
+    Dim program As clsScriptProgram
+    Set program = New clsScriptProgram
+    program.LoadFromArray arr, 5
+    If Not program.ValidateStructure() Then
+        LogFail "Program ValidateStructure", "True", program.ValidationErrors(): fails = fails + 1
+    Else
+        LogPass "Program ValidateStructure"
+    End If
+    If Not program.ValidateLabels() Then
+        LogFail "Program ValidateLabels", "True", program.ValidationErrors(): fails = fails + 1
+    Else
+        LogPass "Program ValidateLabels"
+    End If
+
+    ExpectLong "TotalLines", 24, program.TotalLines, fails
+    ExpectLong "SheetRowFromRuntimeLine", 5, program.SheetRowFromRuntimeLine(1), fails
+    ExpectLong "RuntimeLineFromSheetRow", 1, program.RuntimeLineFromSheetRow(5), fails
+    ExpectText "CmdAt indent", "IF", program.CmdAt(1), fails
+    ExpectBool "raw comment true", True, program.IsCommentLine(21), fails
+    ExpectBool "indented comment false", False, program.IsCommentLine(22), fails
+    ExpectBool "raw > is not blank", False, program.IsBlankLine(23), fails
+    ExpectBool "empty raw blank", True, program.IsBlankLine(24), fails
+
+    ExpectLong "IF -> ELSE", 3, program.FindBlockPair(1, "IF", 1), fails
+    ExpectLong "ELSE -> END_IF", 5, program.FindBlockPair(3, "IF", 1), fails
+    ExpectLong "WHILE -> END_WHILE", 7, program.FindBlockPair(6, "WHILE", 1), fails
+    ExpectLong "END_WHILE -> WHILE", 6, program.FindBlockPair(7, "WHILE", -1), fails
+    ExpectLong "REPEAT -> END_REPEAT", 9, program.FindBlockPair(8, "REPEAT", 1), fails
+    ExpectLong "END_REPEAT -> REPEAT", 8, program.FindBlockPair(9, "REPEAT", -1), fails
+    ExpectLong "FindBlockPair rejects SELECT", CMD_ERROR, program.FindBlockPair(10, "SELECT", 1), fails
+
+    Dim outerBlock As clsSelectBlock
+    Set outerBlock = program.SelectBlock(10)
+    If outerBlock Is Nothing Then
+        LogFail "Outer SelectBlock", "object", "Nothing": fails = fails + 1
+    Else
+        ExpectLong "Outer SELECT end", 18, outerBlock.EndSelectLine, fails
+        ExpectLong "Outer SELECT case count", 2, outerBlock.CaseCount, fails
+        ExpectLong "Outer SELECT case 1", 11, outerBlock.CaseLineAt(1), fails
+        ExpectLong "Outer SELECT case 2", 16, outerBlock.CaseLineAt(2), fails
+    End If
+    ExpectLong "CASE fallthrough outer", 18, program.EndSelectOfCase(11), fails
+    ExpectLong "CASE fallthrough fallback", 18, program.EndSelectOfCase(16), fails
+
+    Dim innerBlock As clsSelectBlock
+    Set innerBlock = program.SelectBlock(13)
+    If innerBlock Is Nothing Then
+        LogFail "Inner SelectBlock", "object", "Nothing": fails = fails + 1
+    Else
+        ExpectLong "Inner SELECT end", 15, innerBlock.EndSelectLine, fails
+        ExpectLong "Inner SELECT case count", 1, innerBlock.CaseCount, fails
+    End If
+
+    ExpectBool "HasLabel LOGIN", True, program.HasLabel("login"), fails
+    ExpectLong "LabelLine LOGIN", 19, program.LabelLine("LOGIN"), fails
+    ExpectLong "ResolveJumpTarget label", 19, program.ResolveJumpTarget("LOGIN"), fails
+    ExpectLong "ResolveJumpTarget numeric", 20, program.ResolveJumpTarget("20"), fails
+    ExpectLong "ResolveJumpTarget low out of range", CMD_ERROR, program.ResolveJumpTarget("0"), fails
+    ExpectLong "ResolveJumpTarget high out of range", CMD_ERROR, program.ResolveJumpTarget("999"), fails
+
+    modEngine.LoadProgramFromArray arr, 5
+    ExpectLong "ResolveSelectTarget first match", 12, modEngine.ResolveSelectTarget(10, "A"), fails
+    ExpectLong "ResolveSelectTarget last fallback", 17, modEngine.ResolveSelectTarget(10, "Z"), fails
+    ExpectLong "CASE execute fallthrough", 18, modEngine.ExecuteSmartAction(11), fails
+
+    Dim dupArr(1 To 2, 1 To 5) As Variant
+    Call MakeCmd(dupArr, 1, "LABEL", 0, 0, "DUP")
+    Call MakeCmd(dupArr, 2, "LABEL", 0, 0, "dup")
+    Set program = New clsScriptProgram
+    program.LoadFromArray dupArr, 1
+    If program.ValidateLabels() Then
+        LogFail "Duplicate LABEL validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "Duplicate LABEL validation"
+    End If
+
+    Dim tokenArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(tokenArr, 1, "LABEL", 0, 0, "{target}")
+    Set program = New clsScriptProgram
+    program.LoadFromArray tokenArr, 1
+    If program.ValidateLabels() Then
+        LogFail "Token LABEL validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "Token LABEL validation"
+    End If
+
+    Test_ScriptProgramModel = fails
+End Function
+
+Private Sub ExpectLong(ByVal testName As String, ByVal expected As Long, ByVal actual As Long, ByRef failCount As Long)
+    If expected = actual Then
+        LogPass testName
+    Else
+        LogFail testName, CStr(expected), CStr(actual)
+        failCount = failCount + 1
+    End If
+End Sub
+
+Private Sub ExpectText(ByVal testName As String, ByVal expected As String, ByVal actual As String, ByRef failCount As Long)
+    If expected = actual Then
+        LogPass testName
+    Else
+        LogFail testName, expected, actual
+        failCount = failCount + 1
+    End If
+End Sub
+
+Private Sub ExpectBool(ByVal testName As String, ByVal expected As Boolean, ByVal actual As Boolean, ByRef failCount As Long)
+    If expected = actual Then
+        LogPass testName
+    Else
+        LogFail testName, CStr(expected), CStr(actual)
+        failCount = failCount + 1
+    End If
 End Sub
 
 Private Sub LogPass(testName As String)

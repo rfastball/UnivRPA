@@ -282,19 +282,17 @@ Public Sub ClearAssistState(ByVal Target As Range)
 End Sub
 
 Public Function IsBlankCommand(ByVal rawCmd As Variant) As Boolean
-    IsBlankCommand = (Len(NormalizeCmd(rawCmd)) = 0)
+    IsBlankCommand = (Len(Trim$(SafeText(rawCmd))) = 0)
 End Function
 
 Public Function IsCommentCommand(ByVal rawCmd As Variant) As Boolean
-    Dim cmd As String
-    cmd = NormalizeCmd(rawCmd)
-    IsCommentCommand = (Len(cmd) > 0 And Left$(cmd, 1) = "#")
+    Dim text As String
+    text = Trim$(SafeText(rawCmd))
+    IsCommentCommand = (Len(text) > 0 And Left$(text, 1) = "#")
 End Function
 
 Public Function NormalizeCmd(ByVal rawCmd As Variant) As String
-    Dim text As String
-    text = SafeText(rawCmd)
-    NormalizeCmd = UCase$(Trim$(Replace(Trim$(text), ">", "")))
+    NormalizeCmd = modCmdRegistry.NormalizeCommand(rawCmd)
 End Function
 
 Private Sub ClearStatusBar()
