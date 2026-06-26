@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -20,7 +20,7 @@ Private Const END_SELECT_NOT_FOUND As Long = CMD_ERROR
 Private Const LABEL_NOT_FOUND As Long = CMD_ERROR
 
 Private m_lines As Variant
-Private m_totalLines As Long
+Private m_TotalLines As Long
 Private m_firstSheetRow As Long
 Private m_selectBlocks As Object
 Private m_caseEndSelectLines As Object
@@ -53,14 +53,14 @@ End Sub
 Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheetRow As Long = 1)
     If Not IsArray(sourceArray) Then Err.Raise 5, "clsScriptProgram.LoadFromArray", "Program source must be a 2D array."
     m_lines = sourceArray
-    m_totalLines = UBound(m_lines, 1)
+    m_TotalLines = UBound(m_lines, 1)
     m_firstSheetRow = firstSheetRow
     ResetIndexes
     BuildInstructionCache
 End Sub
 
-Public Property Get TotalLines() As Long
-    TotalLines = m_totalLines
+Public Property Get totalLines() As Long
+    totalLines = m_TotalLines
 End Property
 
 Public Function RawCmdAt(ByVal lineNo As Long) As String
@@ -129,7 +129,7 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
     Dim R As Long
     Dim endLine As Long
     Dim depth As Long
-    If Direction = 1 Then endLine = m_totalLines Else endLine = 1
+    If Direction = 1 Then endLine = m_TotalLines Else endLine = 1
 
     For R = startLine + Direction To endLine Step Direction
         If IsSkippable(R) Then GoTo NextRow
@@ -182,13 +182,13 @@ Public Sub BuildStructureIndex()
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
 
     Dim R As Long
-    For R = 1 To m_totalLines
+    For R = 1 To m_TotalLines
         If CmdAt(R) = "SELECT" Then BuildSelectBlock R
     Next R
 End Sub
 
-Public Function SelectBlock(ByVal selectLine As Long) As clsSelectBlock
-    If m_selectBlocks.exists(CStr(selectLine)) Then Set SelectBlock = m_selectBlocks(CStr(selectLine))
+Public Function SelectBlock(ByVal SelectLine As Long) As clsSelectBlock
+    If m_selectBlocks.exists(CStr(SelectLine)) Then Set SelectBlock = m_selectBlocks(CStr(SelectLine))
 End Function
 
 Public Function EndSelectOfCase(ByVal caseLine As Long) As Long
@@ -206,7 +206,7 @@ Public Sub BuildLabelIndex()
     m_duplicateLabels.CompareMode = vbTextCompare
 
     Dim R As Long
-    For R = 1 To m_totalLines
+    For R = 1 To m_TotalLines
         If CmdAt(R) = "LABEL" Then
             Dim labelName As String
             labelName = NormalizeLabelName(P3At(R))
@@ -232,14 +232,14 @@ Public Function LabelLine(ByVal name As String) As Long
     If m_labels.exists(key) Then LabelLine = CLng(m_labels(key)) Else LabelLine = LABEL_NOT_FOUND
 End Function
 
-Public Function ResolveJumpTarget(ByVal target As String) As Long
+Public Function ResolveJumpTarget(ByVal Target As String) As Long
     Dim trimmedTarget As String
-    trimmedTarget = Trim$(target)
+    trimmedTarget = Trim$(Target)
 
     If IsNumeric(trimmedTarget) Then
         Dim lineNo As Long
         lineNo = CLng(val(trimmedTarget))
-        If lineNo >= 1 And lineNo <= m_totalLines Then
+        If lineNo >= 1 And lineNo <= m_TotalLines Then
             ResolveJumpTarget = lineNo
         Else
             ResolveJumpTarget = LABEL_NOT_FOUND
@@ -275,7 +275,7 @@ Public Function ValidateLabels() As Boolean
     BuildLabelIndex
 
     Dim R As Long
-    For R = 1 To m_totalLines
+    For R = 1 To m_TotalLines
         If CmdAt(R) = "LABEL" Then
             Dim rawLabel As String
             rawLabel = P3At(R)
@@ -300,7 +300,7 @@ Public Function ValidationErrors() As String
 End Function
 
 Public Function ValidateLineRange(ByVal lineNo As Long) As Boolean
-    If lineNo < 1 Or lineNo > m_totalLines Then Err.Raise 9, "clsScriptProgram.ValidateLineRange", "Runtime line out of range: " & lineNo
+    If lineNo < 1 Or lineNo > m_TotalLines Then Err.Raise 9, "clsScriptProgram.ValidateLineRange", "Runtime line out of range: " & lineNo
     ValidateLineRange = True
 End Function
 
@@ -315,7 +315,7 @@ Private Sub BuildInstructionCache()
     Set m_instructions = New Collection
 
     Dim R As Long
-    For R = 1 To m_totalLines
+    For R = 1 To m_TotalLines
         Dim inst As clsInstruction
         Set inst = New clsInstruction
         inst.Init R, SheetRowFromRuntimeLine(R), RawCmdAt(R), CmdAt(R), P1At(R), P2At(R), P3At(R), modCmdRegistry.GetCmdDef(CmdAt(R))
@@ -323,16 +323,16 @@ Private Sub BuildInstructionCache()
     Next R
 End Sub
 
-Private Sub BuildSelectBlock(ByVal selectLine As Long)
-    If m_selectBlocks.exists(CStr(selectLine)) Then Exit Sub
+Private Sub BuildSelectBlock(ByVal SelectLine As Long)
+    If m_selectBlocks.exists(CStr(SelectLine)) Then Exit Sub
 
     Dim block As clsSelectBlock
     Set block = New clsSelectBlock
-    block.SelectLine = selectLine
+    block.SelectLine = SelectLine
 
     Dim depth As Long
     Dim R As Long
-    For R = selectLine + 1 To m_totalLines
+    For R = SelectLine + 1 To m_TotalLines
         If IsSkippable(R) Then GoTo NextRow
 
         Dim def As CmdDef
@@ -356,7 +356,7 @@ Private Sub BuildSelectBlock(ByVal selectLine As Long)
 NextRow:
     Next R
 
-    m_selectBlocks.Add CStr(selectLine), block
+    m_selectBlocks.Add CStr(SelectLine), block
     If block.EndSelectLine > 0 Then
         Dim i As Long
         For i = 1 To block.CaseCount

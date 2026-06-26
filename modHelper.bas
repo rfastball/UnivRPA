@@ -1,4 +1,4 @@
-Attribute VB_Name = "modHelper"
+﻿Attribute VB_Name = "modHelper"
 Option Explicit
 
 '==============================================================================

@@ -26,7 +26,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     ' 0. 헤더 자동 생성
     Call EnsureHeaders(ws)
 
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.count, 2).End(xlUp).Row
+    Dim lastRow As Long: lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     Dim R As Long, pureCmd As String, depth As Integer: depth = 0
     Dim baseDepths() As Long
     Dim subDepths() As Long
@@ -39,7 +39,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim clearLastRow As Long
     Dim clearCol As Long
     For clearCol = 1 To 6
-        clearLastRow = Application.Max(clearLastRow, ws.Cells(ws.Rows.count, clearCol).End(xlUp).Row)
+        clearLastRow = Application.Max(clearLastRow, ws.Cells(ws.rows.count, clearCol).End(xlUp).Row)
     Next clearCol
     If clearLastRow > lastRow Then
         ws.Range(ws.Cells(lastRow + 1, 1), ws.Cells(clearLastRow, 6)).Clear
@@ -196,7 +196,7 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
     If rowNum < 2 Then Exit Function
 
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.count, 2).End(xlUp).Row
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
     Dim baseDepths() As Long
@@ -435,9 +435,9 @@ Private Function BuildCallTargetMap(ByVal ws As Worksheet, ByVal lastRow As Long
     For R = 2 To lastRow
         If IsCommentRow(ws, R) Then GoTo NextRow
         If PureCommandAt(ws, R) = "CALL" Then
-            Dim target As String
-            target = JumpTargetAt(ws, R)
-            If IsStaticLabelTarget(target) Then result(target) = True
+            Dim Target As String
+            Target = JumpTargetAt(ws, R)
+            If IsStaticLabelTarget(Target) Then result(Target) = True
         End If
 NextRow:
     Next R
@@ -454,10 +454,10 @@ Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long,
         cmd = PureCommandAt(ws, R)
 
         If cmd = "CALL" Or cmd = "GOTO" Then
-            Dim target As String
-            target = JumpTargetAt(ws, R)
-            If IsStaticLabelTarget(target) Then
-                If Not labelRows.exists(target) Then invalidRows(CStr(R)) = True
+            Dim Target As String
+            Target = JumpTargetAt(ws, R)
+            If IsStaticLabelTarget(Target) Then
+                If Not labelRows.exists(Target) Then invalidRows(CStr(R)) = True
             End If
         End If
 NextRow:
@@ -554,8 +554,8 @@ Private Function IsCommentRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Bo
     IsCommentRow = (Len(rawCmd) > 0 And Left$(rawCmd, 1) = "#")
 End Function
 
-Private Function IsStaticLabelTarget(ByVal target As String) As Boolean
-    IsStaticLabelTarget = (Len(target) > 0 And Not IsNumeric(target) And InStr(1, target, "{", vbTextCompare) = 0)
+Private Function IsStaticLabelTarget(ByVal Target As String) As Boolean
+    IsStaticLabelTarget = (Len(Target) > 0 And Not IsNumeric(Target) And InStr(1, Target, "{", vbTextCompare) = 0)
 End Function
 
 ' [파생] 블록 시작 판정 → BlockRole = STARTER

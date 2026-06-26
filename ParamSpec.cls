@@ -29,5 +29,5 @@ End Function
 
 ' [편의] RAW 슬롯 여부 (lvalue/연산자만 True)
 Public Property Get IsRaw() As Boolean
-    IsRaw = (ResolveMode = RAW)
+    IsRaw = (ResolveMode = raw)
 End Property

@@ -18,10 +18,7 @@ Private CallStack As Collection     ' 서브루틴 복귀 주소 저장 (LIFO �
 ' [2] 실행 상태 플래그
 Private IsRunning As Boolean        ' 현재 매크로 실행 중 여부
 
-' [3] 라벨 저장소
-Private LabelMap As Collection      ' 라벨 저장소 (Key:Name -> Value:LineNumber)
-
-' [4] 루프 런타임: 활성 루프 스택 ({$LOOP}/BREAK/CONTINUE 통합)
+' [3] 루프 런타임: 활성 루프 스택 ({$LOOP}/BREAK/CONTINUE 통합)
 Private Type LoopFrame
     kind As String      ' "WHILE" | "REPEAT"
     headerLine As Long  ' 점프 복귀 대상 (헤더 줄)
@@ -51,10 +48,7 @@ Public Sub InitContext()
     ' 4. 상태바 초기화
     Application.StatusBar = "RPA Ready..."
 
-    ' 5. 라벨 맵 초기화
-    Set LabelMap = New Collection
-
-    ' 6. 루프 스택 초기화
+    ' 5. 루프 스택 초기화
     LoopReset
 End Sub
 
@@ -144,47 +138,8 @@ Public Function CheckRunningState() As Boolean
     CheckRunningState = IsRunning
 End Function
 
-' -------------------------------------------------------------------------
-' 5. [Label Management] 라벨(핸들) 관리
-' -------------------------------------------------------------------------
-
-' [등록] 라벨 추가 (중복 시 에러 발생)
-Public Sub AddLabel(ByVal sName As String, ByVal iLine As Long)
-    Dim cleanName As String
-    cleanName = UCase(Trim(sName))
-    
-    If cleanName = "" Then Exit Sub
-    
-    ' 중복 체크: 이미 있으면 에러 (Collection 특성상 키 중복 시 런타임 에러 발생하므로 선제적 방어는 선택사항이나, 명확한 에러 메시지를 위해 추가)
-    On Error Resume Next
-    Dim check As Variant
-    check = LabelMap.item(cleanName)
-    If Err.Number = 0 Then
-        MsgBox "오류: 중복된 라벨 이름이 있습니다 -> " & sName, vbCritical
-        Exit Sub
-    End If
-    On Error GoTo 0
-    
-    LabelMap.Add iLine, cleanName ' Key를 이름으로 저장
-End Sub
-
-' [검색] 라벨 이름으로 줄 번호 반환
-Public Function GetLabel(ByVal sName As String) As Long
-    Dim cleanName As String
-    cleanName = UCase(Trim(sName))
-    
-    On Error Resume Next
-    GetLabel = LabelMap.item(cleanName)
-    
-    If Err.Number <> 0 Then
-        ' 라벨을 못 찾았을 경우
-        GetLabel = -1
-    End If
-    On Error GoTo 0
-End Function
-
 '--------------------------------------------------
-' 6. [Loop Management] 활성 루프 스택
+' 5. [Loop Management] 활성 루프 스택
 '   {$LOOP}(가장 안쪽 회차) / BREAK / CONTINUE 를 한 묶음으로 해결
 '--------------------------------------------------
 
@@ -264,7 +219,7 @@ Public Sub WriteLog(ByVal v1 As Variant, ByVal v2 As Variant, ByVal v3 As Varian
     On Error GoTo 0
 
     ' 2. 마지막 행 찾기 (속도를 위해 가급적 효율적으로)
-    NextRow = wsLog.Cells(wsLog.Rows.count, 1).End(xlUp).Row + 1
+    NextRow = wsLog.Cells(wsLog.rows.count, 1).End(xlUp).Row + 1
     
     With wsLog
         .Cells(NextRow, 1).value = Now

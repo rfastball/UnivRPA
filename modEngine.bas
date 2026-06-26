@@ -55,18 +55,18 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
         GoTo CleanUp
     End If
 
-    If rngTarget.Rows.count < 2 Then
+    If rngTarget.rows.count < 2 Then
         modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
         GoTo CleanUp
     End If
 
     ' [수정] 헤더(1행) 제외: 실제 데이터는 2행부터 시작
-    Set rngTarget = rngTarget.offset(1, 0).Resize(rngTarget.Rows.count - 1)
+    Set rngTarget = rngTarget.offset(1, 0).Resize(rngTarget.rows.count - 1)
 
     ' [ProgramImage] 시트 스냅샷을 구조 인덱스/라벨 인덱스를 가진 Program으로 승격
     Set m_program = New clsScriptProgram
     m_program.LoadFromRange rngTarget
-    totalLines = m_program.TotalLines
+    totalLines = m_program.totalLines
 
     Dim isProgramValid As Boolean
     isProgramValid = m_program.ValidateStructure()
@@ -97,7 +97,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
         ' [UI] 표시할 상세 정보 조합 (명령어 + 파라미터)
         Dim stepInfo As String
-        stepInfo = inst.cmd & " " & inst.P1 & " " & inst.P2 & " " & inst.P3
+        stepInfo = inst.cmd & " " & inst.p1 & " " & inst.p2 & " " & inst.p3
 
         ' [UI] 폼 업데이트
         modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo
@@ -117,7 +117,7 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
 
             Case CMD_ERROR
                 modActions.Action_ShowNotification _
-                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.SheetRow & " / " & inst.cmd, 3
+                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd, 3
                 GoTo CleanUp
 
             Case Is > 0
@@ -220,7 +220,7 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     If inst.def Is Nothing Then
         ' 미등록 명령어 (무인 환경: 비차단 알림)
         modActions.Action_ShowNotification _
-            "알 수 없는 명령어: " & inst.cmd & " (라인 " & inst.RuntimeLine & ", 시트 행 " & inst.SheetRow & ")", 3
+            "알 수 없는 명령어: " & inst.cmd & " (라인 " & inst.RuntimeLine & ", 시트 행 " & inst.sheetRow & ")", 3
         ExecuteSmartAction = CMD_ERROR
      GoTo CleanUp
     End If
@@ -228,9 +228,9 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
     '    RAW = lvalue 주소(SET/INC/DEC P1) · 연산자(IF/WHILE P2). 그 외 = RESOLVE.
     Dim args(1 To 3) As String
-    args(1) = DecodeSlot(inst.def.p1, inst.P1)
-    args(2) = DecodeSlot(inst.def.p2, inst.P2)
-    args(3) = DecodeSlot(inst.def.p3, inst.P3)
+    args(1) = DecodeSlot(inst.def.p1, inst.p1)
+    args(2) = DecodeSlot(inst.def.p2, inst.p2)
+    args(3) = DecodeSlot(inst.def.p3, inst.p3)
 
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
@@ -244,7 +244,7 @@ ErrHandler:
         modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
     Else
         modActions.Action_ShowNotification _
-            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.SheetRow & " / " & inst.cmd & ": " & Err.Description, 3
+            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ": " & Err.Description, 3
     End If
     ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
@@ -445,7 +445,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
     For i = 1 To block.CaseCount
         Dim caseLine As Long
         caseLine = block.CaseLineAt(i)
-        caseVal = ResolveParam(m_program.InstructionAt(caseLine).P1)
+        caseVal = ResolveParam(m_program.InstructionAt(caseLine).p1)
 
         ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
         If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then

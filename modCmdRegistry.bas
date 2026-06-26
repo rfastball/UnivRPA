@@ -41,7 +41,7 @@ End Enum
 
 Public Enum eResolveMode
     RESOLVE = 0     ' 토큰 치환 적용
-    RAW = 1         ' 원본 유지 (lvalue 주소 / 연산자)
+    raw = 1         ' 원본 유지 (lvalue 주소 / 연산자)
 End Enum
 
 Public Enum eDataType
@@ -156,11 +156,11 @@ Private Sub BuildRegistry()
 
     '--- [FLOW] 16개 ------------------------------------------------------------
     Reg "IF", FLOW, STARTER, "IF", clrFLOW, FULLROW, _
-        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, RAW, True), P("우변", DT_STR, RESOLVE, True)
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
     Reg "ELSE", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW
     Reg "END_IF", FLOW, ENDER, "IF", clrFLOW, FULLROW
     Reg "WHILE", FLOW, STARTER, "WHILE", clrFLOW, FULLROW, _
-        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, RAW, True), P("우변", DT_STR, RESOLVE, True)
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
     Reg "END_WHILE", FLOW, ENDER, "WHILE", clrFLOW, FULLROW
     Reg "REPEAT", FLOW, STARTER, "REPEAT", clrFLOW, FULLROW, _
         P("반복횟수(0/빈값=무한)", DT_NUM, RESOLVE, False)
@@ -178,7 +178,7 @@ Private Sub BuildRegistry()
         sp3:=P("라벨/줄번호", DT_STR, RESOLVE, True)
     Reg "RETURN", FLOW, NOBLOCK, "", clrFLOW, FULLROW
     Reg "LABEL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨명", DT_STR, RAW, True)
+        sp3:=P("라벨명", DT_STR, raw, True)
 
     '--- [ACTION] 6개 -----------------------------------------------------------
     Reg "MOVE", ACTION, NOBLOCK, "", clrACTION, cmdCell, _
@@ -197,11 +197,11 @@ Private Sub BuildRegistry()
     '--- [MEMORY] lvalue-writer 3개 (SET 현행 + INC/DEC 신규) --------------------
     '   P1은 RAW(좌변=주소). ColorGroup은 현행 SET을 따라 clrACTION(연청).
     Reg "SET", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, RAW, True), Nothing, P("값", DT_STR, RESOLVE, True)
+        P("좌변/주소", DT_STR, raw, True), Nothing, P("값", DT_STR, RESOLVE, True)
     Reg "INC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, RAW, True), Nothing, P("증분(기본1)", DT_NUM, RESOLVE, False)
+        P("좌변/주소", DT_STR, raw, True), Nothing, P("증분(기본1)", DT_NUM, RESOLVE, False)
     Reg "DEC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, RAW, True), Nothing, P("감분(기본1)", DT_NUM, RESOLVE, False)
+        P("좌변/주소", DT_STR, raw, True), Nothing, P("감분(기본1)", DT_NUM, RESOLVE, False)
 
     '--- [SYSTEM] 4개 (FOCUS/SLEEP는 clrACTION, NOTIFY/EXIT는 clrSYSTEM) ---------
     Reg "FOCUS", SYSTEM, NOBLOCK, "", clrACTION, cmdCell, _

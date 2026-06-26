@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -10,24 +10,24 @@ Attribute VB_Exposed = False
 Option Explicit
 
 Public RuntimeLine As Long
-Public SheetRow As Long
-Public RawCmd As String
+Public sheetRow As Long
+Public rawCmd As String
 Public cmd As String
-Public P1 As String
-Public P2 As String
-Public P3 As String
+Public p1 As String
+Public p2 As String
+Public p3 As String
 Public def As CmdDef
 
 Public Sub Init(ByVal runtimeLineValue As Long, ByVal sheetRowValue As Long, _
                 ByVal rawCmdValue As String, ByVal cmdValue As String, _
                 ByVal p1Value As String, ByVal p2Value As String, ByVal p3Value As String, _
-                ByVal cmdDef As CmdDef)
+                ByVal CmdDef As CmdDef)
     RuntimeLine = runtimeLineValue
-    SheetRow = sheetRowValue
-    RawCmd = rawCmdValue
+    sheetRow = sheetRowValue
+    rawCmd = rawCmdValue
     cmd = cmdValue
-    P1 = p1Value
-    P2 = p2Value
-    P3 = p3Value
-    Set def = cmdDef
+    p1 = p1Value
+    p2 = p2Value
+    p3 = p3Value
+    Set def = CmdDef
 End Sub

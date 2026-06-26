@@ -321,8 +321,8 @@ Private Function CommandRangeFromSelection(ByVal ws As Worksheet, ByVal selected
     firstRow = selectedRange.Row
     If firstRow < 2 Then firstRow = 2
 
-    lastSelectedRow = selectedRange.Row + selectedRange.Rows.count - 1
-    lastCommandRow = ws.Cells(ws.Rows.count, cmdCol).End(xlUp).Row
+    lastSelectedRow = selectedRange.Row + selectedRange.rows.count - 1
+    lastCommandRow = ws.Cells(ws.rows.count, cmdCol).End(xlUp).Row
     lastRow = lastSelectedRow
     If lastRow > lastCommandRow Then lastRow = lastCommandRow
 

@@ -79,7 +79,7 @@ Private Function RunProgramFromLine(ByRef arr As Variant, ByVal firstRow As Long
     modContext.InitContext
     modEngine.LoadProgramFromArray arr, firstRow
     Set program = modEngine.ActiveProgram()
-    totalLines = program.TotalLines
+    totalLines = program.totalLines
 
     curLine = startLine
     Do While curLine >= 1 And curLine <= totalLines
@@ -949,7 +949,7 @@ Private Function Test_ScriptProgramModel() As Long
         LogPass "Program ValidateLabels"
     End If
 
-    ExpectLong "TotalLines", 24, program.TotalLines, fails
+    ExpectLong "TotalLines", 24, program.totalLines, fails
     ExpectLong "SheetRowFromRuntimeLine", 5, program.SheetRowFromRuntimeLine(1), fails
     ExpectLong "RuntimeLineFromSheetRow", 1, program.RuntimeLineFromSheetRow(5), fails
     ExpectText "CmdAt indent", "IF", program.CmdAt(1), fails
