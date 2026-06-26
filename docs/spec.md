@@ -1,508 +1,240 @@
-UnivRPA Script Assist — 구현 spec (v5)
+# spec.md — UnivRPA 단위테스터 확장 (동적 흐름·메모리 검증)
 
-v4 대비 변경 (핵심):
+> 대상: 코드 에이전트(Claude Code). 본 문서만으로 구현 가능하도록 자립형으로 작성됨.
+> 코드베이스: `UnivRPA.xlsb` (VBA, 28 모듈). 테스트 모듈 `modTester` 확장이 핵심.
 
-* Assist의 셀 서식 페인팅을 전면 제거 — 시각 렌더링은 배치 포매터 단독 소유
-* 오류 가시성을 Assist Note 채널(레거시 Comment)로 이전 + StatusBar 폴백
-* Negative Scope에 "가시성 승격(Private→Public) 예외" 도입 (ValidateLine, EnsureHeaders)
-* ApplyCommandStyle / ApplyErrorStyle 폐기, ClearAssistState 의미 축소
-* GetCmdDef 정규화 일치 규약 명문화
-* SheetChange 다중 셀 입력 처리 규약 추가
-* 재진입 안전성 근거 명시
+---
 
-⸻
+## 목표
 
-목표
+`clsScriptProgram` 1급 객체 위에 **헤드리스 완주 드라이버**를 얹어, 현재 테스터가 검증 못 하는 **동적 흐름제어·메모리 상호작용·네거티브 경로**를 단위검증한다. 기존 단일라인 하니스는 일반 드라이버의 1스텝 케이스로 흡수한다.
 
-기존 modCmdRegistry(SSOT)를 읽기 전용으로 소비하는 별도 편집 보조 서브시스템(Script Assist)을 구축한다.
-Assist는 시각 렌더링을 소유하지 않으며, 비시각 의미 피드백(검증·힌트·오타 후보·오류 Note)만 담당한다.
+---
 
-철학:
+## 범위
 
-* UnivRPA 명령어셋은 약 30개 내외이며 암기 가능한 규모이다.
-* 명령어 입력은 자연 타이핑을 기본으로 한다.
-* 편집기는 자동완성 UI보다 안정성, 가벼움, Excel-native 경험을 우선한다.
-* 편집기는 코드 에디터가 아니라 DSL 작성 보조 도구이다.
-* 편집기는 셀 서식(색·배경·테두리·글꼴)을 칠하지 않는다. 입력 중에는 평범한 셀이고, 시각 렌더링은 포맷 실행 시점에 배치 포매터가 일괄 수행한다(IDE의 save/compile 루프).
+수정/추가 대상은 **`modTester` 단일 모듈에 한정**한다(필요 시 보조 표준 모듈 1개 신설 가능, 단 테스트 전용).
 
-⸻
+- `modTester` — 신규 드라이버·단언 동사·시나리오 항목·진입점 추가, 로직 항목 이관
+- (선택) `modTestKit` — 드라이버/동사를 분리하고 싶을 경우의 신설 표준 모듈명. 분리 불필요하면 `modTester` 내부에 둔다.
 
-범위
+---
 
-신규
+## Negative Scope (건드리지 않을 것 — 확정)
 
-modScriptAssist
+다음 **프로덕션 모듈은 일절 수정 금지**. 트레이스는 드라이버 루프가 소유하며, 엔진에 훅을 심지 않는다.
 
-편집 보조 어댑터.
+- `modEngine`, `modContext`, `clsScriptProgram`, `clsInstruction`, `clsSelectBlock`
+- `modCmdRegistry`, `CmdDef`, `ParamSpec`, `ICommand`
+- `clsFlowCommands`, `clsMemoryCommands`, `clsActionCommands`, `clsVisionCommands`, `clsSystemCommands`
+- `modActions`, `modWinAPI`, `modHelper`, `modDevTools`, `modScriptAssist`, UI 폼류
 
-역할:
+`Run_System_SelfDiagnosis`의 **로직 항목 이관**은 삭제가 아니라 헤드리스 스위트로 **이동**이다. 순 커버리지는 보존 또는 증가해야 한다(절대 감소 금지).
 
-* COMMAND열 판별
-* 명령어 유효성 검사
-* 파라미터 스키마 힌트 표시 (StatusBar)
-* 오타 후보 제안
-* 오류 Note 부착 및 복구 (Assist 전용 Comment)
+---
 
-비역할 (명시적 제외):
+## 인터페이스 / 제약
 
-* 셀 색·배경·테두리·글꼴 등 일체의 서식 적용
-* 블록 깊이(depth) 계산
-* 명령어 색상 그룹/페인트 스코프 렌더링
+### 실행 경로 결합 (필독 — 설계 전제)
 
-제공 기능:
+FLOW 핸들러는 실행 중 `modEngine.ActiveProgram()`을 도로 호출한다(`FindBlockPair`, `EndSelectOfCase`, `ResolveSelectTarget`). 따라서 **실행은 반드시 엔진의 `m_program`을 경유**해야 한다. 테스터가 자체 보유한 `clsScriptProgram`으로 직접 실행하면 엔진이 그 객체를 보지 못한다.
 
-ResolveCmdCol(Sh)
-IsScriptSheet(Sh)
-ValidateCommandCell(Target)
-ShowParamHint(Target)
-GetClosestCommand(rawCmd)
-ApplyErrorNote(Target, rawCmd, suggestion)
-ClearAssistNote(Target)
-ClearAssistState(Target)
-SetupScriptSheet(Sh)
-IsBlankCommand(rawCmd)
-IsCommentCommand(rawCmd)
-NormalizeCmd(rawCmd)
+- **실행 항목** → `modEngine.LoadProgramFromArray` → `modEngine.ExecuteSmartAction` 경유 (절대 직접 실행 조립 금지)
+- **정적 구조 항목** → 테스터가 `New clsScriptProgram`으로 직접 조회 (엔진 불필요)
 
-폐기된 v4 기능:
+### 의존 API (프로덕션, 호출만)
 
-ApplyCommandStyle   ← 페인팅 전면 제거
-ApplyErrorStyle     ← 오류 표현을 Note 채널로 이전
+엔진:
+- `modEngine.LoadProgramFromArray(arr, firstRow)` — 적재 + 구조/라벨 인덱스 빌드
+- `modEngine.ExecuteSmartAction(R) As Long` — 한 줄 실행, 반환코드 리턴
+- `modEngine.ActiveProgram() As clsScriptProgram`
 
-ClearAssistState는 "Assist가 생성한 Note 제거"로 의미를 축소한다. 셀 서식은 손대지 않는다.
+반환코드 상수 (`modCmdRegistry`, Public):
+- `CMD_NEXT_LINE = 0`, `CMD_ERROR = -1`, `CMD_HALT = -2`
 
-⸻
+컨텍스트 상태:
+- `modContext.InitContext` / `ResetContext`
+- `modContext.GetVar(key) As String` / `SetVar(key, val)`
+- `modContext.GetStackDepth() As Long` (콜스택)
+- `modContext.LoopDepth() As Long`, `GetActiveLoopIteration() As Long` (루프스택)
 
-편집
+정적 조회 (`clsScriptProgram`, 직접 New):
+- `LoadFromArray(arr, firstRow)` → `BuildInstructionCache`만 수행. **SELECT/라벨 조회 전 `ValidateStructure()`/`ValidateLabels()`(또는 `BuildStructureIndex`/`BuildLabelIndex`) 선행 필수.**
+- `totalLines`, `CmdAt/P1At/P2At/P3At`, `IsBlankLine/IsCommentLine/IsSkippable`
+- `FindBlockPair(start, group, dir)`(인덱스 불요), `SelectBlock(n)`, `EndSelectOfCase(n)`
+- `HasLabel/LabelLine/ResolveJumpTarget/HasDuplicateLabels/DuplicateLabels`
+- `InstructionAt(n) As clsInstruction` → `.cmd/.p1/.p2/.p3/.def/.RuntimeLine/.sheetRow/.rawCmd`
 
-ThisWorkbook
+### 기존 modTester 자산 (재사용)
 
-필요 최소 수준 후킹만 허용.
+- `MakeCmd(arr, R, cmd, p1, p2, p3)` — 배열 1행 채움(2~5열). **입력 DSL 그대로 유지.**
+- `ExpectLong/ExpectText/ExpectBool(name, exp, act, ByRef failCount)`
+- `AssertCond`, `LogPass/LogFail`
+- `Test_RegistryDispatchSync()`(라우팅 전수), `Test_ScriptProgramModel()`(정적 구조) — 유지·확장
 
-후킹 후보:
+### 신규 드라이버 계약
 
-Workbook_SheetSelectionChange
-Workbook_SheetChange
+```vba
+Public Enum eRunResult
+    rrCompleted = 0   ' PC가 범위 밖으로 정상 이탈
+    rrHalted    = 1   ' EXIT → CMD_HALT
+    rrErrored   = 2   ' CMD_ERROR 또는 미지의 반환코드
+    rrExhausted = 3   ' 스텝예산 초과 (폭주 루프 포획)
+End Enum
 
-역할:
+Public Function RunProgram(ByRef arr As Variant, ByVal firstRow As Long, ByVal maxSteps As Long, _
+                           ByRef outTrace() As Long, ByRef outLastCode As Long, _
+                           ByRef outLastLine As Long) As eRunResult
+```
 
-* COMMAND 선택 시 StatusBar 힌트 갱신
-* COMMAND 수정 시 유효성 검사
-* 오류 Note 부착 및 복구
+동작(= `RunRPA` 구동 루프에서 UI/ESC만 제거):
+1. `modContext.InitContext` (시나리오 격리: 메모리·콜스택·루프스택 리셋)
+2. `modEngine.LoadProgramFromArray arr, firstRow` **1회만**
+3. `curLine = 1`부터 루프. 매 스텝 **진입 직전 `curLine`을 `outTrace`에 기록** → `code = ExecuteSmartAction(curLine)` → `outLastCode = code` → 분기:
+   - `CMD_NEXT_LINE` → `curLine = curLine + 1`
+   - `code > 0` → `curLine = code` (점프)
+   - `CMD_HALT` → `outLastLine = curLine`; **rrHalted** 반환
+   - `CMD_ERROR` 또는 그 외 음수 → `outLastLine = curLine`; **rrErrored** 반환
+4. 루프 가드: `curLine < 1 Or curLine > totalLines` → **rrCompleted** 반환
+5. 스텝 카운트가 `maxSteps` 도달(터미널 미발생) → `outLastLine = curLine`; **rrExhausted** 반환
 
-⸻
-
-읽기 전용 소비 (수정 없음)
-
-modCmdRegistry.AllCommands
-modCmdRegistry.GetCmdDef
-CmdDef
-CmdDef.Param
-ParamSpec
-ParamSpec.Meaning
-ParamSpec.DataType
-ParamSpec.Required
-
-참고: ParamSpec은 Meaning / DataType / Required를 Public 필드로 노출한다. ShowParamHint는 이를 읽기만 하며 ParamSpec을 수정하지 않는다.
-
-⸻
-
-가시성 승격 예외 (Negative Scope의 타입 한정 예외)
-
-규약:
-
-Negative Scope 모듈에 대해 "시그니처 보존 가시성 승격(Private→Public)"만 예외로 허용한다.
-함수 본문·시그니처·동작 변경은 여전히 금지한다.
-각 승격은 modScriptAssist의 소비자를 명시해야 한다. 소비자 없는 승격은 금지한다.
-
-승격 대상 (2건):
-
-modDevTools.ValidateLine
-→ 소비자: modScriptAssist.ValidateCommandCell
-→ 사유: IF/WHILE 연산자 슬롯의 허용 연산자 검사를 엔진과 단일 기준으로 공유. GetCmdDef 단독 호출로는 이 뉘앙스가 누락됨.
-
-modDevTools.EnsureHeaders
-→ 소비자: modScriptAssist.SetupScriptSheet
-→ 사유: 헤더 스키마(열 라벨/열폭) 및 시트 시그니처를 단일 출처로 유지. SetupScriptSheet 자체 작성 시 헤더 정의가 이원화되어 드리프트 발생.
-
-승격하지 않는 대상 (소비자 부재):
-
-modDevTools.IsBlockStarter   ← depth 계산용. Assist가 페인팅을 안 하므로 소비자 없음. Private 유지.
-modDevTools.IsBlockEnder     ← 동상. Private 유지.
-
-무관:
-
-modDevTools.ApplyUnifiedStyle ← 이미 Public이나 Assist는 호출하지 않음(페인팅 비역할). 본 예외와 무관.
-
-⸻
-
-Negative Scope
-
-다음 구성요소의 함수 본문(behavior)은 절대 수정하지 않는다.
-
-modCmdRegistry
-CmdDef
-ParamSpec
-modEngine
-modContext
-modActions
-clsActionCommands
-modHelper
-StartHUD_Final
-modDevTools
-ValidateLine
-ApplyUnifiedStyle
-IsBlockStarter
-IsBlockEnder
-EnsureHeaders
-
-단, 위 "가시성 승격 예외"에 명시된 ValidateLine / EnsureHeaders의 Private→Public 승격은 허용한다.
-승격은 가시성 키워드 1개 변경에 한하며, 본문·인자·반환을 보존한다.
-
-편집기는 위 구성요소를 읽기 전용으로만 소비한다.
-
-⸻
-
-폐기된 설계
-
-다음 설계는 v5에서 사용하지 않는다.
-
-[v4에서 이미 폐기]
-ActiveX ComboBox
-OLEObject("TempCombo")
-clsComboHandler
-WithEvents Combo 이벤트 (KeyDown/KeyUp/Change/DropDown/Activate)
-Combo 재배선
-실시간 필터링 / 컨텍스트 후보 축소 / 자동완성 드롭다운
-Excel Validation 목록
-
-[v5 신규 폐기]
-Assist의 셀 서식 페인팅 (배경·색·테두리·글꼴)
-Assist의 depth 계산
-ApplyCommandStyle / ApplyErrorStyle
-Assist에 의한 ColorGroup / PaintScope / BlockRole 렌더링
-
-편집기는 명령어 선택 UI도, 시각 렌더링도 제공하지 않는다.
-
-⸻
-
-시각 렌더링 단일 소유
-
-모든 셀 서식(색·중첩 배경·들여쓰기 가이드·오류 색)은 배치 포매터가 단독 소유한다.
-
-소유자:
-
-modDevTools.FormatRPAScript_Final
-modDevTools.ApplyUnifiedStyle
-
-Assist는 색 영역에 일절 개입하지 않는다.
-따라서 라이브 입력 피드백(Assist)과 시각 렌더링(배치)은 채널이 분리되어 충돌하지 않는다.
-
-⸻
-
-컬럼 규약
-
-A = ROW
-B = COMMAND
-C = PARAM1
-D = PARAM2
-E = PARAM3
-F = COMMENT
-
-⸻
-
-시트 판별
-
-시그니처:
-
-A1 = "ROW"
-B1 = "COMMAND"
-
-위 조건을 동시에 만족하는 경우만 스크립트 시트로 간주한다.
-그 외 모든 시트에서 Script Assist는 동작하지 않는다.
-
-제외 예: RPA_LOG / 일반 데이터 시트 / 피벗 시트 / 설정 시트
-
-⸻
-
-초기화
-
-SetupScriptSheet는 반자동 IDE 초기화 루틴에서 명시 호출한다.
-
-동작:
-
-빈 시트
-→ modDevTools.EnsureHeaders 호출 (헤더 멱등 생성, 단일 출처)
-→ 스크립트 시트 시그니처 확립
-
-SelectionChange는 헤더를 자동 생성하지 않는다.
-
-⸻
-
-명령어 정규화 규약
-
-Assist의 모든 빈/주석/미등록 판별은 게이트와 동일한 정규화를 사용한다.
-
-NormalizeCmd(rawCmd):
-
-Trim → Replace(">", "") → Trim → UCase
-
-근거: modCmdRegistry.GetCmdDef가 동일 순서로 정규화한다. Assist가 이를 복제하지 않으면 들여쓰기된 "> # 주석"이나 공백 케이스에서 게이트와 판정이 어긋난다.
-IsBlankCommand / IsCommentCommand는 NormalizeCmd 결과를 기준으로 판정한다.
-
-⸻
-
-COMMAND 입력 모델
-
-COMMAND열은 자유 입력을 사용한다.
-
-직접 타이핑 → Tab → PARAM1 이동 → 파라미터 입력
-
-자동완성은 제공하지 않는다.
-
-⸻
-
-파라미터 힌트
-
-COMMAND 셀 선택 시:
-
-GetCmdDef(cmd).Param(1).Meaning / .DataType / .Required
-GetCmdDef(cmd).Param(2)...
-GetCmdDef(cmd).Param(3)...
-
-를 읽어 StatusBar에 표시한다.
-
-예:
-
-CLICK
-P1: x (num, required)
-P2: y (num, required)
-P3: 사후대기ms (num)
-
-출력은 Application.StatusBar 만 사용한다. UserForm UI는 사용하지 않는다.
-
-⸻
-
-StatusBar 규약
-
-다음 경우 즉시 해제한다 (Application.StatusBar = False):
-
-COMMAND 셀 이외
-COMMAND열 이탈
-비스크립트 시트
-빈 COMMAND
-
-편집기는 StatusBar를 점유하지 않는다. 필요 시점에만 잠시 표시하고 즉시 반환한다.
-
-⸻
-
-유효성 검사
-
-COMMAND 수정 후 ValidateCommandCell(Target)이 다음 순서로 판정한다.
-
-1. NormalizeCmd 후 빈/주석 → 오류 아님 → ClearAssistNote 후 종료
-2. ValidateLine(cmd, p1, p2, p3) 호출 (승격된 Public)
-   - True  → 유효 → ClearAssistNote (오류 복구)
-   - False → 미등록 또는 연산자 위반 → ApplyErrorNote
-
-⸻
-
-명령어 부재 상태 (오류 아님)
-
-빈 셀 ("")
-→ Assist Note 제거
-→ StatusBar 해제
-→ 오류 표시 없음
-
-주석 (# 설명)
-→ Assist Note 제거
-→ StatusBar 해제
-→ 오류 표시 없음
-
-빈/주석의 셀 색은 배치 포매터 소관이며 Assist는 관여하지 않는다.
-
-⸻
-
-미등록 / 위반 명령어 (오류)
-
-예: CLCIK / FOUCS / ENF_IF / IF의 미허용 연산자 위반
-
-→ Assist Note 부착 (오류 마커)
-→ 오타 후보 계산
-→ 입력 자체는 막지 않는다 (자동 수정 금지)
-
-⸻
-
-오류 표시 채널 — Assist Note (레거시 Comment)
-
-오류 가시성은 셀의 레거시 Comment(Range.Comment)로 표현한다. 셀 모서리 마커로 수정 전까지 지속된다.
-Assist는 색을 칠하지 않으므로 배치 포매터와 색 충돌이 없다.
-
-Assist Note 본문 규약:
-
-[ScriptAssist]
-Unknown command: CLCIK
-Did you mean CLICK?
-
-소유권 식별:
-
-코멘트 본문이 "[ScriptAssist]" 프리픽스로 시작하면 Assist 소유로 간주한다.
-
-ApplyErrorNote(Target, rawCmd, suggestion) 동작:
-
-Target.Comment Is Nothing
-  → AddComment (신규 생성)
-IsAssistNote(Target.Comment) = True
-  → Comment.Text 본문 교체
-사용자 Note 존재 (태그 없음)
-  → 덮어쓰지 않음 → StatusBar 폴백으로만 오류 알림
-
-ClearAssistNote(Target) 동작:
-
-IsAssistNote(Target.Comment) = True 인 경우에만 Delete.
-사용자 작성 Note(태그 없음)는 절대 삭제하지 않는다.
-
-⸻
-
-셀당 코멘트 1개 제약 — StatusBar 폴백
-
-레거시 Comment는 한 셀에 하나만 존재한다.
-사용자가 해당 COMMAND 셀에 이미 자기 메모를 달아둔 경우, Assist는 오류 Note를 부착할 자리가 없다.
-
-규약:
-
-사용자 Note가 점유 중인 셀
-→ Assist는 Note 부착을 포기한다 (사용자 메모 보존)
-→ 오류는 Application.StatusBar 로만 표시한다
-
-즉 (A)는 "Note 우선, 사용자 Note 점유 시 StatusBar 폴백" 하이브리드다.
-
-⸻
-
-오타 후보 계산
-
-후보 원천:
-
-modCmdRegistry.AllCommands()
-
-알고리즘:
-
-Levenshtein Distance
-
-규칙:
-
-길이 1~4 → 거리 1까지
-길이 5 이상 → 거리 2까지
-
-최소 거리 후보가 하나일 때만 제안한다. 동률이면 제안하지 않는다.
-
-출력 위치:
-
-Application.StatusBar 또는 Assist Note (오류 채널과 동일 경로)
-
-⸻
-
-자동 수정 금지
-
-편집기는 셀 값을 자동 변경하지 않는다.
-
-CLCIK → CLICK 자동 치환 금지. 사용자가 직접 수정한다.
-
-이 규약은 재진입 안전성의 근거이기도 하다(아래).
-
-⸻
-
-오류 복구
-
-명령어가 정상화되면:
-
-Assist Note 제거 (ClearAssistNote)
-StatusBar 갱신/해제
-
-사용자 Note는 유지한다.
-셀 색 복구는 배치 포매터 소관이며 Assist는 관여하지 않는다.
-
-⸻
-
-이벤트 규율
-
-SheetSelectionChange
-
-스크립트 시트 판별
-COMMAND열 판별 (ResolveCmdCol)
-COMMAND 셀이면 StatusBar 힌트 갱신
-COMMAND 이외/이탈/비스크립트 시트면 StatusBar 해제
-
-SheetChange
-
-Target을 COMMAND열과 Intersect
-교집합이 없으면 즉시 반환
-교집합 셀을 순회하며 셀 단위로 ValidateCommandCell 호출
-(열 전체 붙여넣기·다중 행 입력 시 Target이 범위로 들어오므로 단일 셀 가정 금지)
-
-이벤트는 가볍고 무상태(stateless)하게 유지한다.
-
-재진입 안전성:
-
-Assist는 셀 값을 변경하지 않는다 (자동 수정 금지, 색 비페인팅).
-Note/StatusBar만 조작하므로 SheetChange가 재귀 발화하지 않는다.
-따라서 EnableEvents 재진입 제어는 불필요하다.
-(주의: 향후 Assist가 셀 값을 쓰는 코드를 추가하면 이 전제가 깨진다.)
-
-⸻
-
-수락 기준
-
-* A1="ROW" 그리고 B1="COMMAND"인 시트에서만 Script Assist가 작동한다.
-* COMMAND열 이외에서는 침묵한다.
-* COMMAND는 자유 입력 가능하다.
-* Tab으로 PARAM1 입력 흐름이 자연스럽다.
-* COMMAND 선택 시 ParamSpec 기반 StatusBar 힌트가 표시된다.
-* 빈 COMMAND와 주석 COMMAND는 오류 처리되지 않는다.
-* COMMAND열 이탈/비스크립트 시트에서 StatusBar가 해제된다.
-* 미등록·연산자 위반 명령어는 Assist Note(또는 폴백 StatusBar)로 오류가 표시된다.
-* Assist는 어떤 경우에도 셀 색·배경·테두리·글꼴을 변경하지 않는다.
-* Levenshtein 기반 최근접 후보가 유일하면 제안되고, 동률이면 제안되지 않는다.
-* 셀 값 자동 수정은 발생하지 않는다.
-* 오류 수정 시 Assist가 생성한 Note만 제거된다. 사용자 Note는 유지된다.
-* 사용자 Note가 점유한 COMMAND 셀에서는 Assist가 Note를 덮지 않고 StatusBar로만 오류를 알린다.
-* SheetChange가 다중 셀 입력(열 붙여넣기 등)에서도 누락 없이 동작한다.
-* 레지스트리에 새 명령어를 추가하면 검증·힌트·오타 후보가 자동 반영된다.
-* modDevTools.ValidateLine은 IF/WHILE 연산자 슬롯을 허용 목록 기준으로 검사한다.
-* IsBlockStarter / IsBlockEnder는 승격하지 않고 Private을 유지한다.
-* 조건 연산자 개선은 modActions의 허용 목록과 modEngine의 내부 비교 호출에 반영한다.
-
-⸻
-
-구현 순서
-
-1. modScriptAssist 기반
-   * NormalizeCmd
-   * ResolveCmdCol
-   * IsScriptSheet
-   * SetupScriptSheet (EnsureHeaders 승격 호출)
-2. 명령어 검증
-   * IsBlankCommand
-   * IsCommentCommand
-   * ValidateCommandCell (ValidateLine 승격 호출)
-3. StatusBar 스키마 힌트
-   * ShowParamHint
-   * ClearStatusBar
-4. 오타 후보
-   * GetClosestCommand
-   * Levenshtein 연동
-5. 오류 Note 채널
-   * IsAssistNote
-   * ApplyErrorNote (사용자 Note 점유 시 StatusBar 폴백)
-   * ClearAssistNote
-   * ClearAssistState (Note 제거로 축소)
-6. 가시성 승격 (modDevTools)
-   * ValidateLine: Private → Public
-   * EnsureHeaders: Private → Public
-   * (본문 무변경, 가시성 키워드만)
-7. ThisWorkbook 후킹
-   * Workbook_SheetSelectionChange
-   * Workbook_SheetChange (Intersect + 셀 순회)
-
-각 단계는 독립적이며 되돌림 가능하다.
-가역성 주의: Assist 본체는 통째 제거 가능하나, 6단계의 가시성 승격 2건은 modDevTools에 흔적으로 남는다(무해, 한 줄 복귀로 가역).
+#### 마이크로 기본값 (확정됨)
+1. **트레이스 입도**: PC가 닿는 *모든* 줄 기록(빈줄/주석 포함, 실제 경로 그대로).
+2. **종료 4분류 유지**: `rrCompleted/rrHalted/rrErrored/rrExhausted` 전부 구분.
+3. **스텝예산 기본 10,000**, 호출별 `maxSteps` override.
+4. **반환형**: 종료사유는 함수값(`eRunResult`), `outTrace/outLastCode/outLastLine`은 ByRef out. 단언 동사는 out-param + `modContext`를 읽어 판정.
+
+#### 단일라인 sugar
+```vba
+Public Function Step1(ByRef arr As Variant, ByVal R As Long) As Long  ' = RunProgram(arr, R 기준, maxSteps:=1) 후 outLastCode 반환
+```
+- 1스텝 실행. `ERROR`/`HALT`면 그 코드가 `outLastCode`에 잡혀 즉시 종료. 점프(예: 50)면 `outLastCode=50` 잡고 `rrExhausted`로 종료 → 테스트는 `outLastCode`만 단언.
+- 별도 메커니즘 아님(래퍼). 기존 `ExecuteArrayLine`의 reload-per-call은 폐기하고 이 sugar로 대체.
+
+### 신규 단언 동사 (전부 기존 `Expect*` 패턴 복제, `ByRef failCount`)
+
+| 동사 | 관찰축 | 판정 |
+|---|---|---|
+| `ExpectVar(name, exp, failCount)` | M | `modContext.GetVar(name) = exp` |
+| `ExpectStackDepth(exp, failCount)` | S | `modContext.GetStackDepth() = exp` |
+| `ExpectLoopDepth(exp, failCount)` | S | `modContext.LoopDepth() = exp` |
+| `ExpectTerminal(exp As eRunResult, actual, failCount)` | R | 종료사유 일치 |
+| `ExpectVisits(trace, line, n, failCount)` | T | trace 내 `line` 등장 횟수 = n |
+| `ExpectTrace(trace, expArr, failCount)` | T | 소규모 경로 정확순서 일치 |
+
+`ExpectVisits`가 동적 흐름 주력: "본문 줄 정확히 N회", "ELSE 본문 0회", "미매칭 CASE 0회"가 전부 이걸로 환원.
+
+### 시나리오 어휘 제약
+
+헤드리스 시나리오는 **FLOW + MEMORY + EXIT + 주석(#)만** 사용. ACTION/VISION/`FOCUS`/`SLEEP`/`NOTIFY` 등 실제 I/O 명령 **금지**(결정론·무인 실행 보장). 부수효과 관찰은 `SET`/`INC`로 메모리에 흔적을 남겨 단언.
+
+### 진입점 분리
+
+- `Run_System_SelfDiagnosis` (기존) → **I/O 반수동** 전용. 13개 I/O 명령 + 시트/창. 로직 항목은 헤드리스로 이관해 덜어냄.
+- `Run_Flow_Diagnosis` (신규) → **헤드리스**. FLOW/MEMORY/EXIT/resolver/static. 시트·창 0, `InitContext`만.
+- 공유 리포트 코어(`failCount` 누적, `LogPass/LogFail`, 최종 요약). 선택적 `Run_All`이 둘을 호출.
+
+---
+
+## 검증 항목 (승인된 매트릭스)
+
+C=현재커버 / G=신규(공백) / X=로직범위밖. 관찰축 R(반환코드) M(메모리) S(스택) T(경로) D(decode).
+
+### FLOW — 반환코드·상태 계약
+
+각 명령의 계약은 코드에서 도출된 사실이며, 시나리오는 이를 단언해야 한다(시나리오 프로그램 구체는 에이전트 재량).
+
+| 구문 | 계약 (assert 대상) | 축 | 상태 |
+|---|---|---|---|
+| LABEL | no-op → NEXT_LINE | R | G |
+| GOTO | 라벨/숫자 점프 ; 미해석 → ERROR | R | C(정적)/G(실행·에러) |
+| CALL | 타깃 점프 + `PushStack(R+1)` ; 미해석 → ERROR | R,S | G(본문실행·에러) |
+| RETURN | `PopStack` 복귀 ; 빈스택 → ERROR | R,S | G(에러) |
+| IF 참 | NEXT_LINE, **본문 실행 후 ELSE 도달 시 END_IF로 점프(ELSE본문 스킵)** | R,T | G |
+| IF 거짓 | ELSE면 ELSE+1 / END_IF면 그 줄 ; 짝없음 → ERROR | R,T | G |
+| WHILE | 참=push 또는 회차+1; **제로트립**(즉시거짓 → END_WHILE+1, push 없음); 거짓 시 활성프레임이면 POP | R,S,T | G |
+| END_WHILE | WHILE 헤더 백점프 | R,T | G(실행) |
+| REPEAT | maxCount(=P1; 0/빈/≤0=무한) push, NEXT_LINE ; 짝없음 → ERROR | R,S | G |
+| END_REPEAT | 무한 또는 iter<max → 회차+1, head+1 재실행 ; else POP, NEXT_LINE ; 프레임불일치 → ERROR | R,S,T | G |
+| BREAK | `LoopTopEnd+1` 탈출 + 프레임 POP ; 루프밖 → ERROR | R,S | G |
+| CONTINUE | `LoopTopEnd`(ENDER)로 점프 → 재평가 ; 루프밖 → ERROR | R,T | G |
+| SELECT | 매칭 CASE+1 / 폴백(ELSE·빈값)+1 / END_SELECT ; no-block → ERROR | R,T | C(단발)/G(다분기·폴백·에러) |
+| CASE | 실행 도달=폴스루 → END_SELECT 점프 ; 미발견 → ERROR | R,T | C(단발)/G(연쇄) |
+| END_IF/END_SELECT | NEXT_LINE | R | C(간접) |
+| **중첩** | loop-in-loop / if-in-loop / call-in-loop. 최내곽 `LoopDepth` 피크, 정리 후 0, 외부 회차 보존 | S,T | G (최고가치) |
+
+**REPEAT 회차 스펙 고정**: `REPEAT N`에서 본문은 **정확히 N회**(REPEAT 줄 1회 진입 + END_REPEAT가 iter<max 동안 재실행). max=2 → 본문 2회. 이 값을 기대값으로 못박는다.
+
+### MEMORY
+
+| 항목 | 축 | 상태 |
+|---|---|---|
+| SET 쓰기 / 덮어쓰기 / `{$BLANK}` 클리어 | M | C |
+| SET 읽기전용 좌변 거부(`{$LOOP}`·`{$PIXEL}`) → ERROR | R | G (INC만 C) |
+| SET 형식오류 좌변 거부 → ERROR | R | G |
+| INC/DEC 정수 RMW(미정의→0) | M | C |
+| INC/DEC 증분 P3(변수·음수) | M | G(변수·음수) |
+| **루프 내 누적**(예: 1..N 합) — 흐름×메모리 | M,T | G |
+
+### EXIT / 순수 서브로직
+
+| 항목 | 축 | 상태 |
+|---|---|---|
+| EXIT → HALT (`rrHalted`) | R | G |
+| WAIT_VANISH 즉시통과 분기 | R | C |
+| 조건 연산자 EQ/LIKE/STARTS/ENDS/CONTAINS/금지`=` (`Action_CheckCondition` 직접) | 직접 | C |
+| I/O 13종 실제 동작 (MOVE/CLICK/.../ASSERT/FOCUS/SLEEP/NOTIFY) | — | **X** (반수동) |
+
+### RESOLVER / LVALUE (decode 축)
+
+| 항목 | 축 | 상태 |
+|---|---|---|
+| 보간 `{a}_world` / 리터럴 `{$TAB}` | D | C |
+| `{$CR}` / `{$LF}` / `{$SPACE}` | D | G |
+| 중첩 `{$PIXEL:{x},{y}}` | D | G |
+| 짝없는 `{` graceful fallback | D | G |
+| 미지의 `{$XXX}` 리터럴 통과 | D | G |
+| `{$LOOP}` 루프밖=0 / **루프안 라이브 회차** | D,T | C(밖)/G(안) |
+
+> 정적 구조(FindBlockPair/SelectBlock/라벨/ResolveJumpTarget/ResolveSelectTarget)는 `Test_ScriptProgramModel`가 이미 C. 신규 항목은 그 위에 얹는다.
+
+---
+
+## 수락 기준
+
+- [ ] `RunProgram`이 3줄(SET/SET/EXIT) 프로그램에서 `rrHalted` 반환, 두 변수값 정확.
+- [ ] WHILE 카운팅: 본문 줄 방문 = 의도한 N회, 종료 후 `LoopDepth=0`, `{$LOOP}` 캡처값이 1..N 오름차순.
+- [ ] WHILE 제로트립: 본문 방문 0회, `LoopDepth` 시종 0.
+- [ ] `REPEAT 3`: 본문 방문 정확히 3회.
+- [ ] 중첩 루프: 최내곽 시점 `LoopDepth=2`, 완주 후 0, 외부 회차 보존.
+- [ ] BREAK: `LoopTopEnd+1`로 탈출, `LoopDepth`가 바깥 레벨로 복귀.
+- [ ] CONTINUE: 본문 잔여 스킵 후 다음 회차 진입(방문 패턴으로 확인).
+- [ ] IF 참: 참 본문 방문 ≥1, **ELSE 본문 방문 0**, 정상 종료.
+- [ ] IF 거짓: ELSE 본문 방문 ≥1, **IF 본문 방문 0**.
+- [ ] SELECT: 매칭 CASE 본문만 방문, 다른 CASE 본문 0; 폴백 케이스 동작 확인.
+- [ ] CALL/RETURN: 서브 본문 방문, CALL 다음 줄로 복귀, 균형 후 `GetStackDepth=0`; 중첩 CALL LIFO 복귀.
+- [ ] 네거티브: GOTO 미해석 → `rrErrored`; RETURN 빈스택 → `rrErrored`; BREAK/CONTINUE 루프밖 → `rrErrored`; SELECT no-block → `rrErrored`.
+- [ ] 폭주 가드: 항상-참 WHILE → 예산 내 `rrExhausted`(엑셀 무응답 없이 종료).
+- [ ] SET `{$LOOP}` 좌변 → `rrErrored`.
+- [ ] 메모리: 루프 내 누적 합 정확(흐름×메모리).
+- [ ] resolver: `{$CR}/{$LF}/{$SPACE}` 치환, 중첩 `{$PIXEL}` 해석, 짝없는 `{` 리터럴 보존, 미지 `{$XXX}` 원형 통과.
+- [ ] `Run_Flow_Diagnosis` 실행 시 **시트 생성·창 활성화·실제 입력 0건**.
+- [ ] 기존 `Test_ScriptProgramModel` / `Test_RegistryDispatchSync` 여전히 통과.
+- [ ] **diff가 `modTester`(및 선택적 `modTestKit`)에 한정** — Negative Scope 모듈 무변경.
+
+---
+
+## 구현 순서
+
+1. **스켈레톤**: `eRunResult` enum, `RunProgram` 드라이버 + `Step1` sugar, 신규 `Expect*` 동사. 3줄(SET/SET/EXIT) 스모크로 드라이버·트레이스·종료분류 검증.
+2. **단일 구문 해피패스**: IF/ELSE, WHILE, REPEAT, SELECT, GOTO, CALL/RETURN 각 1개 시나리오(방문수·종료사유·스택/루프 깊이).
+3. **중첩·상호작용**: loop-in-loop, if-in-loop, call-in-loop, BREAK/CONTINUE, 중첩 CALL, 루프 누적·카운터 매트릭스.
+4. **네거티브 경로**: 모든 ERROR 계약 + `rrExhausted` 폭주 가드.
+5. **메모리·resolver 헤드리스 항목**: SET 좌변 거부, INC/DEC 변수·음수, `{$CR/$LF/$SPACE}`, 중첩 pixel, 짝없는 brace, 미지 `$`, `{$LOOP}` 라이브.
+6. **배선**: `Run_Flow_Diagnosis`가 2~5 집계, `Run_System_SelfDiagnosis`에서 로직 항목 이관(커버리지 보존), 공유 리포트 코어, 선택적 `Run_All`.
+
+---
+
+## 미확정 항목
+
+없음. (드라이버 계약·마이크로 기본값 4종·검증 매트릭스·진입점 분리 전부 확정됨.)

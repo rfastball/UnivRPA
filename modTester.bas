@@ -3,6 +3,15 @@
 ' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry
 Option Explicit
 
+Private Const DEFAULT_MAX_STEPS As Long = 10000
+
+Public Enum eRunResult
+    rrCompleted = 0
+    rrHalted = 1
+    rrErrored = 2
+    rrExhausted = 3
+End Enum
+
 '==============================================================================
 ' [System] Full Integration Test Runner (v2 명령어셋)
 '==============================================================================
@@ -12,6 +21,118 @@ Option Explicit
 '   여기서는 SET/메모리, 토크나이저, TYPE/KEY, CALL/RETURN,
 '   비전(WAIT_VANISH/ASSERT), FOCUS, IF-참, 그리고 연산자 단위검증을 다룬다.
 '==============================================================================
+Public Sub Run_Flow_Diagnosis()
+    Dim failCount As Long
+    failCount = 0
+
+    Debug.Print "=== [Flow Diagnosis] Headless unit suite ==="
+    failCount = failCount + Test_RunProgramSmoke()
+    failCount = failCount + Test_FlowHappyPaths()
+    failCount = failCount + Test_FlowNestedInteractions()
+    failCount = failCount + Test_FlowNegativePaths()
+    failCount = failCount + Test_MemoryResolverHeadless()
+
+    Debug.Print "--- [Regression] Registry/ScriptProgram ---"
+    failCount = failCount + Test_RegistryDispatchSync()
+    failCount = failCount + Test_ScriptProgramModel()
+
+    If failCount = 0 Then
+        Debug.Print "[OK] Headless flow diagnosis passed."
+    Else
+        Debug.Print "[FAIL] Headless flow diagnosis failed: " & failCount & " item(s)."
+    End If
+
+    On Error Resume Next
+    modContext.ResetContext
+    On Error GoTo 0
+End Sub
+
+Public Sub Run_All()
+    Debug.Print "=== [Run_All] Headless flow suite first ==="
+    Run_Flow_Diagnosis
+    Debug.Print "=== [Run_All] Starting semi-manual system diagnosis (I/O included) ==="
+    Run_System_SelfDiagnosis
+End Sub
+
+Public Function RunProgram(ByRef arr As Variant, ByVal firstRow As Long, ByVal maxSteps As Long, _
+                           ByRef outTrace() As Long, ByRef outLastCode As Long, _
+                           ByRef outLastLine As Long) As eRunResult
+    RunProgram = RunProgramFromLine(arr, firstRow, 1, maxSteps, outTrace, outLastCode, outLastLine)
+End Function
+
+Private Function RunProgramFromLine(ByRef arr As Variant, ByVal firstRow As Long, ByVal startLine As Long, _
+                                    ByVal maxSteps As Long, ByRef outTrace() As Long, _
+                                    ByRef outLastCode As Long, ByRef outLastLine As Long) As eRunResult
+    On Error GoTo ErrHandler
+
+    Dim curLine As Long
+    Dim totalLines As Long
+    Dim steps As Long
+    Dim code As Long
+    Dim program As clsScriptProgram
+
+    Erase outTrace
+    outLastCode = 0
+    outLastLine = 0
+    If maxSteps <= 0 Then maxSteps = DEFAULT_MAX_STEPS
+
+    modContext.InitContext
+    modEngine.LoadProgramFromArray arr, firstRow
+    Set program = modEngine.ActiveProgram()
+    totalLines = program.TotalLines
+
+    curLine = startLine
+    Do While curLine >= 1 And curLine <= totalLines
+        If steps >= maxSteps Then
+            outLastLine = curLine
+            RunProgramFromLine = rrExhausted
+            Exit Function
+        End If
+
+        AppendTrace outTrace, steps + 1, curLine
+        code = modEngine.ExecuteSmartAction(curLine)
+        outLastCode = code
+        steps = steps + 1
+
+        Select Case code
+            Case CMD_NEXT_LINE
+                curLine = curLine + 1
+            Case CMD_HALT
+                outLastLine = curLine
+                RunProgramFromLine = rrHalted
+                Exit Function
+            Case CMD_ERROR
+                outLastLine = curLine
+                RunProgramFromLine = rrErrored
+                Exit Function
+            Case Is > 0
+                curLine = code
+            Case Else
+                outLastLine = curLine
+                RunProgramFromLine = rrErrored
+                Exit Function
+        End Select
+    Loop
+
+    outLastLine = curLine
+    RunProgramFromLine = rrCompleted
+    Exit Function
+
+ErrHandler:
+    outLastCode = CMD_ERROR
+    outLastLine = curLine
+    RunProgramFromLine = rrErrored
+End Function
+
+Public Function Step1(ByRef arr As Variant, ByVal R As Long) As Long
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+
+    Call RunProgramFromLine(arr, 1, R, 1, trace, lastCode, lastLine)
+    Step1 = lastCode
+End Function
+
 Sub Run_System_SelfDiagnosis()
     Dim wsTest As Worksheet
     Dim failCount As Long
@@ -402,6 +523,371 @@ Private Sub AssertCond(ByVal name As String, ByVal v1 As String, ByVal op As Str
     End If
 End Sub
 
+Private Function Test_RunProgramSmoke() As Long
+    Dim fails As Long
+    Dim arr(1 To 3, 1 To 5) As Variant
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Flow 1] RunProgram smoke ---"
+    Call MakeCmd(arr, 1, "SET", "{a}", 0, "alpha")
+    Call MakeCmd(arr, 2, "SET", "{b}", 0, "{a}_beta")
+    Call MakeCmd(arr, 3, "EXIT", 0, 0, "")
+
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "a", "alpha", fails
+    ExpectVar "b", "alpha_beta", fails
+    ExpectTrace trace, Array(1, 2, 3), fails
+    ExpectLong "Smoke last line", 3, lastLine, fails
+    ExpectLong "Smoke last code", CMD_HALT, lastCode, fails
+
+    Test_RunProgramSmoke = fails
+End Function
+
+Private Function Test_FlowHappyPaths() As Long
+    Dim fails As Long
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Flow 2] Happy paths ---"
+
+    Dim gotoArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(gotoArr, 1, "LABEL", 0, 0, "START")
+    Call MakeCmd(gotoArr, 2, "SET", "{mark}", 0, "before")
+    Call MakeCmd(gotoArr, 3, "GOTO", 0, 0, "DONE")
+    Call MakeCmd(gotoArr, 4, "SET", "{mark}", 0, "bad")
+    Call MakeCmd(gotoArr, 5, "LABEL", 0, 0, "DONE")
+    Call MakeCmd(gotoArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(gotoArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "mark", "before", fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectTrace trace, Array(1, 2, 3, 5, 6), fails
+
+    Dim callArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(callArr, 1, "CALL", 0, 0, "SUB1")
+    Call MakeCmd(callArr, 2, "SET", "{after}", 0, "yes")
+    Call MakeCmd(callArr, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(callArr, 4, "LABEL", 0, 0, "SUB1")
+    Call MakeCmd(callArr, 5, "SET", "{sub}", 0, "ran")
+    Call MakeCmd(callArr, 6, "RETURN", 0, 0, "")
+    result = RunProgram(callArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "sub", "ran", fails
+    ExpectVar "after", "yes", fails
+    ExpectStackDepth 0, fails
+    ExpectTrace trace, Array(1, 4, 5, 6, 2, 3), fails
+
+    Dim ifTrueArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(ifTrueArr, 1, "IF", "1", "EQ", "1")
+    Call MakeCmd(ifTrueArr, 2, "SET", "{if_true}", 0, "yes")
+    Call MakeCmd(ifTrueArr, 3, "ELSE", 0, 0, "")
+    Call MakeCmd(ifTrueArr, 4, "SET", "{if_else}", 0, "bad")
+    Call MakeCmd(ifTrueArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(ifTrueArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(ifTrueArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 1, fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectVar "if_true", "yes", fails
+
+    Dim ifFalseArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(ifFalseArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(ifFalseArr, 2, "SET", "{if_body}", 0, "bad")
+    Call MakeCmd(ifFalseArr, 3, "ELSE", 0, 0, "")
+    Call MakeCmd(ifFalseArr, 4, "SET", "{else_body}", 0, "yes")
+    Call MakeCmd(ifFalseArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(ifFalseArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(ifFalseArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 0, fails
+    ExpectVisits trace, 4, 1, fails
+    ExpectVar "else_body", "yes", fails
+
+    Dim whileArr(1 To 13, 1 To 5) As Variant
+    Call MakeCmd(whileArr, 1, "SET", "{i}", 0, "0")
+    Call MakeCmd(whileArr, 2, "WHILE", "{i}", "<", "3")
+    Call MakeCmd(whileArr, 3, "INC", "{i}", 0, "")
+    Call MakeCmd(whileArr, 4, "SELECT", "{$LOOP}", 0, "")
+    Call MakeCmd(whileArr, 5, "CASE", "1", 0, "")
+    Call MakeCmd(whileArr, 6, "SET", "{L1}", 0, "{$LOOP}")
+    Call MakeCmd(whileArr, 7, "CASE", "2", 0, "")
+    Call MakeCmd(whileArr, 8, "SET", "{L2}", 0, "{$LOOP}")
+    Call MakeCmd(whileArr, 9, "CASE", "3", 0, "")
+    Call MakeCmd(whileArr, 10, "SET", "{L3}", 0, "{$LOOP}")
+    Call MakeCmd(whileArr, 11, "END_SELECT", 0, 0, "")
+    Call MakeCmd(whileArr, 12, "END_WHILE", 0, 0, "")
+    Call MakeCmd(whileArr, 13, "EXIT", 0, 0, "")
+    result = RunProgram(whileArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 3, 3, fails
+    ExpectVar "i", "3", fails
+    ExpectVar "L1", "1", fails
+    ExpectVar "L2", "2", fails
+    ExpectVar "L3", "3", fails
+    ExpectLoopDepth 0, fails
+
+    Dim zeroWhileArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(zeroWhileArr, 1, "WHILE", "1", "EQ", "0")
+    Call MakeCmd(zeroWhileArr, 2, "SET", "{body}", 0, "bad")
+    Call MakeCmd(zeroWhileArr, 3, "END_WHILE", 0, 0, "")
+    Call MakeCmd(zeroWhileArr, 4, "EXIT", 0, 0, "")
+    result = RunProgram(zeroWhileArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 0, fails
+    ExpectLoopDepth 0, fails
+
+    Dim repeatArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(repeatArr, 1, "REPEAT", "3", 0, "")
+    Call MakeCmd(repeatArr, 2, "INC", "{r}", 0, "")
+    Call MakeCmd(repeatArr, 3, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(repeatArr, 4, "EXIT", 0, 0, "")
+    result = RunProgram(repeatArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 3, fails
+    ExpectVar "r", "3", fails
+    ExpectLoopDepth 0, fails
+
+    Dim selectArr(1 To 9, 1 To 5) As Variant
+    Call MakeCmd(selectArr, 1, "SELECT", "B", 0, "")
+    Call MakeCmd(selectArr, 2, "CASE", "A", 0, "")
+    Call MakeCmd(selectArr, 3, "SET", "{caseA}", 0, "bad")
+    Call MakeCmd(selectArr, 4, "CASE", "B", 0, "")
+    Call MakeCmd(selectArr, 5, "SET", "{caseB}", 0, "yes")
+    Call MakeCmd(selectArr, 6, "CASE", "ELSE", 0, "")
+    Call MakeCmd(selectArr, 7, "SET", "{fallback}", 0, "yes")
+    Call MakeCmd(selectArr, 8, "END_SELECT", 0, 0, "")
+    Call MakeCmd(selectArr, 9, "EXIT", 0, 0, "")
+    result = RunProgram(selectArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 3, 0, fails
+    ExpectVisits trace, 5, 1, fails
+    ExpectVisits trace, 7, 0, fails
+    ExpectVar "caseB", "yes", fails
+
+    selectArr(1, 3) = "Z"
+    result = RunProgram(selectArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 7, 1, fails
+    ExpectVar "fallback", "yes", fails
+
+    Test_FlowHappyPaths = fails
+End Function
+
+Private Function Test_FlowNestedInteractions() As Long
+    Dim fails As Long
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Flow 3] Nested and interaction paths ---"
+
+    Dim breakArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(breakArr, 1, "REPEAT", "5", 0, "")
+    Call MakeCmd(breakArr, 2, "INC", "{before_break}", 0, "")
+    Call MakeCmd(breakArr, 3, "BREAK", 0, 0, "")
+    Call MakeCmd(breakArr, 4, "INC", "{after_break}", 0, "")
+    Call MakeCmd(breakArr, 5, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(breakArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(breakArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "before_break", "1", fails
+    ExpectVar "after_break", "", fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectLoopDepth 0, fails
+
+    Dim continueArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(continueArr, 1, "REPEAT", "3", 0, "")
+    Call MakeCmd(continueArr, 2, "INC", "{continue_hits}", 0, "")
+    Call MakeCmd(continueArr, 3, "CONTINUE", 0, 0, "")
+    Call MakeCmd(continueArr, 4, "INC", "{continue_skipped}", 0, "")
+    Call MakeCmd(continueArr, 5, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(continueArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(continueArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "continue_hits", "3", fails
+    ExpectVar "continue_skipped", "", fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectLoopDepth 0, fails
+
+    Dim peakArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(peakArr, 1, "REPEAT", "2", 0, "")
+    Call MakeCmd(peakArr, 2, "REPEAT", "2", 0, "")
+    Call MakeCmd(peakArr, 3, "SET", "{inner_loop}", 0, "{$LOOP}")
+    Call MakeCmd(peakArr, 4, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(peakArr, 5, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(peakArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(peakArr, 1, 3, trace, lastCode, lastLine)
+    ExpectTerminal rrExhausted, result, fails
+    ExpectLoopDepth 2, fails
+
+    Dim nestedArr(1 To 12, 1 To 5) As Variant
+    Call MakeCmd(nestedArr, 1, "REPEAT", "2", 0, "")
+    Call MakeCmd(nestedArr, 2, "SELECT", "{$LOOP}", 0, "")
+    Call MakeCmd(nestedArr, 3, "CASE", "1", 0, "")
+    Call MakeCmd(nestedArr, 4, "INC", "{outer1}", 0, "")
+    Call MakeCmd(nestedArr, 5, "CASE", "2", 0, "")
+    Call MakeCmd(nestedArr, 6, "INC", "{outer2}", 0, "")
+    Call MakeCmd(nestedArr, 7, "END_SELECT", 0, 0, "")
+    Call MakeCmd(nestedArr, 8, "REPEAT", "2", 0, "")
+    Call MakeCmd(nestedArr, 9, "INC", "{inner_hits}", 0, "")
+    Call MakeCmd(nestedArr, 10, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(nestedArr, 11, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(nestedArr, 12, "EXIT", 0, 0, "")
+    result = RunProgram(nestedArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "outer1", "1", fails
+    ExpectVar "outer2", "1", fails
+    ExpectVar "inner_hits", "4", fails
+    ExpectLoopDepth 0, fails
+
+    Dim callLoopArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(callLoopArr, 1, "REPEAT", "2", 0, "")
+    Call MakeCmd(callLoopArr, 2, "CALL", 0, 0, "SUB")
+    Call MakeCmd(callLoopArr, 3, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(callLoopArr, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(callLoopArr, 5, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(callLoopArr, 6, "INC", "{call_loop_hits}", 0, "")
+    Call MakeCmd(callLoopArr, 7, "RETURN", 0, 0, "")
+    result = RunProgram(callLoopArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "call_loop_hits", "2", fails
+    ExpectStackDepth 0, fails
+    ExpectLoopDepth 0, fails
+
+    Dim nestedCallArr(1 To 10, 1 To 5) As Variant
+    Call MakeCmd(nestedCallArr, 1, "CALL", 0, 0, "A")
+    Call MakeCmd(nestedCallArr, 2, "SET", "{done}", 0, "yes")
+    Call MakeCmd(nestedCallArr, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(nestedCallArr, 4, "LABEL", 0, 0, "A")
+    Call MakeCmd(nestedCallArr, 5, "CALL", 0, 0, "B")
+    Call MakeCmd(nestedCallArr, 6, "SET", "{after_b}", 0, "yes")
+    Call MakeCmd(nestedCallArr, 7, "RETURN", 0, 0, "")
+    Call MakeCmd(nestedCallArr, 8, "LABEL", 0, 0, "B")
+    Call MakeCmd(nestedCallArr, 9, "SET", "{in_b}", 0, "yes")
+    Call MakeCmd(nestedCallArr, 10, "RETURN", 0, 0, "")
+    result = RunProgram(nestedCallArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "in_b", "yes", fails
+    ExpectVar "after_b", "yes", fails
+    ExpectVar "done", "yes", fails
+    ExpectStackDepth 0, fails
+    ExpectTrace trace, Array(1, 4, 5, 8, 9, 10, 6, 7, 2, 3), fails
+
+    Test_FlowNestedInteractions = fails
+End Function
+
+Private Function Test_FlowNegativePaths() As Long
+    Dim fails As Long
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Flow 4] Negative paths ---"
+
+    Dim arr1(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr1, 1, "GOTO", 0, 0, "MISSING")
+    result = RunProgram(arr1, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr2(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr2, 1, "CALL", 0, 0, "MISSING")
+    result = RunProgram(arr2, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr3(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr3, 1, "RETURN", 0, 0, "")
+    result = RunProgram(arr3, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr4(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr4, 1, "BREAK", 0, 0, "")
+    result = RunProgram(arr4, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr5(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr5, 1, "CONTINUE", 0, 0, "")
+    result = RunProgram(arr5, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr6(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr6, 1, "SELECT", "A", 0, "")
+    result = RunProgram(arr6, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr7(1 To 2, 1 To 5) As Variant
+    Call MakeCmd(arr7, 1, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(arr7, 2, "END_WHILE", 0, 0, "")
+    result = RunProgram(arr7, 1, 5, trace, lastCode, lastLine)
+    ExpectTerminal rrExhausted, result, fails
+    ExpectVisits trace, 1, 3, fails
+
+    Dim arr8(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr8, 1, "SET", "{$LOOP}", 0, "bad")
+    result = RunProgram(arr8, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr9(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr9, 1, "SET", "LOOP", 0, "bad")
+    result = RunProgram(arr9, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Test_FlowNegativePaths = fails
+End Function
+
+Private Function Test_MemoryResolverHeadless() As Long
+    Dim fails As Long
+    Dim arr(1 To 17, 1 To 5) As Variant
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+    Dim pxExpected As String
+
+    Debug.Print "--- [Flow 5] Memory and resolver ---"
+    Call MakeCmd(arr, 1, "SET", "{a}", 0, "hello")
+    Call MakeCmd(arr, 2, "SET", "{b}", 0, "{a}_world")
+    Call MakeCmd(arr, 3, "SET", "{a}", 0, "overwritten")
+    Call MakeCmd(arr, 4, "SET", "{a}", 0, "{$BLANK}")
+    Call MakeCmd(arr, 5, "SET", "{cr}", 0, "A{$CR}B")
+    Call MakeCmd(arr, 6, "SET", "{lf}", 0, "A{$LF}B")
+    Call MakeCmd(arr, 7, "SET", "{sp}", 0, "A{$SPACE}B")
+    Call MakeCmd(arr, 8, "SET", "{unknown}", 0, "{$XXX}")
+    Call MakeCmd(arr, 9, "SET", "{open}", 0, "A{broken")
+    Call MakeCmd(arr, 10, "SET", "{x}", 0, "300")
+    Call MakeCmd(arr, 11, "SET", "{y}", 0, "300")
+    Call MakeCmd(arr, 12, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
+    Call MakeCmd(arr, 13, "SET", "{delta}", 0, "-2")
+    Call MakeCmd(arr, 14, "INC", "{n}", 0, "")
+    Call MakeCmd(arr, 15, "INC", "{n}", 0, "{delta}")
+    Call MakeCmd(arr, 16, "DEC", "{n}", 0, "-3")
+    Call MakeCmd(arr, 17, "EXIT", 0, 0, "")
+
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+    pxExpected = modWinAPI.GetColorHexAt(300, 300)
+
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "a", "", fails
+    ExpectVar "b", "hello_world", fails
+    ExpectVar "cr", "A" & vbCr & "B", fails
+    ExpectVar "lf", "A" & vbLf & "B", fails
+    ExpectVar "sp", "A B", fails
+    ExpectVar "unknown", "{$XXX}", fails
+    ExpectVar "open", "A{broken", fails
+    ExpectVar "px", pxExpected, fails
+    ExpectVar "n", "2", fails
+    ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17), fails
+
+    Test_MemoryResolverHeadless = fails
+End Function
+
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)
 Private Sub MakeCmd(ByRef arr As Variant, R As Long, cmd As String, p1 As Variant, p2 As Variant, p3 As String)
     arr(R, 2) = cmd
@@ -414,6 +900,11 @@ Private Function ExecuteArrayLine(ByRef arr As Variant, ByVal R As Long) As Long
     modEngine.LoadProgramFromArray arr, 1
     ExecuteArrayLine = modEngine.ExecuteSmartAction(R)
 End Function
+
+Private Sub AppendTrace(ByRef trace() As Long, ByVal traceCount As Long, ByVal lineNo As Long)
+    ReDim Preserve trace(1 To traceCount)
+    trace(traceCount) = lineNo
+End Sub
 
 Private Function Test_ScriptProgramModel() As Long
     Dim fails As Long
@@ -559,6 +1050,88 @@ Private Sub ExpectBool(ByVal testName As String, ByVal expected As Boolean, ByVa
         failCount = failCount + 1
     End If
 End Sub
+
+Private Sub ExpectVar(ByVal name As String, ByVal expected As String, ByRef failCount As Long)
+    ExpectText "Var " & name, expected, modContext.GetVar(name), failCount
+End Sub
+
+Private Sub ExpectStackDepth(ByVal expected As Long, ByRef failCount As Long)
+    ExpectLong "StackDepth", expected, modContext.GetStackDepth(), failCount
+End Sub
+
+Private Sub ExpectLoopDepth(ByVal expected As Long, ByRef failCount As Long)
+    ExpectLong "LoopDepth", expected, modContext.LoopDepth(), failCount
+End Sub
+
+Private Sub ExpectTerminal(ByVal expected As eRunResult, ByVal actual As eRunResult, ByRef failCount As Long)
+    If expected = actual Then
+        LogPass "Terminal " & RunResultName(expected)
+    Else
+        LogFail "Terminal", RunResultName(expected), RunResultName(actual)
+        failCount = failCount + 1
+    End If
+End Sub
+
+Private Sub ExpectVisits(ByRef trace() As Long, ByVal lineNo As Long, ByVal expected As Long, ByRef failCount As Long)
+    Dim actual As Long
+    Dim i As Long
+
+    On Error GoTo EmptyTrace
+    For i = LBound(trace) To UBound(trace)
+        If trace(i) = lineNo Then actual = actual + 1
+    Next i
+    On Error GoTo 0
+
+    ExpectLong "Visits line " & lineNo, expected, actual, failCount
+    Exit Sub
+
+EmptyTrace:
+    On Error GoTo 0
+    ExpectLong "Visits line " & lineNo, expected, 0, failCount
+End Sub
+
+Private Sub ExpectTrace(ByRef trace() As Long, ByVal expected As Variant, ByRef failCount As Long)
+    Dim actualLen As Long
+    Dim expectedLen As Long
+    Dim i As Long
+
+    actualLen = TraceLength(trace)
+    expectedLen = UBound(expected) - LBound(expected) + 1
+    If actualLen <> expectedLen Then
+        LogFail "Trace length", CStr(expectedLen), CStr(actualLen)
+        failCount = failCount + 1
+        Exit Sub
+    End If
+
+    For i = 1 To actualLen
+        If trace(i) <> CLng(expected(LBound(expected) + i - 1)) Then
+            LogFail "Trace item " & i, CStr(expected(LBound(expected) + i - 1)), CStr(trace(i))
+            failCount = failCount + 1
+            Exit Sub
+        End If
+    Next i
+
+    LogPass "Trace exact"
+End Sub
+
+Private Function TraceLength(ByRef trace() As Long) As Long
+    On Error GoTo EmptyTrace
+    TraceLength = UBound(trace) - LBound(trace) + 1
+    Exit Function
+
+EmptyTrace:
+    TraceLength = 0
+End Function
+
+Private Function RunResultName(ByVal result As eRunResult) As String
+    Select Case result
+        Case rrCompleted: RunResultName = "rrCompleted"
+        Case rrHalted: RunResultName = "rrHalted"
+        Case rrErrored: RunResultName = "rrErrored"
+        Case rrExhausted: RunResultName = "rrExhausted"
+        Case Else: RunResultName = "Unknown(" & CStr(result) & ")"
+    End Select
+End Function
 
 Private Sub LogPass(testName As String)
     Debug.Print "[PASS] " & testName
