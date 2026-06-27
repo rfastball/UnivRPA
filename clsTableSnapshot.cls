@@ -114,15 +114,24 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range) As Variant
     For r = 1 To rngTarget.Rows.Count
         For c = 1 To rngTarget.Columns.Count
             Set cell = rngTarget.Cells(r, c)
-            textValue = cell.Text
-            If IsOverflowText(textValue) Then
-                textValue = GetSafeFormattedText(cell.Value, cell.NumberFormat)
+            If r = 1 Then
+                textValue = HeaderText(cell)
+            Else
+                textValue = cell.Text
+                If IsOverflowText(textValue) Then
+                    textValue = GetSafeFormattedText(cell.Value, cell.NumberFormat)
+                End If
             End If
             result(r, c) = textValue
         Next c
     Next r
 
     SnapshotVisibleText = result
+End Function
+
+Private Function HeaderText(ByVal cell As Range) As String
+    If IsError(cell.Value) Or IsNull(cell.Value) Or IsEmpty(cell.Value) Then Exit Function
+    HeaderText = CStr(cell.Value)
 End Function
 
 Private Function IsOverflowText(ByVal textValue As String) As Boolean
