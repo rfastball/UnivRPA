@@ -1,19 +1,22 @@
 Attribute VB_Name = "modTableSource"
 Option Explicit
 
-Public Function SnapshotSource(ByVal pWorkbook As String, ByVal pSource As String) As clsTableSnapshot
+Public Function SnapshotSource(ByVal pWorkbook As String, ByVal pSource As String, Optional ByVal pMode As String = "") As clsTableSnapshot
     On Error GoTo ErrHandler
 
     Dim openedHere As Boolean
     Dim wb As Workbook
     Set wb = ResolveWorkbook(Trim$(pWorkbook), openedHere)
 
+    Dim visibleOnly As Boolean
+    visibleOnly = ParseSnapshotMode(pMode)
+
     Dim sourceObject As Object
     Set sourceObject = ResolveTableSourceSpec(wb, Trim$(pSource))
 
     Dim tbl As clsTableSnapshot
     Set tbl = New clsTableSnapshot
-    tbl.LoadFromSheet sourceObject
+    tbl.LoadFromSheet sourceObject, visibleOnly
     Set SnapshotSource = tbl
 
 CleanUp:
@@ -29,6 +32,20 @@ ErrHandler:
     If openedHere And Not wb Is Nothing Then wb.Close SaveChanges:=False
     On Error GoTo 0
     Err.Raise Err.Number, "modTableSource.SnapshotSource", desc
+End Function
+
+Private Function ParseSnapshotMode(ByVal modeText As String) As Boolean
+    Dim mode As String
+    mode = UCase$(Trim$(modeText))
+
+    Select Case mode
+        Case "", "ALL"
+            ParseSnapshotMode = False
+        Case "VISIBLE"
+            ParseSnapshotMode = True
+        Case Else
+            Err.Raise 5, "modTableSource.ParseSnapshotMode", "FOREACH_ROW P3는 비워두거나 ALL/VISIBLE만 사용할 수 있습니다: " & modeText
+    End Select
 End Function
 
 Public Function OpenWorkbookHint(ByVal filterText As String) As String

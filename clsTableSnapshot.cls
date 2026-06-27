@@ -51,7 +51,7 @@ End Sub
 ' 사용법 2: t.LoadFromSheet Range("A1")           -> A1부터 끝까지 자동 탐색 (추천)
 ' 사용법 3: t.LoadFromSheet Range("A1:F500")      -> 지정된 범위만 강제 로드
 ' ==============================================================================
-Public Sub LoadFromSheet(ByVal vSource As Variant)
+Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As Boolean = False)
     Dim rngTarget As Range
     
     ' 1. 입력 타입 확인 및 범위 확정
@@ -79,7 +79,7 @@ Public Sub LoadFromSheet(ByVal vSource As Variant)
     End If
     
     Dim vData As Variant
-    vData = SnapshotVisibleText(rngTarget)
+    vData = SnapshotVisibleText(rngTarget, visibleOnly)
     
     ' 4. 배열 로드 실행
     LoadFromArray vData
@@ -103,15 +103,25 @@ Private Function ClampToUsedRange(ByVal rngSource As Range) As Range
     End If
 End Function
 
-Private Function SnapshotVisibleText(ByVal rngTarget As Range) As Variant
+Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly As Boolean) As Variant
     Dim result() As Variant
     Dim r As Long, c As Long
+    Dim targetRow As Long
+    Dim includedRows As Long
     Dim cell As Range
     Dim textValue As String
 
-    ReDim result(1 To rngTarget.Rows.Count, 1 To rngTarget.Columns.Count)
+    includedRows = 1
+    For r = 2 To rngTarget.Rows.Count
+        If IsSnapshotRowIncluded(r, rngTarget.Rows(r), visibleOnly) Then includedRows = includedRows + 1
+    Next r
+
+    ReDim result(1 To includedRows, 1 To rngTarget.Columns.Count)
 
     For r = 1 To rngTarget.Rows.Count
+        If Not IsSnapshotRowIncluded(r, rngTarget.Rows(r), visibleOnly) Then GoTo NextSourceRow
+
+        targetRow = targetRow + 1
         For c = 1 To rngTarget.Columns.Count
             Set cell = rngTarget.Cells(r, c)
             If r = 1 Then
@@ -122,11 +132,25 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range) As Variant
                     textValue = GetSafeFormattedText(cell.Value, cell.NumberFormat)
                 End If
             End If
-            result(r, c) = textValue
+            result(targetRow, c) = textValue
         Next c
+NextSourceRow:
     Next r
 
     SnapshotVisibleText = result
+End Function
+
+Private Function IsSnapshotRowIncluded(ByVal sourceRowIndex As Long, ByVal rngRow As Range, ByVal visibleOnly As Boolean) As Boolean
+    If sourceRowIndex = 1 Then
+        IsSnapshotRowIncluded = True
+        Exit Function
+    End If
+
+    If Not visibleOnly Then
+        IsSnapshotRowIncluded = True
+    Else
+        IsSnapshotRowIncluded = Not rngRow.EntireRow.Hidden
+    End If
 End Function
 
 Private Function HeaderText(ByVal cell As Range) As String

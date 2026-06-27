@@ -749,6 +749,26 @@ Private Function Test_ForeachRowExecution() As Long
     ExpectVar "after_loop", "done", fails
     ExpectLoopDepth 0, fails
 
+    ws.Rows(3).Hidden = True
+    Dim visibleArr(1 To 10, 1 To 5) As Variant
+    Call MakeCmd(visibleArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE")
+    Call MakeCmd(visibleArr, 2, "SET", "{visible_last_idx}", 0, "{$RIDX}")
+    Call MakeCmd(visibleArr, 3, "IF", "{$RIDX}", "EQ", "1")
+    Call MakeCmd(visibleArr, 4, "SET", "{visible1}", 0, "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleArr, 6, "IF", "{$RIDX}", "EQ", "2")
+    Call MakeCmd(visibleArr, 7, "SET", "{visible2}", 0, "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 8, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleArr, 9, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(visibleArr, 10, "EXIT", 0, 0, "")
+    result = RunProgram(visibleArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "visible_last_idx", "2", fails
+    ExpectVar "visible1", "007", fails
+    ExpectVar "visible2", "C", fails
+    ExpectLoopDepth 0, fails
+    ws.Rows(3).Hidden = False
+
     ws.Range("A2:D4").ClearContents
     Dim emptyArr(1 To 5, 1 To 5) As Variant
     Call MakeCmd(emptyArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
