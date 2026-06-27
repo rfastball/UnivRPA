@@ -180,11 +180,14 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
         warning = modDevTools.LastValidationWarning()
         If cmd = "LABEL" And modDevTools.RefreshLabelRoleDisplay(Target.Worksheet, Target.Row) Then
             If Len(warning) > 0 Then Application.StatusBar = Replace(warning, vbCrLf, " ")
-        ElseIf Len(warning) > 0 Then
-            ApplyWarningNote Target, warning
         Else
-            ClearAssistNote Target
-            ClearStatusBar
+            If cmd <> "CALL" And cmd <> "GOTO" Then modDevTools.ClearLabelRoleDisplay Target.Worksheet, Target.Row
+            If Len(warning) > 0 Then
+                ApplyWarningNote Target, warning
+            Else
+                ClearAssistNote Target
+                ClearStatusBar
+            End If
         End If
     Else
         Dim suggestion As String

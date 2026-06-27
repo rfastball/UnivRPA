@@ -437,6 +437,14 @@ Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As L
     RefreshLabelRoleDisplay = True
 End Function
 
+Public Sub ClearLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long)
+    If ws Is Nothing Then Exit Sub
+    If rowNum < 2 Then Exit Sub
+
+    modScriptAssist.ClearLabelRoleNote ws.Cells(rowNum, 2)
+    ClearEditorLinkStyle ws.Cells(rowNum, 5), True
+End Sub
+
 Private Function ProgramSnapshotFromSheet(ByVal ws As Worksheet, ByVal lastRow As Long) As clsScriptProgram
     If ws Is Nothing Then Exit Function
     If lastRow < 2 Then Exit Function
@@ -1025,17 +1033,25 @@ Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, B
     Dim roleCell As Range
     Set roleCell = ws.Cells(rowNum, 2)
 
+    Dim labelCell As Range
+    Set labelCell = ws.Cells(rowNum, 5)
+
     If cmd <> "LABEL" Then
         modScriptAssist.ClearLabelRoleNote roleCell
+        ClearEditorLinkStyle labelCell
         Exit Sub
     End If
 
-    If program Is Nothing Then Exit Sub
+    If program Is Nothing Then
+        ClearEditorLinkStyle labelCell, True
+        Exit Sub
+    End If
 
     Dim roleName As String
     roleName = program.LabelRoleAtSheetRow(rowNum)
     If Len(roleName) = 0 Then
         modScriptAssist.ClearLabelRoleNote roleCell
+        ClearEditorLinkStyle labelCell, True
         Exit Sub
     End If
 
@@ -1054,6 +1070,30 @@ Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, B
     ElseIf roleName = "DeadLabel" Then
         roleCell.Font.color = RGB(128, 128, 128)
     End If
+
+    If roleName = "SubroutineLabel" Or roleName = "MixedLabel" Then
+        ApplyEditorLinkStyle labelCell
+    Else
+        ClearEditorLinkStyle labelCell, True
+    End If
+End Sub
+
+Private Sub ApplyEditorLinkStyle(ByVal targetCell As Range)
+    If targetCell Is Nothing Then Exit Sub
+    If Len(ParamText(targetCell.value)) = 0 Then Exit Sub
+
+    With targetCell.Font
+        .color = RGB(5, 99, 193)
+        .Underline = xlUnderlineStyleSingle
+    End With
+End Sub
+
+Private Sub ClearEditorLinkStyle(ByVal targetCell As Range, Optional ByVal resetColor As Boolean = False)
+    If targetCell Is Nothing Then Exit Sub
+    With targetCell.Font
+        If resetColor Then .color = vbBlack
+        .Underline = xlUnderlineStyleNone
+    End With
 End Sub
 
 Private Function PureCommandAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
