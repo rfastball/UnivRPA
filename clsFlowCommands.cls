@@ -24,13 +24,28 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "LABEL": ' Pass (라벨은 clsScriptProgram에서 사전 인덱싱됨)
 
          Case "GOTO"
-            ICommand_Execute = modEngine.ResolveJumpTarget(args(3))
+            Dim gotoFramesPopped As Long
+            Dim gotoTarget As Long
+            Dim gotoDepthBefore As Long
+            gotoDepthBefore = modContext.LoopDepth()
+            gotoTarget = modEngine.ResolveGotoTarget(R, args(3), gotoFramesPopped)
+            If gotoTarget > 0 Then
+                LogShim.LogEvent "jump.taken", _
+                    Array("line", "cmd", "target", "to", "subAreaId", "loopDepth_before", "loopDepth_after", "framesPopped"), _
+                    Array(R, cmd, args(3), gotoTarget, modEngine.ActiveProgram().SubAreaIdAt(gotoTarget), gotoDepthBefore, modContext.LoopDepth(), gotoFramesPopped)
+                ICommand_Execute = gotoTarget
+            Else
+                ICommand_Execute = CMD_ERROR
+            End If
 
          Case "CALL"
             Dim callTarget As Long
-            callTarget = modEngine.ResolveJumpTarget(args(3))
+            callTarget = modEngine.ResolveCallTarget(R, args(3))
             If callTarget > 0 Then
-                modContext.PushStack R + 1
+                modContext.PushStack R + 1, modContext.LoopDepth()
+                LogShim.LogEvent "call.push", _
+                    Array("line", "target", "to", "returnRow", "stackDepth_after", "loopDepth_at_call"), _
+                    Array(R, args(3), callTarget, R + 1, modContext.GetStackDepth(), modContext.LoopDepth())
                 ICommand_Execute = callTarget
             Else
                 ICommand_Execute = CMD_ERROR
@@ -38,8 +53,16 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 
          Case "RETURN"
             Dim retLine As Long
-            retLine = modContext.PopStack()
-            If retLine > 0 Then ICommand_Execute = retLine Else ICommand_Execute = CMD_ERROR
+            Dim restoredDepth As Long
+            retLine = modContext.PopStack(restoredDepth)
+            If retLine > 0 Then
+                LogShim.LogEvent "return.pop", _
+                    Array("line", "returnRow", "stackDepth_after", "loopDepth_restored"), _
+                    Array(R, retLine, modContext.GetStackDepth(), restoredDepth)
+                ICommand_Execute = retLine
+            Else
+                ICommand_Execute = CMD_ERROR
+            End If
 
          Case "IF"
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
@@ -82,7 +105,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 ICommand_Execute = CMD_NEXT_LINE
             Else
                 ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
-                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop
+                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop "end"
                 whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
                 If whileEnd > 0 Then ICommand_Execute = whileEnd + 1 Else ICommand_Execute = CMD_ERROR
             End If
@@ -131,7 +154,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                     modContext.LoopIncrement
                     ICommand_Execute = rHead + 1   ' 본문 재실행 (REPEAT 줄은 1회만)
                 Else
-                    modContext.LoopPop
+                    modContext.LoopPop "end"
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
@@ -166,7 +189,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 If modContext.ForeachAdvance() Then
                     ICommand_Execute = fHead + 1
                 Else
-                    modContext.LoopPop
+                    modContext.LoopPop "end"
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
@@ -177,7 +200,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "BREAK"
             If modContext.LoopDepth() > 0 Then
                 Dim brkEnd As Long: brkEnd = modContext.LoopTopEnd()
-                modContext.LoopPop ' 카운터 정리
+                modContext.LoopPop "break" ' 카운터 정리
                 ICommand_Execute = brkEnd + 1
             Else
                 ICommand_Execute = CMD_ERROR

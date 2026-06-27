@@ -228,6 +228,13 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
 
     If Len(text) = 0 Then Exit Function
 
+    If IsJumpTargetSlot(def, idx) Then
+        If IsNumeric(text) Or ContainsTokenSyntax(text) Then
+            SetValidationError def.Canonical & " target must be a static LABEL."
+            ValidateParamSlot = False
+        End If
+    End If
+
     If spec.IsRaw Then
         If IsConditionOperatorSlot(def, idx) Then
             If Not modCondition.IsConditionOperator(text) Then
@@ -298,6 +305,10 @@ End Function
 
 Private Function IsMemoryLValueSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
     IsMemoryLValueSlot = ((def.Canonical = "SET" Or def.Canonical = "INC" Or def.Canonical = "DEC") And idx = 1)
+End Function
+
+Private Function IsJumpTargetSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
+    IsJumpTargetSlot = ((def.Canonical = "GOTO" Or def.Canonical = "CALL") And idx = 3)
 End Function
 
 Private Function IsWritableLValue(ByVal rawP1 As String) As Boolean

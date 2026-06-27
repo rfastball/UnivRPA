@@ -290,6 +290,44 @@ Public Function ResolveJumpTarget(ByVal Target As String) As Long
     End If
 End Function
 
+Public Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As String, ByRef framesPopped As Long) As Long
+    On Error GoTo ErrHandler
+    ResolveGotoTarget = CMD_ERROR
+    framesPopped = 0
+
+    If m_program Is Nothing Then Exit Function
+
+    Dim targetLine As Long
+    targetLine = m_program.ResolveJumpTarget(Target)
+    If targetLine <= 0 Then Exit Function
+
+    If Not m_program.IsGotoAllowed(sourceLine, targetLine) Then Exit Function
+
+    Dim popped As Long
+    popped = modContext.ReconcileLoopStackForJump(targetLine, m_program.LoopDepthAt(targetLine))
+    If popped < 0 Then Exit Function
+
+    framesPopped = popped
+    ResolveGotoTarget = targetLine
+    Exit Function
+
+ErrHandler:
+    ResolveGotoTarget = CMD_ERROR
+End Function
+
+Public Function ResolveCallTarget(ByVal sourceLine As Long, ByVal Target As String) As Long
+    On Error GoTo ErrHandler
+    If m_program Is Nothing Then
+        ResolveCallTarget = CMD_ERROR
+    Else
+        ResolveCallTarget = m_program.ResolveJumpTarget(Target)
+    End If
+    Exit Function
+
+ErrHandler:
+    ResolveCallTarget = CMD_ERROR
+End Function
+
 ' [Internal] 파라미터 해석기 (v2 토크나이저)
 '   {...} 스팬을 깊이 인식으로 스캔 -> 내용으로 분기 ($시스템/$PIXEL/리터럴/{name})
 '   중첩 중괄호 지원: {$PIXEL:{cx},{cy}}. 값 치환만 수행하며 *? 와일드카드는 건드리지 않음.

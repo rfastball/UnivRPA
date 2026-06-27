@@ -83,16 +83,35 @@ End Function
 '==============================================================================
 
 ' [PUSH] 서브루틴 진입 시 복귀할 줄 번호 저장
-Public Sub PushStack(ByVal returnRow As Long)
-    CallStack.Add returnRow
+Public Sub PushStack(ByVal returnRow As Long, Optional ByVal loopDepthAtCall As Long = -1)
+    If loopDepthAtCall < 0 Then loopDepthAtCall = LoopDepth()
+    CallStack.Add Array(returnRow, loopDepthAtCall)
 End Sub
 
 ' [POP] 서브루틴 종료(RETURN) 시 복귀할 줄 번호 반환
-Public Function PopStack() As Long
+Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
     If CallStack.count > 0 Then
-        ' 컬렉션의 마지막 아이템을 가져옴 (LIFO)
-        PopStack = CallStack.item(CallStack.count)
+        Dim frame As Variant
+        frame = CallStack.item(CallStack.count)
         CallStack.Remove CallStack.count
+
+        Dim returnRow As Long
+        Dim expectedLoopDepth As Long
+        returnRow = CLng(frame(0))
+        expectedLoopDepth = CLng(frame(1))
+
+        If LoopDepth() < expectedLoopDepth Then
+            LogStatus "RETURN 루프 깊이 불일치: 호출 시점보다 루프 스택이 얕습니다."
+            PopStack = 0
+            Exit Function
+        End If
+
+        Do While LoopDepth() > expectedLoopDepth
+            LoopPop "return_restore"
+        Loop
+
+        loopDepthRestored = LoopDepth()
+        PopStack = returnRow
     Else
         LogStatus "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
         PopStack = 0
@@ -154,8 +173,11 @@ Public Sub LoopPush(ByVal kind As String, ByVal headerLine As Long, ByVal endLin
 End Sub
 
 ' [이탈] 최상위 루프 프레임 POP
-Public Sub LoopPop()
+Public Sub LoopPop(Optional ByVal reason As String = "end")
     If LoopTop > 0 Then
+        LogShim.LogEvent "loop.pop", _
+            Array("line", "kind", "iteration", "reason"), _
+            Array(LoopStack(LoopTop).headerLine, LoopStack(LoopTop).kind, LoopStack(LoopTop).iteration, reason)
         Set LoopTables(LoopTop) = Nothing
         LoopTop = LoopTop - 1
         If LoopTop > 0 Then
@@ -240,4 +262,27 @@ Public Function LoopTopEnd() As Long
 End Function
 Public Function LoopTopMax() As Long
     If LoopTop > 0 Then LoopTopMax = LoopStack(LoopTop).maxCount Else LoopTopMax = 0
+End Function
+
+Public Function ReconcileLoopStackForJump(ByVal targetLine As Long, ByVal targetStaticLoopDepth As Long) As Long
+    Dim keepDepth As Long
+    Dim i As Long
+
+    keepDepth = 0
+    For i = LoopTop To 1 Step -1
+        If targetLine >= LoopStack(i).headerLine And targetLine <= LoopStack(i).endLine Then
+            keepDepth = i
+            Exit For
+        End If
+    Next i
+
+    If keepDepth = 0 And targetStaticLoopDepth > 0 Then
+        ReconcileLoopStackForJump = -1
+        Exit Function
+    End If
+
+    Do While LoopTop > keepDepth
+        LoopPop "goto_reconcile"
+        ReconcileLoopStackForJump = ReconcileLoopStackForJump + 1
+    Loop
 End Function

@@ -301,14 +301,16 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 7] Flow (CALL/RETURN) ---"
 
-    Call MakeCmd(arrCmd, 1, "CALL", 0, 0, "50")
+    Call MakeCmd(arrCmd, 1, "CALL", 0, 0, "SUB_TEST")
+    Call MakeCmd(arrCmd, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(arrCmd, 3, "LABEL", 0, 0, "SUB_TEST")
+    Call MakeCmd(arrCmd, 4, "RETURN", 0, 0, "")
     nextLine = ExecuteArrayLine(arrCmd, 1)
 
-    If nextLine = 50 And modContext.GetStackDepth() = 1 Then
+    If nextLine = 3 And modContext.GetStackDepth() = 1 Then
         LogPass "CALL (Stack Push & Jump)"
 
-        Call MakeCmd(arrCmd, 1, "RETURN", 0, 0, "")
-        nextLine = ExecuteArrayLine(arrCmd, 1)
+        nextLine = ExecuteArrayLine(arrCmd, 4)
 
         If nextLine = 2 And modContext.GetStackDepth() = 0 Then
             LogPass "RETURN (Stack Pop & Return)"
@@ -316,7 +318,7 @@ Sub Run_System_SelfDiagnosis()
             LogFail "RETURN", "Return 2", "Line=" & nextLine: failCount = failCount + 1
         End If
     Else
-        LogFail "CALL", "Jump 50", "Line=" & nextLine: failCount = failCount + 1
+        LogFail "CALL", "Jump SUB_TEST", "Line=" & nextLine: failCount = failCount + 1
     End If
 
     '==========================================================================
@@ -571,6 +573,20 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVar "mark", "before", fails
     ExpectVisits trace, 4, 0, fails
     ExpectTrace trace, Array(1, 2, 3, 5, 6), fails
+
+    Dim gotoLoopExitArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(gotoLoopExitArr, 1, "REPEAT", "5", 0, "")
+    Call MakeCmd(gotoLoopExitArr, 2, "INC", "{loop_before_goto}", 0, "")
+    Call MakeCmd(gotoLoopExitArr, 3, "GOTO", 0, 0, "OUT")
+    Call MakeCmd(gotoLoopExitArr, 4, "INC", "{loop_after_goto}", 0, "")
+    Call MakeCmd(gotoLoopExitArr, 5, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(gotoLoopExitArr, 6, "LABEL", 0, 0, "OUT")
+    Call MakeCmd(gotoLoopExitArr, 7, "EXIT", 0, 0, "")
+    result = RunProgram(gotoLoopExitArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "loop_before_goto", "1", fails
+    ExpectVar "loop_after_goto", "", fails
+    ExpectLoopDepth 0, fails
 
     Dim callArr(1 To 6, 1 To 5) As Variant
     Call MakeCmd(callArr, 1, "CALL", 0, 0, "SUB1")
@@ -1032,6 +1048,37 @@ Private Function Test_FlowNegativePaths() As Long
     result = RunProgram(arr9, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
+    Dim arr10(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr10, 1, "GOTO", 0, 0, "1")
+    result = RunProgram(arr10, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr11(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr11, 1, "GOTO", 0, 0, "{target}")
+    result = RunProgram(arr11, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr12(1 To 5, 1 To 5) As Variant
+    Call MakeCmd(arr12, 1, "GOTO", 0, 0, "INSIDE")
+    Call MakeCmd(arr12, 2, "REPEAT", "1", 0, "")
+    Call MakeCmd(arr12, 3, "LABEL", 0, 0, "INSIDE")
+    Call MakeCmd(arr12, 4, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr12, 5, "EXIT", 0, 0, "")
+    result = RunProgram(arr12, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr13(1 To 8, 1 To 5) As Variant
+    Call MakeCmd(arr13, 1, "CALL", 0, 0, "SUB")
+    Call MakeCmd(arr13, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(arr13, 3, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(arr13, 4, "GOTO", 0, 0, "OUTSIDE")
+    Call MakeCmd(arr13, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(arr13, 6, "LABEL", 0, 0, "OUTSIDE")
+    Call MakeCmd(arr13, 7, "SET", "{bad_sub_goto}", 0, "bad")
+    Call MakeCmd(arr13, 8, "EXIT", 0, 0, "")
+    result = RunProgram(arr13, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
     Test_FlowNegativePaths = fails
 End Function
 
@@ -1099,6 +1146,9 @@ Private Function Test_ParamSpecValidation() As Long
     ExpectBool "Validate SET clipboard lvalue", True, modDevTools.ValidateLine("SET", "{$CLIP}", "", "value"), fails
     ExpectBool "Reject read-only lvalue", False, modDevTools.ValidateLine("INC", "{$LOOP}", "", ""), fails
     ExpectBool "Reject raw label token", False, modDevTools.ValidateLine("LABEL", "", "", "{dynamic}"), fails
+    ExpectBool "Validate GOTO static label", True, modDevTools.ValidateLine("GOTO", "", "", "DONE"), fails
+    ExpectBool "Reject GOTO numeric target", False, modDevTools.ValidateLine("GOTO", "", "", "12"), fails
+    ExpectBool "Reject CALL dynamic target", False, modDevTools.ValidateLine("CALL", "", "", "{target}"), fails
 
     Test_ParamSpecValidation = fails
 End Function
@@ -1210,7 +1260,7 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectBool "HasLabel LOGIN", True, program.HasLabel("login"), fails
     ExpectLong "LabelLine LOGIN", 19, program.LabelLine("LOGIN"), fails
     ExpectLong "ResolveJumpTarget label", 19, program.ResolveJumpTarget("LOGIN"), fails
-    ExpectLong "ResolveJumpTarget numeric", 20, program.ResolveJumpTarget("20"), fails
+    ExpectLong "ResolveJumpTarget numeric rejected", CMD_ERROR, program.ResolveJumpTarget("20"), fails
     ExpectLong "ResolveJumpTarget low out of range", CMD_ERROR, program.ResolveJumpTarget("0"), fails
     ExpectLong "ResolveJumpTarget high out of range", CMD_ERROR, program.ResolveJumpTarget("999"), fails
 
@@ -1238,6 +1288,26 @@ Private Function Test_ScriptProgramModel() As Long
         LogFail "Token LABEL validation", "False", "True": fails = fails + 1
     Else
         LogPass "Token LABEL validation"
+    End If
+
+    Dim numericJumpArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(numericJumpArr, 1, "GOTO", 0, 0, "1")
+    Set program = New clsScriptProgram
+    program.LoadFromArray numericJumpArr, 1
+    If program.ValidateLabels() Then
+        LogFail "Numeric GOTO validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "Numeric GOTO validation"
+    End If
+
+    Dim dynamicJumpArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(dynamicJumpArr, 1, "CALL", 0, 0, "{target}")
+    Set program = New clsScriptProgram
+    program.LoadFromArray dynamicJumpArr, 1
+    If program.ValidateLabels() Then
+        LogFail "Dynamic CALL validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "Dynamic CALL validation"
     End If
 
     Test_ScriptProgramModel = fails
