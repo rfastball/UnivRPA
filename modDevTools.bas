@@ -1014,18 +1014,8 @@ Private Sub ApplyJumpTargetLinkStyle(ByVal targetCell As Range, ByVal cmd As Str
 
     If targetCell.Hyperlinks.count > 0 Then targetCell.Hyperlinks.Delete
 
-    Dim targetText As String
-    targetText = ParamText(targetCell.value)
-
-    With targetCell.Font
-        .Underline = xlUnderlineStyleNone
-        If cmd = "CALL" Or cmd = "GOTO" Then
-            If Len(targetText) > 0 Then
-                .color = RGB(5, 99, 193)
-                .Underline = xlUnderlineStyleSingle
-            End If
-        End If
-    End With
+    ClearEditorLinkStyle targetCell
+    If cmd = "CALL" Or cmd = "GOTO" Then ApplyEditorLinkStyle targetCell
 End Sub
 
 Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, ByVal cmd As String, _

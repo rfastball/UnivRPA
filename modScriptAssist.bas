@@ -292,33 +292,56 @@ Private Function HandleLabelParamDoubleClick(ByVal Target As Range) As Boolean
     Dim labelName As String
     labelName = NormalizeLabelText(Target.value)
     If Len(labelName) = 0 Then Exit Function
-    If Len(m_lastCallNavTargetLabel) = 0 Then Exit Function
-    If ws.name <> m_lastCallNavSheetName Then Exit Function
-    If labelName <> m_lastCallNavTargetLabel Then Exit Function
 
     Dim cmdCol As Long
     cmdCol = ResolveCmdCol(ws)
     If cmdCol = 0 Then Exit Function
+
+    Dim sourceRow As Long
+    sourceRow = RecentCallSourceRow(ws, cmdCol, labelName)
+    If sourceRow = 0 Then sourceRow = FirstCallSourceRow(ws, cmdCol, labelName)
+
+    If sourceRow = 0 Then
+        Application.StatusBar = "Script Assist: source CALL not found."
+        HandleLabelParamDoubleClick = True
+        Exit Function
+    End If
+
+    ScrollActiveWindowToRow sourceRow
+    m_lastCallNavSheetName = ws.name
+    m_lastCallNavSourceRow = sourceRow
+    m_lastCallNavTargetLabel = labelName
+    HandleLabelParamDoubleClick = True
+End Function
+
+Private Function RecentCallSourceRow(ByVal ws As Worksheet, ByVal cmdCol As Long, ByVal labelName As String) As Long
+    If Len(m_lastCallNavTargetLabel) = 0 Then Exit Function
+    If ws.name <> m_lastCallNavSheetName Then Exit Function
+    If labelName <> m_lastCallNavTargetLabel Then Exit Function
     If m_lastCallNavSourceRow <= 1 Then Exit Function
 
     Dim sourceCmd As String
     sourceCmd = NormalizeCmd(ws.Cells(m_lastCallNavSourceRow, cmdCol).value)
-    If sourceCmd <> "CALL" Then
-        Application.StatusBar = "Script Assist: source CALL is no longer valid."
-        HandleLabelParamDoubleClick = True
-        Exit Function
-    End If
+    If sourceCmd <> "CALL" Then Exit Function
 
     Dim sourceLabel As String
     sourceLabel = NormalizeLabelText(ws.Cells(m_lastCallNavSourceRow, cmdCol + 3).value)
-    If sourceLabel <> labelName Then
-        Application.StatusBar = "Script Assist: source CALL target changed."
-        HandleLabelParamDoubleClick = True
-        Exit Function
-    End If
+    If sourceLabel = labelName Then RecentCallSourceRow = m_lastCallNavSourceRow
+End Function
 
-    ScrollActiveWindowToRow m_lastCallNavSourceRow
-    HandleLabelParamDoubleClick = True
+Private Function FirstCallSourceRow(ByVal ws As Worksheet, ByVal cmdCol As Long, ByVal labelName As String) As Long
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, cmdCol).End(xlUp).Row
+
+    Dim R As Long
+    For R = 2 To lastRow
+        If NormalizeCmd(ws.Cells(R, cmdCol).value) = "CALL" Then
+            If NormalizeLabelText(ws.Cells(R, cmdCol + 3).value) = labelName Then
+                FirstCallSourceRow = R
+                Exit Function
+            End If
+        End If
+    Next R
 End Function
 
 Private Sub ScrollActiveWindowToRow(ByVal rowNum As Long)
