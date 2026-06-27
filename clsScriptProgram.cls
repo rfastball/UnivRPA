@@ -25,7 +25,12 @@ Private m_firstSheetRow As Long
 Private m_selectBlocks As Object
 Private m_caseEndSelectLines As Object
 Private m_labels As Object
+Private m_labelRows As Object
 Private m_duplicateLabels As Object
+Private m_callLabelTargets As Object
+Private m_gotoLabelTargets As Object
+Private m_labelRoles As Object
+Private m_labelRoleWarnings As Object
 Private m_validationErrors As Collection
 Private m_instructions As Collection
 Private m_loopDepths() As Long
@@ -41,12 +46,22 @@ Private Sub ResetIndexes()
     Set m_selectBlocks = CreateObject("Scripting.Dictionary")
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
     Set m_labels = CreateObject("Scripting.Dictionary")
+    Set m_labelRows = CreateObject("Scripting.Dictionary")
     Set m_duplicateLabels = CreateObject("Scripting.Dictionary")
+    Set m_callLabelTargets = CreateObject("Scripting.Dictionary")
+    Set m_gotoLabelTargets = CreateObject("Scripting.Dictionary")
+    Set m_labelRoles = CreateObject("Scripting.Dictionary")
+    Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
     Set m_validationErrors = New Collection
     Set m_instructions = New Collection
     Set m_loopRanges = New Collection
     m_labels.CompareMode = vbTextCompare
+    m_labelRows.CompareMode = vbTextCompare
     m_duplicateLabels.CompareMode = vbTextCompare
+    m_callLabelTargets.CompareMode = vbTextCompare
+    m_gotoLabelTargets.CompareMode = vbTextCompare
+    m_labelRoles.CompareMode = vbTextCompare
+    m_labelRoleWarnings.CompareMode = vbTextCompare
 End Sub
 
 Public Sub LoadFromRange(ByVal sourceRange As Range)
@@ -61,6 +76,7 @@ Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheet
     m_firstSheetRow = firstSheetRow
     ResetIndexes
     BuildInstructionCache
+    BuildLabelReferenceIndex
     BuildStateCoordinates
 End Sub
 
@@ -205,26 +221,150 @@ Public Function EndSelectOfCase(ByVal caseLine As Long) As Long
 End Function
 
 Public Sub BuildLabelIndex()
+    BuildLabelReferenceIndex
+End Sub
+
+Public Function LabelRoleAt(ByVal lineNo As Long) As String
+    ValidateLineRange lineNo
+    If m_labelRoles.exists(CStr(lineNo)) Then LabelRoleAt = CStr(m_labelRoles(CStr(lineNo)))
+End Function
+
+Public Function LabelRoleAtSheetRow(ByVal sheetRow As Long) As String
+    LabelRoleAtSheetRow = LabelRoleAt(RuntimeLineFromSheetRow(sheetRow))
+End Function
+
+Public Function LabelRoleWarningAt(ByVal lineNo As Long) As String
+    ValidateLineRange lineNo
+    If m_labelRoleWarnings.exists(CStr(lineNo)) Then LabelRoleWarningAt = CStr(m_labelRoleWarnings(CStr(lineNo)))
+End Function
+
+Public Function LabelRoleWarningAtSheetRow(ByVal sheetRow As Long) As String
+    LabelRoleWarningAtSheetRow = LabelRoleWarningAt(RuntimeLineFromSheetRow(sheetRow))
+End Function
+
+Public Function IsCallTargetLabelAt(ByVal lineNo As Long) As Boolean
+    Dim roleName As String
+    roleName = LabelRoleAt(lineNo)
+    IsCallTargetLabelAt = (roleName = "SubroutineLabel" Or roleName = "MixedLabel")
+End Function
+
+Public Function IsCallTargetLabelAtSheetRow(ByVal sheetRow As Long) As Boolean
+    IsCallTargetLabelAtSheetRow = IsCallTargetLabelAt(RuntimeLineFromSheetRow(sheetRow))
+End Function
+
+Public Function IsJumpTargetMissingAt(ByVal lineNo As Long) As Boolean
+    ValidateLineRange lineNo
+
+    Dim cmd As String
+    cmd = CmdAt(lineNo)
+    If cmd <> "GOTO" And cmd <> "CALL" Then Exit Function
+
+    Dim targetName As String
+    targetName = NormalizeLabelName(P3At(lineNo))
+    If IsStaticLabelSymbol(targetName) Then IsJumpTargetMissingAt = Not m_labels.exists(targetName)
+End Function
+
+Public Function IsJumpTargetMissingAtSheetRow(ByVal sheetRow As Long) As Boolean
+    IsJumpTargetMissingAtSheetRow = IsJumpTargetMissingAt(RuntimeLineFromSheetRow(sheetRow))
+End Function
+
+Public Function ResolveJumpTargetSheetRow(ByVal Target As String) As Long
+    Dim lineNo As Long
+    lineNo = ResolveJumpTarget(Target)
+    If lineNo > 0 Then ResolveJumpTargetSheetRow = SheetRowFromRuntimeLine(lineNo)
+End Function
+
+Private Sub BuildLabelReferenceIndex()
     Set m_labels = CreateObject("Scripting.Dictionary")
+    Set m_labelRows = CreateObject("Scripting.Dictionary")
     Set m_duplicateLabels = CreateObject("Scripting.Dictionary")
+    Set m_callLabelTargets = CreateObject("Scripting.Dictionary")
+    Set m_gotoLabelTargets = CreateObject("Scripting.Dictionary")
+    Set m_labelRoles = CreateObject("Scripting.Dictionary")
+    Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
     m_labels.CompareMode = vbTextCompare
+    m_labelRows.CompareMode = vbTextCompare
     m_duplicateLabels.CompareMode = vbTextCompare
+    m_callLabelTargets.CompareMode = vbTextCompare
+    m_gotoLabelTargets.CompareMode = vbTextCompare
+    m_labelRoles.CompareMode = vbTextCompare
+    m_labelRoleWarnings.CompareMode = vbTextCompare
 
     Dim R As Long
     For R = 1 To m_TotalLines
-        If CmdAt(R) = "LABEL" Then
-            Dim labelName As String
-            labelName = NormalizeLabelName(P3At(R))
-            If Len(labelName) = 0 Or ContainsTokenSyntax(P3At(R)) Then GoTo NextRow
+        If IsSkippable(R) Then GoTo NextRow
 
-            If m_labels.exists(labelName) Then
-                m_duplicateLabels(labelName) = True
-            Else
-                m_labels.Add labelName, R
-            End If
+        Dim cmd As String
+        cmd = CmdAt(R)
+
+        If cmd = "LABEL" Then
+            AddLabelReferenceRow R
+        ElseIf cmd = "CALL" Then
+            AddJumpReferenceTarget m_callLabelTargets, P3At(R)
+        ElseIf cmd = "GOTO" Then
+            AddJumpReferenceTarget m_gotoLabelTargets, P3At(R)
         End If
 NextRow:
     Next R
+
+    BuildLabelRoles
+End Sub
+
+Private Sub AddLabelReferenceRow(ByVal lineNo As Long)
+    Dim labelName As String
+    labelName = NormalizeLabelName(P3At(lineNo))
+    If Len(labelName) = 0 Or ContainsTokenSyntax(P3At(lineNo)) Then Exit Sub
+
+    Dim rows As Collection
+    If m_labelRows.exists(labelName) Then
+        Set rows = m_labelRows(labelName)
+        m_duplicateLabels(labelName) = True
+    Else
+        Set rows = New Collection
+        m_labelRows.Add labelName, rows
+        m_labels.Add labelName, lineNo
+    End If
+
+    rows.Add lineNo
+End Sub
+
+Private Sub AddJumpReferenceTarget(ByVal targets As Object, ByVal rawTarget As String)
+    Dim targetName As String
+    targetName = NormalizeLabelName(rawTarget)
+    If IsStaticLabelSymbol(targetName) Then targets(targetName) = True
+End Sub
+
+Private Sub BuildLabelRoles()
+    Dim labelName As Variant
+    For Each labelName In m_labelRows.Keys
+        Dim isCallTarget As Boolean
+        Dim isGotoTarget As Boolean
+        isCallTarget = m_callLabelTargets.exists(CStr(labelName))
+        isGotoTarget = m_gotoLabelTargets.exists(CStr(labelName))
+
+        Dim roleName As String
+        If isCallTarget And isGotoTarget Then
+            roleName = "MixedLabel"
+        ElseIf isCallTarget Then
+            roleName = "SubroutineLabel"
+        ElseIf isGotoTarget Then
+            roleName = "JumpLabel"
+        Else
+            roleName = "DeadLabel"
+        End If
+
+        Dim rows As Collection
+        Set rows = m_labelRows(CStr(labelName))
+
+        Dim rowItem As Variant
+        For Each rowItem In rows
+            m_labelRoles(CStr(rowItem)) = roleName
+            If roleName = "MixedLabel" Then
+                m_labelRoleWarnings(CStr(rowItem)) = _
+                    "Warning: MixedLabel '" & CStr(labelName) & "' is referenced by both CALL and GOTO."
+            End If
+        Next rowItem
+    Next labelName
 End Sub
 
 Public Function HasLabel(ByVal name As String) As Boolean
@@ -371,39 +511,14 @@ Private Sub BuildLoopCoordinates()
 End Sub
 
 Private Sub BuildSubAreaCoordinates()
-    Dim labelRows As Object
-    Set labelRows = CreateObject("Scripting.Dictionary")
-    labelRows.CompareMode = vbTextCompare
-
-    Dim callTargets As Object
-    Set callTargets = CreateObject("Scripting.Dictionary")
-    callTargets.CompareMode = vbTextCompare
-
-    Dim R As Long
-    For R = 1 To m_TotalLines
-        Dim cmd As String
-        cmd = CmdAt(R)
-        If cmd = "LABEL" Then
-            Dim labelName As String
-            labelName = NormalizeLabelName(P3At(R))
-            If Len(labelName) > 0 And Not ContainsTokenSyntax(P3At(R)) Then
-                If Not labelRows.exists(labelName) Then labelRows.Add labelName, R
-            End If
-        ElseIf cmd = "CALL" Then
-            Dim targetName As String
-            targetName = NormalizeLabelName(P3At(R))
-            If IsStaticLabelSymbol(targetName) Then callTargets(targetName) = True
-        End If
-    Next R
-
     Dim areaId As Long
     Dim key As Variant
-    For Each key In callTargets.Keys
-        If labelRows.exists(CStr(key)) Then
+    For Each key In m_callLabelTargets.Keys
+        If m_labels.exists(CStr(key)) Then
             areaId = areaId + 1
             Dim startLine As Long
             Dim endLine As Long
-            startLine = CLng(labelRows(CStr(key)))
+            startLine = CLng(m_labels(CStr(key)))
             endLine = FindSubroutineReturnLine(startLine)
             If endLine <= 0 Then endLine = startLine
             MarkSubArea startLine, endLine, areaId

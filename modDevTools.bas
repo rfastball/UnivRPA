@@ -38,7 +38,9 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim invalidRows As Object
     Dim varInvalidRows As Object
     Dim varWarningRows As Object
-    Call AnalyzeSubroutineFlow(ws, lastRow, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    Call AnalyzeSubroutineFlow(ws, lastRow, program, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
     Call AnalyzeSheetVariables(ws, lastRow, varInvalidRows, varWarningRows)
 
     ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
@@ -58,6 +60,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
         .Font.name = "돋움체"
         .Font.Size = 10
         .Font.Bold = False
+        .Font.Underline = xlUnderlineStyleNone
         .Interior.ColorIndex = xlNone
 
         ' --- [줄바꿈 방지 및 행 정렬] ---
@@ -95,7 +98,11 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
         ws.Cells(R, 1).value = R - 1
 
         pureCmd = modCmdRegistry.NormalizeCommand(ws.Cells(R, 2).value)
-        If Len(Trim$(CStr(ws.Cells(R, 2).value))) = 0 Then GoTo NextRow
+        If Len(Trim$(CStr(ws.Cells(R, 2).value))) = 0 Then
+            Call ApplyJumpTargetLinkStyle(ws.Cells(R, 5), pureCmd)
+            Call ApplyLabelRoleDisplay(ws, R, pureCmd, program)
+            GoTo NextRow
+        End If
         Dim rowIsComment As Boolean
         Dim rowLooksLikeIndentedComment As Boolean
         rowIsComment = IsCommentRow(ws, R)
@@ -125,7 +132,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                     If varInvalidRows.exists(CStr(R)) Then isValid = False
 
                     Dim hasWarning As Boolean
-                    hasWarning = varWarningRows.exists(CStr(R))
+                    hasWarning = varWarningRows.exists(CStr(R)) Or HasLabelRoleWarning(program, R)
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
                     Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid, rowIsComment, hasWarning)
@@ -133,6 +140,8 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                                                        subStartRows.exists(CStr(R)), _
                                                        subEndRows.exists(CStr(R)), _
                                                        Not isValid)
+                    Call ApplyJumpTargetLinkStyle(ws.Cells(R, 5), pureCmd)
+                    Call ApplyLabelRoleDisplay(ws, R, pureCmd, program)
 
                     ' 4. 깊이 증가
                     If IsBlockStarter(pureCmd) Then depth = depth + 1
@@ -347,6 +356,7 @@ End Sub
 
 Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
     ValidateSheetFlowAt = True
+    m_lastValidationWarning = ""
     If ws Is Nothing Then Exit Function
     If rowNum < 2 Then Exit Function
 
@@ -359,12 +369,18 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
     Dim subStartRows As Object
     Dim subEndRows As Object
     Dim invalidRows As Object
-    Call AnalyzeSubroutineFlow(ws, lastRow, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    Call AnalyzeSubroutineFlow(ws, lastRow, program, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
 
     ValidateSheetFlowAt = Not invalidRows.exists(CStr(rowNum))
+    If Not program Is Nothing Then m_lastValidationWarning = program.LabelRoleWarningAtSheetRow(rowNum)
 End Function
 
-Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal preserveExistingWarning As Boolean = False) As Boolean
+    Dim existingWarning As String
+    If preserveExistingWarning Then existingWarning = m_lastValidationWarning
+
     m_lastValidationMessage = ""
     m_lastValidationWarning = ""
     ValidateSheetVariablesAt = True
@@ -386,8 +402,78 @@ Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As 
     End If
 
     If warningRows.exists(CStr(rowNum)) Then
-        m_lastValidationWarning = CStr(warningRows(CStr(rowNum)))
+        If Len(existingWarning) > 0 Then
+            m_lastValidationWarning = existingWarning & vbCrLf & CStr(warningRows(CStr(rowNum)))
+        Else
+            m_lastValidationWarning = CStr(warningRows(CStr(rowNum)))
+        End If
+    ElseIf Len(existingWarning) > 0 Then
+        m_lastValidationWarning = existingWarning
     End If
+End Function
+
+Public Function ResolveLabelTargetRow(ByVal ws As Worksheet, ByVal targetName As String) As Long
+    If ws Is Nothing Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
+
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If Not program Is Nothing Then ResolveLabelTargetRow = program.ResolveJumpTargetSheetRow(targetName)
+End Function
+
+Public Function ScrollToJumpTarget(ByVal sourceParamCell As Range) As Boolean
+    If sourceParamCell Is Nothing Then Exit Function
+    If sourceParamCell.Cells.count <> 1 Then Exit Function
+
+    Dim ws As Worksheet
+    Set ws = sourceParamCell.Worksheet
+
+    Dim cmd As String
+    cmd = PureCommandAt(ws, sourceParamCell.Row)
+    If cmd <> "CALL" And cmd <> "GOTO" Then Exit Function
+
+    Dim targetRow As Long
+    targetRow = ResolveLabelTargetRow(ws, CStr(sourceParamCell.value))
+    If targetRow = 0 Then Exit Function
+
+    Application.Goto ws.Cells(targetRow, 5), True
+    ScrollToJumpTarget = True
+End Function
+
+Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+    If ws Is Nothing Then Exit Function
+    If rowNum < 2 Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
+    If rowNum > lastRow Then Exit Function
+
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    Call ApplyLabelRoleDisplay(ws, rowNum, PureCommandAt(ws, rowNum), program)
+    RefreshLabelRoleDisplay = True
+End Function
+
+Private Function ProgramSnapshotFromSheet(ByVal ws As Worksheet, ByVal lastRow As Long) As clsScriptProgram
+    If ws Is Nothing Then Exit Function
+    If lastRow < 2 Then Exit Function
+
+    Dim program As clsScriptProgram
+    Set program = New clsScriptProgram
+    program.LoadFromRange ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 6))
+    Set ProgramSnapshotFromSheet = program
+End Function
+
+Private Function HasLabelRoleWarning(ByVal program As clsScriptProgram, ByVal sheetRow As Long) As Boolean
+    If program Is Nothing Then Exit Function
+    HasLabelRoleWarning = (Len(program.LabelRoleWarningAtSheetRow(sheetRow)) > 0)
+End Function
+
+Private Function IsCallTargetLabelRow(ByVal program As clsScriptProgram, ByVal sheetRow As Long) As Boolean
+    If program Is Nothing Then Exit Function
+    IsCallTargetLabelRow = program.IsCallTargetLabelAtSheetRow(sheetRow)
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
@@ -773,7 +859,7 @@ Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, B
     If thirdValue < Min3Long Then Min3Long = thirdValue
 End Function
 
-Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, _
+Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, ByVal program As clsScriptProgram, _
                                   ByRef baseDepths() As Long, _
                                   ByRef subDepths() As Long, _
                                   ByRef subStartRows As Object, _
@@ -792,13 +878,7 @@ Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, 
     If lastRow < 2 Then Exit Sub
 
     Call ComputeBaseDepths(ws, lastRow, baseDepths)
-
-    Dim labelRows As Object
-    Dim callTargets As Object
-    Set labelRows = BuildLabelRowMap(ws, lastRow)
-    Set callTargets = BuildCallTargetMap(ws, lastRow)
-
-    Call MarkMissingJumpTargets(ws, lastRow, labelRows, invalidRows)
+    Call MarkMissingJumpTargets(ws, lastRow, program, invalidRows)
 
     Dim inSubroutineRows As Object
     Set inSubroutineRows = CreateObject("Scripting.Dictionary")
@@ -808,10 +888,7 @@ Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, 
     For R = 2 To lastRow
         If IsCommentRow(ws, R) Then GoTo NextRow
         If PureCommandAt(ws, R) = "LABEL" Then
-            Dim labelName As String
-            labelName = LabelNameAt(ws, R)
-
-            If callTargets.exists(labelName) Then
+            If IsCallTargetLabelRow(program, R) Then
                 subStartRows(CStr(R)) = True
 
                 Dim endRow As Long
@@ -865,69 +942,13 @@ NextRow:
     Next R
 End Sub
 
-Private Function BuildLabelRowMap(ByVal ws As Worksheet, ByVal lastRow As Long) As Object
-    Dim result As Object
-    Set result = CreateObject("Scripting.Dictionary")
-    result.CompareMode = vbTextCompare
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        If PureCommandAt(ws, R) = "LABEL" Then
-            Dim labelName As String
-            labelName = LabelNameAt(ws, R)
-            If Len(labelName) > 0 Then
-                Dim rows As Collection
-                If Not result.exists(labelName) Then
-                    Set rows = New Collection
-                    result.Add labelName, rows
-                Else
-                    Set rows = result(labelName)
-                End If
-                rows.Add R
-            End If
-        End If
-NextRow:
-    Next R
-
-    Set BuildLabelRowMap = result
-End Function
-
-Private Function BuildCallTargetMap(ByVal ws As Worksheet, ByVal lastRow As Long) As Object
-    Dim result As Object
-    Set result = CreateObject("Scripting.Dictionary")
-    result.CompareMode = vbTextCompare
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        If PureCommandAt(ws, R) = "CALL" Then
-            Dim Target As String
-            Target = JumpTargetAt(ws, R)
-            If IsStaticLabelTarget(Target) Then result(Target) = True
-        End If
-NextRow:
-    Next R
-
-    Set BuildCallTargetMap = result
-End Function
-
 Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long, _
-                                   ByVal labelRows As Object, ByVal invalidRows As Object)
+                                   ByVal program As clsScriptProgram, ByVal invalidRows As Object)
+    If program Is Nothing Then Exit Sub
+
     Dim R As Long
     For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        Dim cmd As String
-        cmd = PureCommandAt(ws, R)
-
-        If cmd = "CALL" Or cmd = "GOTO" Then
-            Dim Target As String
-            Target = JumpTargetAt(ws, R)
-            If IsStaticLabelTarget(Target) Then
-                If Not labelRows.exists(Target) Then invalidRows(CStr(R)) = True
-            End If
-        End If
-NextRow:
+        If program.IsJumpTargetMissingAtSheetRow(R) Then invalidRows(CStr(R)) = True
     Next R
 End Sub
 
@@ -999,16 +1020,59 @@ Private Sub ApplySubroutineBoundaryStyle(ByVal rng As Range, ByVal isStart As Bo
     End If
 End Sub
 
+Private Sub ApplyJumpTargetLinkStyle(ByVal targetCell As Range, ByVal cmd As String)
+    If targetCell Is Nothing Then Exit Sub
+
+    If targetCell.Hyperlinks.count > 0 Then targetCell.Hyperlinks.Delete
+
+    Dim targetText As String
+    targetText = ParamText(targetCell.value)
+
+    With targetCell.Font
+        .Underline = xlUnderlineStyleNone
+        If cmd = "CALL" Or cmd = "GOTO" Then
+            If Len(targetText) > 0 Then
+                .color = RGB(5, 99, 193)
+                .Underline = xlUnderlineStyleSingle
+            End If
+        End If
+    End With
+End Sub
+
+Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, ByVal cmd As String, _
+                                  ByVal program As clsScriptProgram)
+    Dim roleCell As Range
+    Set roleCell = ws.Cells(rowNum, 2)
+
+    If cmd <> "LABEL" Then
+        modScriptAssist.ClearLabelRoleNote roleCell
+        Exit Sub
+    End If
+
+    If program Is Nothing Then Exit Sub
+
+    Dim roleName As String
+    roleName = program.LabelRoleAtSheetRow(rowNum)
+    If Len(roleName) = 0 Then
+        modScriptAssist.ClearLabelRoleNote roleCell
+        Exit Sub
+    End If
+
+    Dim warning As String
+    warning = program.LabelRoleWarningAtSheetRow(rowNum)
+
+    modScriptAssist.ApplyLabelRoleNote roleCell, roleName, warning
+
+    roleCell.Font.Italic = (roleName = "DeadLabel")
+    If roleName = "MixedLabel" Then
+        roleCell.Font.color = RGB(156, 101, 0)
+    ElseIf roleName = "DeadLabel" Then
+        roleCell.Font.color = RGB(128, 128, 128)
+    End If
+End Sub
+
 Private Function PureCommandAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
     PureCommandAt = modCmdRegistry.NormalizeCommand(ws.Cells(rowNum, 2).value)
-End Function
-
-Private Function LabelNameAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
-    LabelNameAt = UCase$(Trim$(CStr(ws.Cells(rowNum, 5).value)))
-End Function
-
-Private Function JumpTargetAt(ByVal ws As Worksheet, ByVal rowNum As Long) As String
-    JumpTargetAt = UCase$(Trim$(CStr(ws.Cells(rowNum, 5).value)))
 End Function
 
 Private Function IsExecutableCommand(ByVal cmd As String) As Boolean
@@ -1019,10 +1083,6 @@ Private Function IsCommentRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Bo
     Dim rawCmd As String
     rawCmd = Trim$(CStr(ws.Cells(rowNum, 2).value))
     IsCommentRow = (Len(rawCmd) > 0 And Left$(rawCmd, 1) = "#")
-End Function
-
-Private Function IsStaticLabelTarget(ByVal Target As String) As Boolean
-    IsStaticLabelTarget = (Len(Target) > 0 And Not IsNumeric(Target) And InStr(1, Target, "{", vbTextCompare) = 0)
 End Function
 
 ' [파생] 블록 시작 판정 → BlockRole = STARTER

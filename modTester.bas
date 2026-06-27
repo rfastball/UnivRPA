@@ -1365,9 +1365,30 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectBool "HasLabel LOGIN", True, program.HasLabel("login"), fails
     ExpectLong "LabelLine LOGIN", 19, program.LabelLine("LOGIN"), fails
     ExpectLong "ResolveJumpTarget label", 19, program.ResolveJumpTarget("LOGIN"), fails
+    ExpectLong "ResolveJumpTarget sheet row", 23, program.ResolveJumpTargetSheetRow("LOGIN"), fails
+    ExpectText "LabelRole LOGIN", "JumpLabel", program.LabelRoleAt(19), fails
     ExpectLong "ResolveJumpTarget numeric rejected", CMD_ERROR, program.ResolveJumpTarget("20"), fails
     ExpectLong "ResolveJumpTarget low out of range", CMD_ERROR, program.ResolveJumpTarget("0"), fails
     ExpectLong "ResolveJumpTarget high out of range", CMD_ERROR, program.ResolveJumpTarget("999"), fails
+
+    Dim roleArr(1 To 8, 1 To 5) As Variant
+    Call MakeCmd(roleArr, 1, "CALL", 0, 0, "SUB")
+    Call MakeCmd(roleArr, 2, "GOTO", 0, 0, "JMP")
+    Call MakeCmd(roleArr, 3, "CALL", 0, 0, "MIX")
+    Call MakeCmd(roleArr, 4, "GOTO", 0, 0, "MIX")
+    Call MakeCmd(roleArr, 5, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(roleArr, 6, "LABEL", 0, 0, "JMP")
+    Call MakeCmd(roleArr, 7, "LABEL", 0, 0, "MIX")
+    Call MakeCmd(roleArr, 8, "LABEL", 0, 0, "DEAD")
+    Set program = New clsScriptProgram
+    program.LoadFromArray roleArr, 10
+    ExpectText "LabelRole subroutine", "SubroutineLabel", program.LabelRoleAt(5), fails
+    ExpectText "LabelRole jump", "JumpLabel", program.LabelRoleAt(6), fails
+    ExpectText "LabelRole mixed", "MixedLabel", program.LabelRoleAt(7), fails
+    ExpectText "LabelRole dead", "DeadLabel", program.LabelRoleAt(8), fails
+    ExpectBool "Mixed is call target", True, program.IsCallTargetLabelAt(7), fails
+    ExpectBool "Mixed warning", True, (InStr(1, program.LabelRoleWarningAt(7), "MixedLabel", vbTextCompare) > 0), fails
+    ExpectLong "Resolve mixed sheet row", 16, program.ResolveJumpTargetSheetRow("MIX"), fails
 
     modEngine.LoadProgramFromArray arr, 5
     ExpectLong "ResolveSelectTarget first match", 12, modEngine.ResolveSelectTarget(10, "A"), fails

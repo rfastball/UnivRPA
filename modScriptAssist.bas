@@ -4,6 +4,7 @@
 Option Explicit
 
 Private Const ASSIST_PREFIX As String = "[ScriptAssist]"
+Private Const LABEL_ROLE_MARKER As String = "[LabelRole]"
 Private Const CMD_COL As Long = 2
 Private Const COMMENT_PREFIX As String = "# "
 
@@ -168,12 +169,14 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     Dim isValid As Boolean
     isValid = modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value)
     If isValid Then isValid = modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row)
-    If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row)
+    If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row, True)
 
     If isValid Then
         Dim warning As String
         warning = modDevTools.LastValidationWarning()
-        If Len(warning) > 0 Then
+        If cmd = "LABEL" And modDevTools.RefreshLabelRoleDisplay(Target.Worksheet, Target.Row) Then
+            If Len(warning) > 0 Then Application.StatusBar = Replace(warning, vbCrLf, " ")
+        ElseIf Len(warning) > 0 Then
             ApplyWarningNote Target, warning
         Else
             ClearAssistNote Target
@@ -307,6 +310,28 @@ Public Sub ApplyWarningNote(ByVal Target As Range, ByVal warning As String)
     Application.StatusBar = Replace(body, vbCrLf, " ")
 End Sub
 
+Public Sub ApplyLabelRoleNote(ByVal Target As Range, ByVal roleName As String, ByVal warning As String)
+    If Target Is Nothing Then Exit Sub
+
+    Dim body As String
+    body = ASSIST_PREFIX & vbCrLf & LABEL_ROLE_MARKER & vbCrLf & roleName
+    If Len(warning) > 0 Then body = body & vbCrLf & warning
+
+    If Target.Comment Is Nothing Then
+        Target.AddComment text:=body
+    ElseIf IsAssistNote(Target.Comment) Or IsLabelRoleNote(Target.Comment) Then
+        Target.Comment.text text:=body
+    Else
+        Application.StatusBar = Replace(body, vbCrLf, " ")
+    End If
+End Sub
+
+Public Sub ClearLabelRoleNote(ByVal Target As Range)
+    If Target Is Nothing Then Exit Sub
+    If Target.Comment Is Nothing Then Exit Sub
+    If IsLabelRoleNote(Target.Comment) Then Target.Comment.Delete
+End Sub
+
 Public Sub ClearAssistNote(ByVal Target As Range)
     If Target Is Nothing Then Exit Sub
     If Target.Comment Is Nothing Then Exit Sub
@@ -407,6 +432,11 @@ End Function
 Private Function IsAssistNote(ByVal note As Comment) As Boolean
     If note Is Nothing Then Exit Function
     IsAssistNote = (Left$(note.text, Len(ASSIST_PREFIX)) = ASSIST_PREFIX)
+End Function
+
+Private Function IsLabelRoleNote(ByVal note As Comment) As Boolean
+    If note Is Nothing Then Exit Function
+    IsLabelRoleNote = (IsAssistNote(note) And InStr(1, note.text, LABEL_ROLE_MARKER, vbTextCompare) > 0)
 End Function
 
 Private Function BuildErrorMessage(ByVal rawCmd As Variant, ByVal suggestion As String) As String
