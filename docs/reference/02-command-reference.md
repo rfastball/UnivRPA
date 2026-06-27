@@ -285,14 +285,14 @@ END_IF
 
 | Command | P1 (C) | P2 (D) | P3 (E) | Description |
 |--------|--------|--------|--------|-------------|
-| `FOREACH_ROW` | workbook name/path (str, RESOLVE, required) | sheet or `sheet!address` (str, RESOLVE, required) | mode: `ALL`/`VISIBLE` (optional) | Start table-row iteration |
+| `FOREACH_ROW` | workbook name/path (str, RESOLVE, required) | sheet or `sheet!address` (str, RESOLVE, required) | mode: `ALL_ROWS`/`VISIBLE_ROWS` (optional) | Start table-row iteration |
 | `END_FOREACH` |  |  |  | Advance to the next row or finish the loop |
 
 - If P1 contains `\`, `/`, or `:`, it is treated as a path and opened read-only. If the same file name is already open, the open workbook is reused and not closed.
 - If P1 is not a path, open workbook names are searched by case-insensitive partial match. Zero or multiple matches stop with an error.
 - P2 supports `Sheet1`, `Sheet1!A1`, and `Sheet1!A1:C10`.
-- P3 blank or `ALL` loops over all data rows.
-- P3 `VISIBLE` loops over the header plus currently visible data rows only. Rows hidden by filters or manual row hiding are skipped; hidden columns are still loaded.
+- P3 blank or `ALL_ROWS` loops over all data rows.
+- P3 `VISIBLE_ROWS` loops over the header plus currently visible data rows only. Rows hidden by filters or manual row hiding are skipped; hidden columns are still loaded.
 - Large explicit ranges are clamped to the worksheet's actual used range.
 - Cell values are read from `.Text` to preserve visible strings. Narrow-column `####` cells are reconstructed from `Value` and `NumberFormat`.
 

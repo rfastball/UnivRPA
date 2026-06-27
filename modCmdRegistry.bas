@@ -166,7 +166,7 @@ Private Sub BuildRegistry()
         P("반복횟수(0/빈값=무한)", DT_NUM, RESOLVE, False)
     Reg "END_REPEAT", FLOW, ENDER, "REPEAT", clrFLOW, FULLROW
     Reg "FOREACH_ROW", FLOW, STARTER, "FOREACH", clrFLOW, FULLROW, _
-        P("워크북 이름/경로", DT_STR, RESOLVE, True), P("시트 또는 시트!주소", DT_STR, RESOLVE, True), P("순회모드(ALL/VISIBLE)", DT_STR, RESOLVE, False)
+        P("워크북 이름/경로", DT_STR, RESOLVE, True), P("시트 또는 시트!주소", DT_STR, RESOLVE, True), P("순회모드(ALL_ROWS/VISIBLE_ROWS)", DT_STR, RESOLVE, False)
     Reg "END_FOREACH", FLOW, ENDER, "FOREACH", clrFLOW, FULLROW
     Reg "SELECT", FLOW, STARTER, "SELECT", clrFLOW, FULLROW, _
         P("대상값", DT_STR, RESOLVE, True)

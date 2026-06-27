@@ -749,9 +749,9 @@ Private Function Test_ForeachRowExecution() As Long
     ExpectVar "after_loop", "done", fails
     ExpectLoopDepth 0, fails
 
-    ws.Rows(3).Hidden = True
+    ws.Range("A1:D4").AutoFilter Field:=1, Criteria1:="<>B"
     Dim visibleArr(1 To 10, 1 To 5) As Variant
-    Call MakeCmd(visibleArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE")
+    Call MakeCmd(visibleArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE_ROWS")
     Call MakeCmd(visibleArr, 2, "SET", "{visible_last_idx}", 0, "{$RIDX}")
     Call MakeCmd(visibleArr, 3, "IF", "{$RIDX}", "EQ", "1")
     Call MakeCmd(visibleArr, 4, "SET", "{visible1}", 0, "{$ROW.Code}")
@@ -767,7 +767,23 @@ Private Function Test_ForeachRowExecution() As Long
     ExpectVar "visible1", "007", fails
     ExpectVar "visible2", "C", fails
     ExpectLoopDepth 0, fails
-    ws.Rows(3).Hidden = False
+    ws.AutoFilterMode = False
+
+    ws.Range("A1:D4").AutoFilter Field:=1, Criteria1:="<>C"
+    Dim visibleTailArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(visibleTailArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE_ROWS")
+    Call MakeCmd(visibleTailArr, 2, "SET", "{visible_tail_last_idx}", 0, "{$RIDX}")
+    Call MakeCmd(visibleTailArr, 3, "IF", "{$RIDX}", "EQ", "2")
+    Call MakeCmd(visibleTailArr, 4, "SET", "{visible_tail2}", 0, "{$ROW.Code}")
+    Call MakeCmd(visibleTailArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleTailArr, 6, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(visibleTailArr, 7, "EXIT", 0, 0, "")
+    result = RunProgram(visibleTailArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "visible_tail_last_idx", "2", fails
+    ExpectVar "visible_tail2", "B", fails
+    ExpectLoopDepth 0, fails
+    ws.AutoFilterMode = False
 
     ws.Range("A2:D4").ClearContents
     Dim emptyArr(1 To 5, 1 To 5) As Variant

@@ -39,12 +39,12 @@ Private Function ParseSnapshotMode(ByVal modeText As String) As Boolean
     mode = UCase$(Trim$(modeText))
 
     Select Case mode
-        Case "", "ALL"
+        Case "", "ALL_ROWS"
             ParseSnapshotMode = False
-        Case "VISIBLE"
+        Case "VISIBLE_ROWS"
             ParseSnapshotMode = True
         Case Else
-            Err.Raise 5, "modTableSource.ParseSnapshotMode", "FOREACH_ROW P3는 비워두거나 ALL/VISIBLE만 사용할 수 있습니다: " & modeText
+            Err.Raise 5, "modTableSource.ParseSnapshotMode", "FOREACH_ROW P3는 비워두거나 ALL_ROWS/VISIBLE_ROWS만 사용할 수 있습니다: " & modeText
     End Select
 End Function
 

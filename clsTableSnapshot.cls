@@ -57,7 +57,8 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
     ' 1. 입력 타입 확인 및 범위 확정
     If TypeOf vSource Is Worksheet Then
         ' [Case A] 시트 객체가 넘어온 경우 -> 데이터 있는 전체 범위 자동 탐색
-        Set rngTarget = GetRealUsedRange(vSource)
+        If visibleOnly Then Set rngTarget = GetAutoFilterRange(vSource)
+        If rngTarget Is Nothing Then Set rngTarget = GetRealUsedRange(vSource)
         
     ElseIf TypeOf vSource Is Range Then
         ' [Case B] Range 객체가 넘어온 경우
@@ -84,6 +85,12 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
     ' 4. 배열 로드 실행
     LoadFromArray vData
 End Sub
+
+Private Function GetAutoFilterRange(ByVal ws As Worksheet) As Range
+    On Error GoTo SafeExit
+    If ws.AutoFilterMode Then Set GetAutoFilterRange = ws.AutoFilter.Range
+SafeExit:
+End Function
 
 Private Function ClampToUsedRange(ByVal rngSource As Range) As Range
     Dim rngUsed As Range
@@ -149,8 +156,18 @@ Private Function IsSnapshotRowIncluded(ByVal sourceRowIndex As Long, ByVal rngRo
     If Not visibleOnly Then
         IsSnapshotRowIncluded = True
     Else
-        IsSnapshotRowIncluded = Not rngRow.EntireRow.Hidden
+        IsSnapshotRowIncluded = IsWorksheetRowVisible(rngRow)
     End If
+End Function
+
+Private Function IsWorksheetRowVisible(ByVal rngRow As Range) As Boolean
+    On Error GoTo SafeExit
+
+    If rngRow.EntireRow.Hidden Then Exit Function
+    If rngRow.Height <= 0 Then Exit Function
+
+    IsWorksheetRowVisible = True
+SafeExit:
 End Function
 
 Private Function HeaderText(ByVal cell As Range) As String
