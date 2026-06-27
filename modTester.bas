@@ -28,6 +28,7 @@ Public Sub Run_Flow_Diagnosis()
     Debug.Print "=== [Flow Diagnosis] Headless unit suite ==="
     failCount = failCount + Test_RunProgramSmoke()
     failCount = failCount + Test_FlowHappyPaths()
+    failCount = failCount + Test_TableSnapshotReadOnly()
     failCount = failCount + Test_ForeachRowExecution()
     failCount = failCount + Test_FlowNestedInteractions()
     failCount = failCount + Test_FlowNegativePaths()
@@ -678,6 +679,63 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVar "fallback", "yes", fails
 
     Test_FlowHappyPaths = fails
+End Function
+
+Private Function Test_TableSnapshotReadOnly() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim data(1 To 4, 1 To 3) As Variant
+    Dim tbl As clsTableSnapshot
+    Dim rec As Variant
+    Dim rows As Collection
+    Dim keys As Variant
+
+    Debug.Print "--- [Flow 2A] TableSnapshot read-only surface ---"
+
+    data(1, 1) = "Code": data(1, 2) = "Name": data(1, 3) = "Group"
+    data(2, 1) = "001": data(2, 2) = "Alice": data(2, 3) = "A"
+    data(3, 1) = "002": data(3, 2) = "Bob": data(3, 3) = "B"
+    data(4, 1) = "003": data(4, 2) = "Cara": data(4, 3) = "A"
+
+    Set tbl = New clsTableSnapshot
+    tbl.LoadFromArray data
+
+    ExpectLong "Snapshot RowCount", 4, tbl.RowCount, fails
+    ExpectLong "Snapshot FirstDataRow", 2, tbl.FirstDataRow, fails
+    ExpectLong "Snapshot ColCount", 3, tbl.ColCount, fails
+    ExpectBool "Snapshot Headers CODE", True, tbl.Headers.exists("CODE"), fails
+    ExpectText "Snapshot GetValue", "Alice", CStr(tbl.GetValue(2, "Name")), fails
+
+    rec = tbl.GetRecord(3)
+    ExpectText "Snapshot GetRecord", "Bob", CStr(rec(2)), fails
+
+    Set rows = tbl.SelectRows("Group", "A")
+    ExpectLong "Snapshot SelectRows count", 2, rows.Count, fails
+    ExpectLong "Snapshot SelectRows first", 2, CLng(rows(1)), fails
+    ExpectLong "Snapshot SelectRows second", 4, CLng(rows(2)), fails
+
+    Set rows = tbl.SelectRowsByIndex(1, "002")
+    ExpectLong "Snapshot SelectRowsByIndex count", 1, rows.Count, fails
+    ExpectLong "Snapshot SelectRowsByIndex row", 3, CLng(rows(1)), fails
+
+    keys = tbl.GetUniqueKeys("Group")
+    ExpectLong "Snapshot GetUniqueKeys count", 2, UBound(keys) - LBound(keys) + 1, fails
+
+    keys = tbl.GetUniqueKeysByIndex(1)
+    ExpectLong "Snapshot GetUniqueKeysByIndex count", 3, UBound(keys) - LBound(keys) + 1, fails
+
+    tbl.Clear
+    ExpectLong "Snapshot Clear RowCount", 0, tbl.RowCount, fails
+    ExpectLong "Snapshot Clear ColCount", 0, tbl.ColCount, fails
+
+    Test_TableSnapshotReadOnly = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "TableSnapshot read-only test", "no error", Err.Description
+    Test_TableSnapshotReadOnly = fails
 End Function
 
 Private Function Test_ForeachRowExecution() As Long
