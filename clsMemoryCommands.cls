@@ -32,7 +32,11 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             WriteSlot kind, key, args(3)
 
         Case "INC", "DEC"
-            ' [정수 read-modify-write] 기존값을 CLng(Val(...))로 강제 -> 미정의·비숫자는 0
+            If kind = "MEM" And Not modContext.HasVar(key) Then
+                Err.Raise 5, "clsMemoryCommands.Execute", "Undefined variable: {" & key & "}. Initialize it with SET first."
+            End If
+
+            ' [정수 read-modify-write] 기존값을 CLng(Val(...))로 강제 -> 비숫자는 0
             Dim cur As Long, delta As Long
             cur = CLng(val(ReadSlot(kind, key)))
 

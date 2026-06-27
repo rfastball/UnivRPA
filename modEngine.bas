@@ -14,6 +14,7 @@ Option Explicit
 '==============================================================================
 ' [ProgramImage] 로드된 스크립트 프로그램 이미지
 Private m_program As clsScriptProgram
+Private m_lastRuntimeError As String
 
 ' [상수] 디스패치 반환 코드는 modCmdRegistry에 공개 정의 (CMD_NEXT_LINE / CMD_ERROR).
 '   CMD_NOT_HANDLED 폴백은 레지스트리 도입으로 폐기됨.
@@ -209,6 +210,10 @@ Public Function ActiveProgram() As clsScriptProgram
     Set ActiveProgram = m_program
 End Function
 
+Public Function LastRuntimeError() As String
+    LastRuntimeError = m_lastRuntimeError
+End Function
+
 Public Sub LoadProgramFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheetRow As Long = 1)
     Set m_program = New clsScriptProgram
     m_program.LoadFromArray sourceArray, firstSheetRow
@@ -219,7 +224,9 @@ End Sub
 ' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환
 Public Function ExecuteSmartAction(ByVal R As Long) As Long
     On Error GoTo ErrHandler
+    m_lastRuntimeError = ""
     If m_program Is Nothing Then
+        m_lastRuntimeError = "실행할 ProgramImage가 없습니다."
         modActions.Action_ShowNotification "실행할 ProgramImage가 없습니다.", 3
         ExecuteSmartAction = CMD_ERROR
         GoTo CleanUp
@@ -237,6 +244,7 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     ' 2. 레지스트리 게이트 조회 (모든 디스패치의 단일 통로)
     If inst.def Is Nothing Then
         ' 미등록 명령어 (무인 환경: 비차단 알림)
+        m_lastRuntimeError = "알 수 없는 명령어: " & inst.cmd
         modActions.Action_ShowNotification _
             "알 수 없는 명령어: " & inst.cmd & " (라인 " & inst.RuntimeLine & ", 시트 행 " & inst.sheetRow & ")", 3
         ExecuteSmartAction = CMD_ERROR
@@ -258,6 +266,7 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
 CleanUp:
     Exit Function
 ErrHandler:
+    m_lastRuntimeError = Err.Description
     If inst Is Nothing Then
         modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
     Else
@@ -423,13 +432,126 @@ Private Function ResolveToken(ByVal inner As String) As String
     End If
 
     ' [사용자 메모리] {name}
-    ResolveToken = modContext.GetVar(key)
+    Dim value As String
+    If modContext.TryGetVar(key, value) Then
+        ResolveToken = value
+    Else
+        Err.Raise 5, "modEngine.ResolveToken", UndefinedVarMessage(key, modContext.DefinedVarNames())
+    End If
 
 CleanUp:
     Exit Function
 ErrHandler:
     Err.Raise Err.Number, "modEngine.ResolveToken", Err.Description
     Resume CleanUp
+End Function
+
+Private Function UndefinedVarMessage(ByVal key As String, ByVal candidates As Variant) As String
+    Dim msg As String
+    msg = "Undefined variable: {" & key & "}"
+
+    Dim suggestion As String
+    suggestion = ClosestName(key, candidates)
+    If Len(suggestion) > 0 Then msg = msg & ". Did you mean {" & suggestion & "}?"
+
+    UndefinedVarMessage = msg
+End Function
+
+Private Function ClosestName(ByVal target As String, ByVal candidates As Variant) As String
+    On Error GoTo SafeExit
+
+    Dim threshold As Long
+    If Len(Trim$(target)) <= 4 Then
+        threshold = 1
+    Else
+        threshold = 2
+    End If
+
+    Dim bestDistance As Long
+    bestDistance = 32767
+
+    Dim bestName As String
+    Dim bestCount As Long
+    Dim item As Variant
+    For Each item In candidates
+        Dim candidate As String
+        candidate = CStr(item)
+
+        Dim distance As Long
+        distance = LevenshteinDistance(target, candidate)
+        If distance <= threshold Then
+            If distance < bestDistance Then
+                bestDistance = distance
+                bestName = candidate
+                bestCount = 1
+            ElseIf distance = bestDistance Then
+                bestCount = bestCount + 1
+            End If
+        End If
+    Next item
+
+    If bestCount = 1 Then ClosestName = bestName
+SafeExit:
+End Function
+
+Private Function LevenshteinDistance(ByVal leftText As String, ByVal rightText As String) As Long
+    Dim leftValue As String
+    Dim rightValue As String
+    leftValue = UCase$(Trim$(leftText))
+    rightValue = UCase$(Trim$(rightText))
+
+    Dim leftLen As Long
+    Dim rightLen As Long
+    leftLen = Len(leftValue)
+    rightLen = Len(rightValue)
+
+    If leftLen = 0 Then
+        LevenshteinDistance = rightLen
+        Exit Function
+    End If
+    If rightLen = 0 Then
+        LevenshteinDistance = leftLen
+        Exit Function
+    End If
+    If leftValue = rightValue Then
+        LevenshteinDistance = 0
+        Exit Function
+    End If
+
+    Dim dist() As Long
+    ReDim dist(0 To leftLen, 0 To rightLen) As Long
+
+    Dim i As Long
+    Dim j As Long
+    For i = 0 To leftLen
+        dist(i, 0) = i
+    Next i
+    For j = 0 To rightLen
+        dist(0, j) = j
+    Next j
+
+    For i = 1 To leftLen
+        For j = 1 To rightLen
+            Dim cost As Long
+            If Mid$(leftValue, i, 1) = Mid$(rightValue, j, 1) Then
+                cost = 0
+            Else
+                cost = 1
+            End If
+
+            dist(i, j) = Min3Long(dist(i - 1, j) + 1, _
+                         dist(i, j - 1) + 1, _
+                         dist(i - 1, j - 1) + cost)
+        Next j
+    Next i
+
+    LevenshteinDistance = dist(leftLen, rightLen)
+End Function
+
+Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, ByVal thirdValue As Long) As Long
+    Min3Long = firstValue
+    If secondValue < Min3Long Then Min3Long = secondValue
+    If thirdValue < Min3Long Then Min3Long = thirdValue
 End Function
 
 Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As String) As String

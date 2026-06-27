@@ -34,6 +34,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + Test_FlowNegativePaths()
     failCount = failCount + Test_MemoryResolverHeadless()
     failCount = failCount + Test_ParamSpecValidation()
+    failCount = failCount + Test_StaticVariableAnalysis()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + Test_RegistryDispatchSync()
@@ -418,13 +419,24 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 12] INC / DEC ---"
 
-    ' 미정의 변수 INC -> 1 (missing empty -> 0 +1)
+    ' 미정의 변수 INC -> 오류
+    Dim incMissing As Long
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
+    incMissing = ExecuteArrayLine(arrCmd, 1)
+    If incMissing = -1 Then
+        LogPass "INC (undefined -> ERROR)"
+    Else
+        LogFail "INC undef", "-1", CStr(incMissing): failCount = failCount + 1
+    End If
+
+    Call MakeCmd(arrCmd, 1, "SET", "{n}", 0, "0")
+    ExecuteArrayLine arrCmd, 1
     Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
     ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "1" Then
-        LogPass "INC (undefined -> 1)"
+        LogPass "INC (defined 0 -> 1)"
     Else
-        LogFail "INC undef", "1", modContext.GetVar("n"): failCount = failCount + 1
+        LogFail "INC defined", "1", modContext.GetVar("n"): failCount = failCount + 1
     End If
 
     ' INC {n} 5 -> 6 (P3 RESOLVE)
@@ -574,14 +586,15 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVisits trace, 4, 0, fails
     ExpectTrace trace, Array(1, 2, 3, 5, 6), fails
 
-    Dim gotoLoopExitArr(1 To 7, 1 To 5) As Variant
+    Dim gotoLoopExitArr(1 To 8, 1 To 5) As Variant
     Call MakeCmd(gotoLoopExitArr, 1, "REPEAT", "5", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 2, "INC", "{loop_before_goto}", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 3, "GOTO", 0, 0, "OUT")
-    Call MakeCmd(gotoLoopExitArr, 4, "INC", "{loop_after_goto}", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 5, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(gotoLoopExitArr, 6, "LABEL", 0, 0, "OUT")
-    Call MakeCmd(gotoLoopExitArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(gotoLoopExitArr, 2, "SET", "{loop_before_goto}", 0, "0")
+    Call MakeCmd(gotoLoopExitArr, 3, "INC", "{loop_before_goto}", 0, "")
+    Call MakeCmd(gotoLoopExitArr, 4, "GOTO", 0, 0, "OUT")
+    Call MakeCmd(gotoLoopExitArr, 5, "INC", "{loop_after_goto}", 0, "")
+    Call MakeCmd(gotoLoopExitArr, 6, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(gotoLoopExitArr, 7, "LABEL", 0, 0, "OUT")
+    Call MakeCmd(gotoLoopExitArr, 8, "EXIT", 0, 0, "")
     result = RunProgram(gotoLoopExitArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "loop_before_goto", "1", fails
@@ -661,14 +674,15 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVisits trace, 2, 0, fails
     ExpectLoopDepth 0, fails
 
-    Dim repeatArr(1 To 4, 1 To 5) As Variant
-    Call MakeCmd(repeatArr, 1, "REPEAT", "3", 0, "")
-    Call MakeCmd(repeatArr, 2, "INC", "{r}", 0, "")
-    Call MakeCmd(repeatArr, 3, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(repeatArr, 4, "EXIT", 0, 0, "")
+    Dim repeatArr(1 To 5, 1 To 5) As Variant
+    Call MakeCmd(repeatArr, 1, "SET", "{r}", 0, "0")
+    Call MakeCmd(repeatArr, 2, "REPEAT", "3", 0, "")
+    Call MakeCmd(repeatArr, 3, "INC", "{r}", 0, "")
+    Call MakeCmd(repeatArr, 4, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(repeatArr, 5, "EXIT", 0, 0, "")
     result = RunProgram(repeatArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
-    ExpectVisits trace, 2, 3, fails
+    ExpectVisits trace, 3, 3, fails
     ExpectVar "r", "3", fails
     ExpectLoopDepth 0, fails
 
@@ -789,28 +803,29 @@ Private Function Test_ForeachRowExecution() As Long
     ws.Range("A3:D3").value = Array("B", 20, DateSerial(2024, 2, 2), "skip")
     ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), "break")
 
-    Dim arr(1 To 21, 1 To 5) As Variant
-    Call MakeCmd(arr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
-    Call MakeCmd(arr, 2, "IF", "{$RIDX}", "EQ", "1")
-    Call MakeCmd(arr, 3, "SET", "{first_code}", 0, "{$ROW.Code}")
-    Call MakeCmd(arr, 4, "SET", "{first_rounded}", 0, "{$ROW.Rounded}")
-    Call MakeCmd(arr, 5, "SET", "{first_date}", 0, "{$ROW.DateNarrow}")
-    Call MakeCmd(arr, 6, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 7, "SET", "{last_code}", 0, "{$ROW.Code}")
-    Call MakeCmd(arr, 8, "SET", "{last_idx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 9, "IF", "{$ROW.Code}", "EQ", "B")
-    Call MakeCmd(arr, 10, "CONTINUE", 0, 0, "")
-    Call MakeCmd(arr, 11, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 12, "INC", "{processed}", 0, "")
-    Call MakeCmd(arr, 13, "REPEAT", "2", 0, "")
-    Call MakeCmd(arr, 14, "SET", "{nested_ridx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 15, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(arr, 16, "IF", "{$ROW.Code}", "EQ", "C")
-    Call MakeCmd(arr, 17, "BREAK", 0, 0, "")
-    Call MakeCmd(arr, 18, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 19, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(arr, 20, "SET", "{after_loop}", 0, "done")
-    Call MakeCmd(arr, 21, "EXIT", 0, 0, "")
+    Dim arr(1 To 22, 1 To 5) As Variant
+    Call MakeCmd(arr, 1, "SET", "{processed}", 0, "0")
+    Call MakeCmd(arr, 2, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
+    Call MakeCmd(arr, 3, "IF", "{$RIDX}", "EQ", "1")
+    Call MakeCmd(arr, 4, "SET", "{first_code}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 5, "SET", "{first_rounded}", 0, "{$ROW.Rounded}")
+    Call MakeCmd(arr, 6, "SET", "{first_date}", 0, "{$ROW.DateNarrow}")
+    Call MakeCmd(arr, 7, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 8, "SET", "{last_code}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 9, "SET", "{last_idx}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 10, "IF", "{$ROW.Code}", "EQ", "B")
+    Call MakeCmd(arr, 11, "CONTINUE", 0, 0, "")
+    Call MakeCmd(arr, 12, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 13, "INC", "{processed}", 0, "")
+    Call MakeCmd(arr, 14, "REPEAT", "2", 0, "")
+    Call MakeCmd(arr, 15, "SET", "{nested_ridx}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 16, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr, 17, "IF", "{$ROW.Code}", "EQ", "C")
+    Call MakeCmd(arr, 18, "BREAK", 0, 0, "")
+    Call MakeCmd(arr, 19, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 20, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(arr, 21, "SET", "{after_loop}", 0, "done")
+    Call MakeCmd(arr, 22, "EXIT", 0, 0, "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
@@ -897,32 +912,34 @@ Private Function Test_FlowNestedInteractions() As Long
 
     Debug.Print "--- [Flow 3] Nested and interaction paths ---"
 
-    Dim breakArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(breakArr, 1, "REPEAT", "5", 0, "")
-    Call MakeCmd(breakArr, 2, "INC", "{before_break}", 0, "")
-    Call MakeCmd(breakArr, 3, "BREAK", 0, 0, "")
-    Call MakeCmd(breakArr, 4, "INC", "{after_break}", 0, "")
-    Call MakeCmd(breakArr, 5, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(breakArr, 6, "EXIT", 0, 0, "")
+    Dim breakArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(breakArr, 1, "SET", "{before_break}", 0, "0")
+    Call MakeCmd(breakArr, 2, "REPEAT", "5", 0, "")
+    Call MakeCmd(breakArr, 3, "INC", "{before_break}", 0, "")
+    Call MakeCmd(breakArr, 4, "BREAK", 0, 0, "")
+    Call MakeCmd(breakArr, 5, "INC", "{after_break}", 0, "")
+    Call MakeCmd(breakArr, 6, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(breakArr, 7, "EXIT", 0, 0, "")
     result = RunProgram(breakArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "before_break", "1", fails
     ExpectVar "after_break", "", fails
-    ExpectVisits trace, 4, 0, fails
+    ExpectVisits trace, 5, 0, fails
     ExpectLoopDepth 0, fails
 
-    Dim continueArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(continueArr, 1, "REPEAT", "3", 0, "")
-    Call MakeCmd(continueArr, 2, "INC", "{continue_hits}", 0, "")
-    Call MakeCmd(continueArr, 3, "CONTINUE", 0, 0, "")
-    Call MakeCmd(continueArr, 4, "INC", "{continue_skipped}", 0, "")
-    Call MakeCmd(continueArr, 5, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(continueArr, 6, "EXIT", 0, 0, "")
+    Dim continueArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(continueArr, 1, "SET", "{continue_hits}", 0, "0")
+    Call MakeCmd(continueArr, 2, "REPEAT", "3", 0, "")
+    Call MakeCmd(continueArr, 3, "INC", "{continue_hits}", 0, "")
+    Call MakeCmd(continueArr, 4, "CONTINUE", 0, 0, "")
+    Call MakeCmd(continueArr, 5, "INC", "{continue_skipped}", 0, "")
+    Call MakeCmd(continueArr, 6, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(continueArr, 7, "EXIT", 0, 0, "")
     result = RunProgram(continueArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "continue_hits", "3", fails
     ExpectVar "continue_skipped", "", fails
-    ExpectVisits trace, 4, 0, fails
+    ExpectVisits trace, 5, 0, fails
     ExpectLoopDepth 0, fails
 
     Dim peakArr(1 To 6, 1 To 5) As Variant
@@ -936,19 +953,22 @@ Private Function Test_FlowNestedInteractions() As Long
     ExpectTerminal rrExhausted, result, fails
     ExpectLoopDepth 2, fails
 
-    Dim nestedArr(1 To 12, 1 To 5) As Variant
-    Call MakeCmd(nestedArr, 1, "REPEAT", "2", 0, "")
-    Call MakeCmd(nestedArr, 2, "SELECT", "{$LOOP}", 0, "")
-    Call MakeCmd(nestedArr, 3, "CASE", "1", 0, "")
-    Call MakeCmd(nestedArr, 4, "INC", "{outer1}", 0, "")
-    Call MakeCmd(nestedArr, 5, "CASE", "2", 0, "")
-    Call MakeCmd(nestedArr, 6, "INC", "{outer2}", 0, "")
-    Call MakeCmd(nestedArr, 7, "END_SELECT", 0, 0, "")
-    Call MakeCmd(nestedArr, 8, "REPEAT", "2", 0, "")
-    Call MakeCmd(nestedArr, 9, "INC", "{inner_hits}", 0, "")
-    Call MakeCmd(nestedArr, 10, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(nestedArr, 11, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(nestedArr, 12, "EXIT", 0, 0, "")
+    Dim nestedArr(1 To 15, 1 To 5) As Variant
+    Call MakeCmd(nestedArr, 1, "SET", "{outer1}", 0, "0")
+    Call MakeCmd(nestedArr, 2, "SET", "{outer2}", 0, "0")
+    Call MakeCmd(nestedArr, 3, "SET", "{inner_hits}", 0, "0")
+    Call MakeCmd(nestedArr, 4, "REPEAT", "2", 0, "")
+    Call MakeCmd(nestedArr, 5, "SELECT", "{$LOOP}", 0, "")
+    Call MakeCmd(nestedArr, 6, "CASE", "1", 0, "")
+    Call MakeCmd(nestedArr, 7, "INC", "{outer1}", 0, "")
+    Call MakeCmd(nestedArr, 8, "CASE", "2", 0, "")
+    Call MakeCmd(nestedArr, 9, "INC", "{outer2}", 0, "")
+    Call MakeCmd(nestedArr, 10, "END_SELECT", 0, 0, "")
+    Call MakeCmd(nestedArr, 11, "REPEAT", "2", 0, "")
+    Call MakeCmd(nestedArr, 12, "INC", "{inner_hits}", 0, "")
+    Call MakeCmd(nestedArr, 13, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(nestedArr, 14, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(nestedArr, 15, "EXIT", 0, 0, "")
     result = RunProgram(nestedArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "outer1", "1", fails
@@ -956,14 +976,15 @@ Private Function Test_FlowNestedInteractions() As Long
     ExpectVar "inner_hits", "4", fails
     ExpectLoopDepth 0, fails
 
-    Dim callLoopArr(1 To 7, 1 To 5) As Variant
-    Call MakeCmd(callLoopArr, 1, "REPEAT", "2", 0, "")
-    Call MakeCmd(callLoopArr, 2, "CALL", 0, 0, "SUB")
-    Call MakeCmd(callLoopArr, 3, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(callLoopArr, 4, "EXIT", 0, 0, "")
-    Call MakeCmd(callLoopArr, 5, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(callLoopArr, 6, "INC", "{call_loop_hits}", 0, "")
-    Call MakeCmd(callLoopArr, 7, "RETURN", 0, 0, "")
+    Dim callLoopArr(1 To 8, 1 To 5) As Variant
+    Call MakeCmd(callLoopArr, 1, "SET", "{call_loop_hits}", 0, "0")
+    Call MakeCmd(callLoopArr, 2, "REPEAT", "2", 0, "")
+    Call MakeCmd(callLoopArr, 3, "CALL", 0, 0, "SUB")
+    Call MakeCmd(callLoopArr, 4, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(callLoopArr, 5, "EXIT", 0, 0, "")
+    Call MakeCmd(callLoopArr, 6, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(callLoopArr, 7, "INC", "{call_loop_hits}", 0, "")
+    Call MakeCmd(callLoopArr, 8, "RETURN", 0, 0, "")
     result = RunProgram(callLoopArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "call_loop_hits", "2", fails
@@ -1079,12 +1100,29 @@ Private Function Test_FlowNegativePaths() As Long
     result = RunProgram(arr13, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
+    Dim arr14(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr14, 1, "SET", "{out}", 0, "{missing}")
+    result = RunProgram(arr14, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr15(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr15, 1, "INC", "{n}", 0, "")
+    result = RunProgram(arr15, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    Dim arr16(1 To 2, 1 To 5) As Variant
+    Call MakeCmd(arr16, 1, "SET", "{score}", 0, "1")
+    Call MakeCmd(arr16, 2, "SET", "{out}", 0, "{scroe}")
+    result = RunProgram(arr16, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectBool "Undefined var suggestion", True, (InStr(1, modEngine.LastRuntimeError(), "{score}", vbTextCompare) > 0), fails
+
     Test_FlowNegativePaths = fails
 End Function
 
 Private Function Test_MemoryResolverHeadless() As Long
     Dim fails As Long
-    Dim arr(1 To 17, 1 To 5) As Variant
+    Dim arr(1 To 21, 1 To 5) As Variant
     Dim trace() As Long
     Dim lastCode As Long
     Dim lastLine As Long
@@ -1096,34 +1134,42 @@ Private Function Test_MemoryResolverHeadless() As Long
     Call MakeCmd(arr, 2, "SET", "{b}", 0, "{a}_world")
     Call MakeCmd(arr, 3, "SET", "{a}", 0, "overwritten")
     Call MakeCmd(arr, 4, "SET", "{a}", 0, "{$BLANK}")
-    Call MakeCmd(arr, 5, "SET", "{cr}", 0, "A{$CR}B")
-    Call MakeCmd(arr, 6, "SET", "{lf}", 0, "A{$LF}B")
-    Call MakeCmd(arr, 7, "SET", "{sp}", 0, "A{$SPACE}B")
-    Call MakeCmd(arr, 8, "SET", "{unknown}", 0, "{$XXX}")
-    Call MakeCmd(arr, 9, "SET", "{open}", 0, "A{broken")
-    Call MakeCmd(arr, 10, "SET", "{x}", 0, "300")
-    Call MakeCmd(arr, 11, "SET", "{y}", 0, "300")
-    Call MakeCmd(arr, 12, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
-    Call MakeCmd(arr, 13, "SET", "{delta}", 0, "-2")
-    Call MakeCmd(arr, 14, "INC", "{n}", 0, "")
-    Call MakeCmd(arr, 15, "INC", "{n}", 0, "{delta}")
-    Call MakeCmd(arr, 16, "DEC", "{n}", 0, "-3")
-    Call MakeCmd(arr, 17, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 5, "SET", "{empty_copy}", 0, "{a}")
+    Call MakeCmd(arr, 6, "SET", "{cr}", 0, "A{$CR}B")
+    Call MakeCmd(arr, 7, "SET", "{lf}", 0, "A{$LF}B")
+    Call MakeCmd(arr, 8, "SET", "{sp}", 0, "A{$SPACE}B")
+    Call MakeCmd(arr, 9, "SET", "{unknown}", 0, "{$XXX}")
+    Call MakeCmd(arr, 10, "SET", "{ridx_out}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 11, "SET", "{row_out}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 12, "SET", "{open}", 0, "A{broken")
+    Call MakeCmd(arr, 13, "SET", "{x}", 0, "300")
+    Call MakeCmd(arr, 14, "SET", "{y}", 0, "300")
+    Call MakeCmd(arr, 15, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
+    Call MakeCmd(arr, 16, "SET", "{delta}", 0, "-2")
+    Call MakeCmd(arr, 17, "SET", "{n}", 0, "0")
+    Call MakeCmd(arr, 18, "INC", "{n}", 0, "")
+    Call MakeCmd(arr, 19, "INC", "{n}", 0, "{delta}")
+    Call MakeCmd(arr, 20, "DEC", "{n}", 0, "-3")
+    Call MakeCmd(arr, 21, "EXIT", 0, 0, "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     pxExpected = modWinAPI.GetColorHexAt(300, 300)
 
     ExpectTerminal rrHalted, result, fails
     ExpectVar "a", "", fails
+    ExpectBool "Defined empty var", True, modContext.HasVar("empty_copy"), fails
+    ExpectVar "empty_copy", "", fails
     ExpectVar "b", "hello_world", fails
     ExpectVar "cr", "A" & vbCr & "B", fails
     ExpectVar "lf", "A" & vbLf & "B", fails
     ExpectVar "sp", "A B", fails
     ExpectVar "unknown", "{$XXX}", fails
+    ExpectVar "ridx_out", "{$RIDX}", fails
+    ExpectVar "row_out", "{$ROW.Code}", fails
     ExpectVar "open", "A{broken", fails
     ExpectVar "px", pxExpected, fails
     ExpectVar "n", "2", fails
-    ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17), fails
+    ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21), fails
 
     Test_MemoryResolverHeadless = fails
 End Function
@@ -1151,6 +1197,65 @@ Private Function Test_ParamSpecValidation() As Long
     ExpectBool "Reject CALL dynamic target", False, modDevTools.ValidateLine("CALL", "", "", "{target}"), fails
 
     Test_ParamSpecValidation = fails
+End Function
+
+Private Function Test_StaticVariableAnalysis() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim ws As Worksheet
+    Dim sheetName As String
+
+    Debug.Print "--- [Flow 6A] Static variable analysis ---"
+
+    sheetName = "RPA_VAR_ANALYSIS_TEST"
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets(sheetName).Delete
+    On Error GoTo ErrHandler
+    Application.DisplayAlerts = True
+
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+    ws.name = sheetName
+    modDevTools.EnsureHeaders ws
+
+    ws.Cells(2, 2).value = "SET"
+    ws.Cells(2, 3).value = "{score}"
+    ws.Cells(2, 5).value = "1"
+
+    ws.Cells(3, 2).value = "SET"
+    ws.Cells(3, 3).value = "{out}"
+    ws.Cells(3, 5).value = "{scroe}"
+
+    ws.Cells(4, 2).value = "SET"
+    ws.Cells(4, 3).value = "{unused}"
+    ws.Cells(4, 5).value = "value"
+
+    ws.Cells(5, 2).value = "SET"
+    ws.Cells(5, 3).value = "{sys}"
+    ws.Cells(5, 5).value = "{$BLANK}{$LOOP}{$RIDX}{$ROW.Code}{$PIXEL:1,1}{$XXX}"
+
+    ExpectBool "Static undefined var", False, modDevTools.ValidateSheetVariablesAt(ws, 3), fails
+    ExpectBool "Static var suggestion", True, (InStr(1, modDevTools.LastValidationMessage(), "{score}", vbTextCompare) > 0), fails
+
+    ExpectBool "Unused var is warning only", True, modDevTools.ValidateSheetVariablesAt(ws, 4), fails
+    ExpectBool "Unused var warning text", True, (InStr(1, modDevTools.LastValidationWarning(), "{unused}", vbTextCompare) > 0), fails
+
+    ExpectBool "System tokens ignored by var analysis", True, modDevTools.ValidateSheetVariablesAt(ws, 5), fails
+
+CleanUp:
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    Test_StaticVariableAnalysis = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "Static variable analysis", "no error", Err.Description
+    Resume CleanUp
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)

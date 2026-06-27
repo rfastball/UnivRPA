@@ -4,6 +4,7 @@
 Option Explicit
 
 Private m_lastValidationMessage As String
+Private m_lastValidationWarning As String
 
 Public Sub FormatRPAScript()
 Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
@@ -35,7 +36,10 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim subStartRows As Object
     Dim subEndRows As Object
     Dim invalidRows As Object
+    Dim varInvalidRows As Object
+    Dim varWarningRows As Object
     Call AnalyzeSubroutineFlow(ws, lastRow, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
+    Call AnalyzeSheetVariables(ws, lastRow, varInvalidRows, varWarningRows)
 
     ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
     Dim clearLastRow As Long
@@ -118,9 +122,13 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                         isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
                     End If
                     If invalidRows.exists(CStr(R)) Then isValid = False
+                    If varInvalidRows.exists(CStr(R)) Then isValid = False
+
+                    Dim hasWarning As Boolean
+                    hasWarning = varWarningRows.exists(CStr(R))
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
-                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid, rowIsComment)
+                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid, rowIsComment, hasWarning)
                     Call ApplySubroutineBoundaryStyle(ws.Cells(R, 2).Resize(1, 4), _
                                                        subStartRows.exists(CStr(R)), _
                                                        subEndRows.exists(CStr(R)), _
@@ -179,6 +187,7 @@ End Sub
 ' [파생] 명령어 및 파라미터 유효성 검사 → GetCmdDef 게이트로 환원
 Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
     m_lastValidationMessage = ""
+    m_lastValidationWarning = ""
 
     Dim def As CmdDef
     Set def = modCmdRegistry.GetCmdDef(cmd)
@@ -201,6 +210,10 @@ End Function
 
 Public Function LastValidationMessage() As String
     LastValidationMessage = m_lastValidationMessage
+End Function
+
+Public Function LastValidationWarning() As String
+    LastValidationWarning = m_lastValidationWarning
 End Function
 
 Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal rawValue As Variant) As Boolean
@@ -351,8 +364,34 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
     ValidateSheetFlowAt = Not invalidRows.exists(CStr(rowNum))
 End Function
 
+Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+    m_lastValidationMessage = ""
+    m_lastValidationWarning = ""
+    ValidateSheetVariablesAt = True
+
+    If ws Is Nothing Then Exit Function
+    If rowNum < 2 Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
+    If rowNum > lastRow Then Exit Function
+
+    Dim invalidRows As Object
+    Dim warningRows As Object
+    Call AnalyzeSheetVariables(ws, lastRow, invalidRows, warningRows)
+
+    If invalidRows.exists(CStr(rowNum)) Then
+        SetValidationError CStr(invalidRows(CStr(rowNum)))
+        ValidateSheetVariablesAt = False
+    End If
+
+    If warningRows.exists(CStr(rowNum)) Then
+        m_lastValidationWarning = CStr(warningRows(CStr(rowNum)))
+    End If
+End Function
+
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
-Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Optional isValid As Boolean = True, Optional isComment As Boolean = False)
+Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Optional isValid As Boolean = True, Optional isComment As Boolean = False, Optional hasWarning As Boolean = False)
     Dim cmdCell As Range: Set cmdCell = rng.Cells(1, 1)
 
     '----------------------------------------------------------
@@ -435,6 +474,10 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Opti
         cmdCell.Interior.color = clr
         If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
     End If
+
+    If isValid And hasWarning Then
+        cmdCell.Font.color = RGB(156, 101, 0)
+    End If
 End Sub
 
 ' [파생 헬퍼] ColorGroup enum -> 현행 팔레트 RGB (값 보존)
@@ -446,6 +489,288 @@ Private Function ColorOf(ByVal cg As eColorGroup) As Long
         Case clrSYSTEM: ColorOf = RGB(242, 242, 242)  ' 연회
         Case Else:      ColorOf = RGB(245, 255, 245)
     End Select
+End Function
+
+Private Sub AnalyzeSheetVariables(ByVal ws As Worksheet, ByVal lastRow As Long, _
+                                  ByRef invalidRows As Object, ByRef warningRows As Object)
+    Set invalidRows = CreateObject("Scripting.Dictionary")
+    Set warningRows = CreateObject("Scripting.Dictionary")
+    invalidRows.CompareMode = vbTextCompare
+    warningRows.CompareMode = vbTextCompare
+
+    If ws Is Nothing Or lastRow < 2 Then Exit Sub
+
+    Dim defined As Object
+    Dim used As Object
+    Dim defRows As Object
+    Set defined = CreateObject("Scripting.Dictionary")
+    Set used = CreateObject("Scripting.Dictionary")
+    Set defRows = CreateObject("Scripting.Dictionary")
+    defined.CompareMode = vbTextCompare
+    used.CompareMode = vbTextCompare
+    defRows.CompareMode = vbTextCompare
+
+    Dim R As Long
+    For R = 2 To lastRow
+        If IsCommentRow(ws, R) Then GoTo NextRow
+
+        Dim cmd As String
+        cmd = PureCommandAt(ws, R)
+        If Len(cmd) = 0 Then GoTo NextRow
+
+        Dim def As CmdDef
+        Set def = modCmdRegistry.GetCmdDef(cmd)
+        If def Is Nothing Then GoTo NextRow
+
+        Dim idx As Long
+        For idx = 1 To 3
+            Dim spec As ParamSpec
+            Set spec = def.Param(idx)
+            If Not spec Is Nothing Then
+                If Not spec.IsRaw Then
+                    Dim uses As Collection
+                    Set uses = New Collection
+                    CollectUserVarsFromText ParamText(ws.Cells(R, idx + 2).value), uses
+
+                    Dim varName As Variant
+                    For Each varName In uses
+                        used(CStr(varName)) = True
+                        If Not defined.exists(CStr(varName)) Then
+                            AddRowMessage invalidRows, R, UndefinedVarMessage(CStr(varName), defined.Keys)
+                        End If
+                    Next varName
+                End If
+            End If
+        Next idx
+
+        If cmd = "SET" Or cmd = "INC" Or cmd = "DEC" Then
+            Dim lvalueName As String
+            lvalueName = MemoryLValueName(ParamText(ws.Cells(R, 3).value))
+            If Len(lvalueName) > 0 Then
+                If (cmd = "INC" Or cmd = "DEC") And Not defined.exists(lvalueName) Then
+                    AddRowMessage invalidRows, R, UndefinedVarMessage(lvalueName, defined.Keys) & ". Initialize it with SET first."
+                End If
+
+                If Not defined.exists(lvalueName) Then
+                    defined.Add lvalueName, True
+                End If
+                AddDefRow defRows, lvalueName, R
+            End If
+        End If
+
+NextRow:
+    Next R
+
+    Dim nameKey As Variant
+    For Each nameKey In defRows.Keys
+        If Not used.exists(CStr(nameKey)) Then
+            Dim rows As Collection
+            Set rows = defRows(CStr(nameKey))
+
+            Dim rowItem As Variant
+            For Each rowItem In rows
+                If Not invalidRows.exists(CStr(rowItem)) Then
+                    AddRowMessage warningRows, CLng(rowItem), "Warning: defined variable is not used: {" & CStr(nameKey) & "}"
+                End If
+            Next rowItem
+        End If
+    Next nameKey
+End Sub
+
+Private Sub CollectUserVarsFromText(ByVal text As String, ByVal result As Collection)
+    Dim i As Long
+    Dim n As Long
+    n = Len(text)
+    i = 1
+
+    Do While i <= n
+        If Mid$(text, i, 1) = "{" Then
+            Dim depth As Long
+            Dim j As Long
+            Dim found As Long
+            depth = 1
+            For j = i + 1 To n
+                Select Case Mid$(text, j, 1)
+                    Case "{"
+                        depth = depth + 1
+                    Case "}"
+                        depth = depth - 1
+                        If depth = 0 Then
+                            found = j
+                            Exit For
+                        End If
+                End Select
+            Next j
+
+            If found = 0 Then Exit Do
+
+            Dim inner As String
+            inner = Mid$(text, i + 1, found - i - 1)
+            CollectUserVarsFromText inner, result
+
+            If IsUserVariableToken(inner) Then result.Add Trim$(inner)
+            i = found + 1
+        Else
+            i = i + 1
+        End If
+    Loop
+End Sub
+
+Private Function IsUserVariableToken(ByVal inner As String) As Boolean
+    Dim key As String
+    key = Trim$(inner)
+    If Len(key) = 0 Then Exit Function
+    If Left$(key, 1) = "$" Then Exit Function
+    If InStr(1, key, "{", vbTextCompare) > 0 Or InStr(1, key, "}", vbTextCompare) > 0 Then Exit Function
+
+    IsUserVariableToken = True
+End Function
+
+Private Function MemoryLValueName(ByVal rawP1 As String) As String
+    Dim s As String
+    s = Trim$(rawP1)
+    If Len(s) < 2 Then Exit Function
+    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
+
+    Dim inner As String
+    inner = Trim$(Mid$(s, 2, Len(s) - 2))
+    If Len(inner) = 0 Then Exit Function
+    If UCase$(inner) = "$CLIP" Then Exit Function
+    If Left$(inner, 1) = "$" Then Exit Function
+
+    MemoryLValueName = inner
+End Function
+
+Private Sub AddDefRow(ByVal defRows As Object, ByVal varName As String, ByVal rowNum As Long)
+    Dim rows As Collection
+    If defRows.exists(varName) Then
+        Set rows = defRows(varName)
+    Else
+        Set rows = New Collection
+        defRows.Add varName, rows
+    End If
+    rows.Add rowNum
+End Sub
+
+Private Sub AddRowMessage(ByVal rows As Object, ByVal rowNum As Long, ByVal message As String)
+    Dim key As String
+    key = CStr(rowNum)
+
+    If rows.exists(key) Then
+        If InStr(1, CStr(rows(key)), message, vbTextCompare) = 0 Then
+            rows(key) = CStr(rows(key)) & vbCrLf & message
+        End If
+    Else
+        rows.Add key, message
+    End If
+End Sub
+
+Private Function UndefinedVarMessage(ByVal varName As String, ByVal candidates As Variant) As String
+    Dim msg As String
+    msg = "Undefined variable: {" & varName & "}"
+
+    Dim suggestion As String
+    suggestion = ClosestName(varName, candidates)
+    If Len(suggestion) > 0 Then msg = msg & ". Did you mean {" & suggestion & "}?"
+
+    UndefinedVarMessage = msg
+End Function
+
+Private Function ClosestName(ByVal target As String, ByVal candidates As Variant) As String
+    On Error GoTo SafeExit
+
+    Dim threshold As Long
+    If Len(Trim$(target)) <= 4 Then
+        threshold = 1
+    Else
+        threshold = 2
+    End If
+
+    Dim bestDistance As Long
+    bestDistance = 32767
+
+    Dim bestName As String
+    Dim bestCount As Long
+    Dim item As Variant
+    For Each item In candidates
+        Dim candidate As String
+        candidate = CStr(item)
+
+        Dim distance As Long
+        distance = LevenshteinDistance(target, candidate)
+        If distance <= threshold Then
+            If distance < bestDistance Then
+                bestDistance = distance
+                bestName = candidate
+                bestCount = 1
+            ElseIf distance = bestDistance Then
+                bestCount = bestCount + 1
+            End If
+        End If
+    Next item
+
+    If bestCount = 1 Then ClosestName = bestName
+SafeExit:
+End Function
+
+Private Function LevenshteinDistance(ByVal leftText As String, ByVal rightText As String) As Long
+    Dim leftValue As String
+    Dim rightValue As String
+    leftValue = UCase$(Trim$(leftText))
+    rightValue = UCase$(Trim$(rightText))
+
+    Dim leftLen As Long
+    Dim rightLen As Long
+    leftLen = Len(leftValue)
+    rightLen = Len(rightValue)
+
+    If leftLen = 0 Then
+        LevenshteinDistance = rightLen
+        Exit Function
+    End If
+    If rightLen = 0 Then
+        LevenshteinDistance = leftLen
+        Exit Function
+    End If
+    If leftValue = rightValue Then
+        LevenshteinDistance = 0
+        Exit Function
+    End If
+
+    Dim dist() As Long
+    ReDim dist(0 To leftLen, 0 To rightLen) As Long
+
+    Dim i As Long
+    Dim j As Long
+    For i = 0 To leftLen
+        dist(i, 0) = i
+    Next i
+    For j = 0 To rightLen
+        dist(0, j) = j
+    Next j
+
+    For i = 1 To leftLen
+        For j = 1 To rightLen
+            Dim cost As Long
+            If Mid$(leftValue, i, 1) = Mid$(rightValue, j, 1) Then
+                cost = 0
+            Else
+                cost = 1
+            End If
+
+            dist(i, j) = Min3Long(dist(i - 1, j) + 1, _
+                         dist(i, j - 1) + 1, _
+                         dist(i - 1, j - 1) + cost)
+        Next j
+    Next i
+
+    LevenshteinDistance = dist(leftLen, rightLen)
+End Function
+
+Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, ByVal thirdValue As Long) As Long
+    Min3Long = firstValue
+    If secondValue < Min3Long Then Min3Long = secondValue
+    If thirdValue < Min3Long Then Min3Long = thirdValue
 End Function
 
 Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, _

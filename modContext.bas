@@ -72,10 +72,36 @@ Public Sub SetVar(ByVal key As String, ByVal val As String)
     Memory(Trim(key)) = val   ' 존재하면 갱신, 없으면 자동 추가
 End Sub
 
-' [변수 읽기] 미정의 키는 빈 문자열({$BLANK}) 반환 (오류 아님)
+' [변수 읽기] 호환 조회용. strict 실행 경로는 TryGetVar로 정의 여부를 확인한다.
 Public Function GetVar(ByVal key As String) As String
     Dim k As String: k = Trim(key)
     If Memory.exists(k) Then GetVar = Memory(k) Else GetVar = ""
+End Function
+
+' [변수 정의 여부] 빈 문자열 값도 정의된 변수로 취급
+Public Function HasVar(ByVal key As String) As Boolean
+    Dim k As String: k = Trim(key)
+    If Memory Is Nothing Then Exit Function
+    HasVar = Memory.exists(k)
+End Function
+
+' [변수 안전 읽기] 정의 여부와 값을 함께 반환
+Public Function TryGetVar(ByVal key As String, ByRef value As String) As Boolean
+    Dim k As String: k = Trim(key)
+    If Memory Is Nothing Then Exit Function
+    If Not Memory.exists(k) Then Exit Function
+
+    value = CStr(Memory(k))
+    TryGetVar = True
+End Function
+
+' [정의된 변수명 목록] 추천/진단용
+Public Function DefinedVarNames() As Variant
+    If Memory Is Nothing Then
+        DefinedVarNames = Array()
+    Else
+        DefinedVarNames = Memory.Keys
+    End If
 End Function
 
 '==============================================================================

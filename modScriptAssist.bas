@@ -165,10 +165,20 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     Dim cmd As String
     cmd = NormalizeCmd(rawCmd)
 
-    If modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value) _
-       And modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row) Then
-        ClearAssistNote Target
-        ClearStatusBar
+    Dim isValid As Boolean
+    isValid = modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value)
+    If isValid Then isValid = modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row)
+    If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row)
+
+    If isValid Then
+        Dim warning As String
+        warning = modDevTools.LastValidationWarning()
+        If Len(warning) > 0 Then
+            ApplyWarningNote Target, warning
+        Else
+            ClearAssistNote Target
+            ClearStatusBar
+        End If
     Else
         Dim suggestion As String
         Dim def As CmdDef
@@ -274,6 +284,24 @@ Public Sub ApplyErrorNote(ByVal Target As Range, ByVal rawCmd As Variant, ByVal 
         Target.Comment.text text:=body
     Else
         Application.StatusBar = Replace(body, vbCrLf, " ")
+    End If
+
+    Application.StatusBar = Replace(body, vbCrLf, " ")
+End Sub
+
+Public Sub ApplyWarningNote(ByVal Target As Range, ByVal warning As String)
+    If Target Is Nothing Then Exit Sub
+
+    Dim body As String
+    body = ASSIST_PREFIX & vbCrLf & warning
+
+    If Target.Comment Is Nothing Then
+        Target.AddComment text:=body
+    ElseIf IsAssistNote(Target.Comment) Then
+        Target.Comment.text text:=body
+    Else
+        Application.StatusBar = Replace(body, vbCrLf, " ")
+        Exit Sub
     End If
 
     Application.StatusBar = Replace(body, vbCrLf, " ")
