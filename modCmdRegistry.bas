@@ -212,7 +212,8 @@ Private Sub BuildRegistry()
     Reg "SLEEP", SYSTEM, NOBLOCK, "", clrACTION, cmdCell, _
         sp3:=P("대기ms", DT_NUM, RESOLVE, True)
     Reg "NOTIFY", SYSTEM, NOBLOCK, "", clrSYSTEM, FULLROW, _
-        sp3:=P("메시지[|초]", DT_STR, RESOLVE, True)
+        P("표시시간초(빈값=2, 0=확인대기)", DT_NUM, RESOLVE, False), Nothing, _
+        P("메시지", DT_STR, RESOLVE, True)
     Reg "EXIT", SYSTEM, NOBLOCK, "", clrSYSTEM, FULLROW
 
     '--- [VISION] 4개 -----------------------------------------------------------

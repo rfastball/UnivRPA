@@ -188,7 +188,7 @@ Public Sub EnsureHeaders(ws As Worksheet)
     End With
 
     ws.Columns("A").ColumnWidth = 5
-    ws.Columns("B").ColumnWidth = 35
+    ws.Columns("B").ColumnWidth = 12
     ws.Columns("C:E").ColumnWidth = 15
     ws.Columns("F").ColumnWidth = 30
 End Sub
@@ -421,25 +421,6 @@ Public Function ResolveLabelTargetRow(ByVal ws As Worksheet, ByVal targetName As
     Dim program As clsScriptProgram
     Set program = ProgramSnapshotFromSheet(ws, lastRow)
     If Not program Is Nothing Then ResolveLabelTargetRow = program.ResolveJumpTargetSheetRow(targetName)
-End Function
-
-Public Function ScrollToJumpTarget(ByVal sourceParamCell As Range) As Boolean
-    If sourceParamCell Is Nothing Then Exit Function
-    If sourceParamCell.Cells.count <> 1 Then Exit Function
-
-    Dim ws As Worksheet
-    Set ws = sourceParamCell.Worksheet
-
-    Dim cmd As String
-    cmd = PureCommandAt(ws, sourceParamCell.Row)
-    If cmd <> "CALL" And cmd <> "GOTO" Then Exit Function
-
-    Dim targetRow As Long
-    targetRow = ResolveLabelTargetRow(ws, CStr(sourceParamCell.value))
-    If targetRow = 0 Then Exit Function
-
-    Application.Goto ws.Cells(targetRow, 5), True
-    ScrollToJumpTarget = True
 End Function
 
 Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
@@ -1061,7 +1042,11 @@ Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, B
     Dim warning As String
     warning = program.LabelRoleWarningAtSheetRow(rowNum)
 
-    modScriptAssist.ApplyLabelRoleNote roleCell, roleName, warning
+    If roleName = "SubroutineLabel" And Len(warning) = 0 Then
+        modScriptAssist.ClearLabelRoleNote roleCell
+    Else
+        modScriptAssist.ApplyLabelRoleNote roleCell, roleName, warning
+    End If
 
     roleCell.Font.Italic = (roleName = "DeadLabel")
     If roleName = "MixedLabel" Then

@@ -59,23 +59,7 @@ Private Sub Workbook_SheetBeforeDoubleClick(ByVal Sh As Object, ByVal Target As 
     If Not TypeOf Sh Is Worksheet Then Exit Sub
     If Target.Cells.CountLarge <> 1 Then Exit Sub
 
-    Dim ws As Worksheet
-    Set ws = Sh
-
-    Dim cmdCol As Long
-    cmdCol = modScriptAssist.ResolveCmdCol(ws)
-    If cmdCol = 0 Then Exit Sub
-    If Target.Column <> cmdCol + 3 Then Exit Sub
-    If Target.Row <= 1 Then Exit Sub
-
-    Dim cmd As String
-    cmd = modCmdRegistry.NormalizeCommand(ws.Cells(Target.Row, cmdCol).value)
-    If cmd <> "CALL" And cmd <> "GOTO" Then Exit Sub
-
-    Cancel = True
-    If Not modDevTools.ScrollToJumpTarget(Target) Then
-        Application.StatusBar = "Script Assist: target LABEL not found."
-    End If
+    Cancel = modScriptAssist.HandleBeforeDoubleClick(Target)
 End Sub
 
 Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)

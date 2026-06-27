@@ -31,15 +31,15 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             modActions.BetterWait CLng(val(args(3)))
 
         Case "NOTIFY"
-            ' P3 = "메시지[|초]"
+            ' P1 = 표시시간초(빈값=2, 0=확인대기), P3 = 메시지
             Dim nMsg As String, nSec As Long, durMs As Long
-            nMsg = args(3): nSec = 0
-            If InStr(args(3), "|") > 0 Then
-                Dim np() As String: np = Split(args(3), "|")
-                nMsg = np(0)
-                nSec = CLng(val(Trim(np(1))))
+            nMsg = args(3)
+            If Len(Trim$(args(1))) = 0 Then
+                durMs = 2000
+            Else
+                nSec = CLng(val(args(1)))
+                durMs = nSec * 1000
             End If
-            If nSec > 0 Then durMs = nSec * 1000 Else durMs = 2000
             modActions.Action_Notify durMs, 64, nMsg
 
         Case "EXIT"

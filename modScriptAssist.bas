@@ -8,6 +8,10 @@ Private Const LABEL_ROLE_MARKER As String = "[LabelRole]"
 Private Const CMD_COL As Long = 2
 Private Const COMMENT_PREFIX As String = "# "
 
+Private m_lastCallNavSheetName As String
+Private m_lastCallNavSourceRow As Long
+Private m_lastCallNavTargetLabel As String
+
 Public Function ResolveCmdCol(ByVal Sh As Worksheet) As Long
     If IsScriptSheet(Sh) Then ResolveCmdCol = CMD_COL
 End Function
@@ -227,6 +231,110 @@ Public Sub ShowParamHint(ByVal Target As Range)
     End If
 
     Application.StatusBar = FormatParamHint(def)
+End Sub
+
+Public Function HandleBeforeDoubleClick(ByVal Target As Range) As Boolean
+    If Target Is Nothing Then Exit Function
+    If Target.Cells.count <> 1 Then Exit Function
+    If Target.Row <= 1 Then Exit Function
+
+    Dim ws As Worksheet
+    Set ws = Target.Worksheet
+
+    Dim cmdCol As Long
+    cmdCol = ResolveCmdCol(ws)
+    If cmdCol = 0 Then Exit Function
+    If Target.Column <> cmdCol + 3 Then Exit Function
+
+    Dim cmd As String
+    cmd = NormalizeCmd(ws.Cells(Target.Row, cmdCol).value)
+
+    Select Case cmd
+        Case "CALL", "GOTO"
+            HandleBeforeDoubleClick = HandleJumpParamDoubleClick(Target, cmd)
+        Case "LABEL"
+            HandleBeforeDoubleClick = HandleLabelParamDoubleClick(Target)
+    End Select
+End Function
+
+Private Function HandleJumpParamDoubleClick(ByVal Target As Range, ByVal cmd As String) As Boolean
+    Dim ws As Worksheet
+    Set ws = Target.Worksheet
+
+    Dim targetRow As Long
+    targetRow = modDevTools.ResolveLabelTargetRow(ws, CStr(Target.value))
+    If targetRow = 0 Then
+        Application.StatusBar = "Script Assist: target LABEL not found."
+        HandleJumpParamDoubleClick = True
+        Exit Function
+    End If
+
+    ScrollActiveWindowToRow targetRow
+
+    If cmd = "CALL" Then
+        m_lastCallNavSheetName = ws.name
+        m_lastCallNavSourceRow = Target.Row
+        m_lastCallNavTargetLabel = NormalizeLabelText(Target.value)
+    Else
+        ClearLastCallNavigation
+    End If
+
+    HandleJumpParamDoubleClick = True
+End Function
+
+Private Function HandleLabelParamDoubleClick(ByVal Target As Range) As Boolean
+    Dim ws As Worksheet
+    Set ws = Target.Worksheet
+
+    Dim labelName As String
+    labelName = NormalizeLabelText(Target.value)
+    If Len(labelName) = 0 Then Exit Function
+    If Len(m_lastCallNavTargetLabel) = 0 Then Exit Function
+    If ws.name <> m_lastCallNavSheetName Then Exit Function
+    If labelName <> m_lastCallNavTargetLabel Then Exit Function
+
+    Dim cmdCol As Long
+    cmdCol = ResolveCmdCol(ws)
+    If cmdCol = 0 Then Exit Function
+    If m_lastCallNavSourceRow <= 1 Then Exit Function
+
+    Dim sourceCmd As String
+    sourceCmd = NormalizeCmd(ws.Cells(m_lastCallNavSourceRow, cmdCol).value)
+    If sourceCmd <> "CALL" Then
+        Application.StatusBar = "Script Assist: source CALL is no longer valid."
+        HandleLabelParamDoubleClick = True
+        Exit Function
+    End If
+
+    Dim sourceLabel As String
+    sourceLabel = NormalizeLabelText(ws.Cells(m_lastCallNavSourceRow, cmdCol + 3).value)
+    If sourceLabel <> labelName Then
+        Application.StatusBar = "Script Assist: source CALL target changed."
+        HandleLabelParamDoubleClick = True
+        Exit Function
+    End If
+
+    ScrollActiveWindowToRow m_lastCallNavSourceRow
+    HandleLabelParamDoubleClick = True
+End Function
+
+Private Sub ScrollActiveWindowToRow(ByVal rowNum As Long)
+    If rowNum <= 0 Then Exit Sub
+
+    Dim scrollCol As Long
+    scrollCol = ActiveWindow.ScrollColumn
+    ActiveWindow.ScrollRow = rowNum
+    ActiveWindow.ScrollColumn = scrollCol
+End Sub
+
+Private Function NormalizeLabelText(ByVal rawValue As Variant) As String
+    NormalizeLabelText = UCase$(Trim$(SafeText(rawValue)))
+End Function
+
+Private Sub ClearLastCallNavigation()
+    m_lastCallNavSheetName = ""
+    m_lastCallNavSourceRow = 0
+    m_lastCallNavTargetLabel = ""
 End Sub
 
 Public Function GetClosestCommand(ByVal rawCmd As Variant) As String

@@ -1181,6 +1181,11 @@ Private Function Test_ParamSpecValidation() As Long
 
     ExpectBool "Validate SLEEP P3", True, modDevTools.ValidateLine("SLEEP", "", "", "1000"), fails
     ExpectBool "Reject SLEEP shifted P1", False, modDevTools.ValidateLine("SLEEP", "1000", "", ""), fails
+    ExpectBool "Validate NOTIFY seconds/message", True, modDevTools.ValidateLine("NOTIFY", "3", "", "done"), fails
+    ExpectBool "Validate NOTIFY default seconds", True, modDevTools.ValidateLine("NOTIFY", "", "", "done"), fails
+    ExpectBool "Validate NOTIFY wait for OK", True, modDevTools.ValidateLine("NOTIFY", "0", "", "done"), fails
+    ExpectBool "Reject NOTIFY non-numeric seconds", False, modDevTools.ValidateLine("NOTIFY", "abc", "", "done"), fails
+    ExpectBool "Allow NOTIFY literal pipe", True, modDevTools.ValidateLine("NOTIFY", "", "", "done|3"), fails
     ExpectBool "Validate TYPE P1/P3", True, modDevTools.ValidateLine("TYPE", "10", "", "hello"), fails
     ExpectBool "Reject TYPE shifted P2", False, modDevTools.ValidateLine("TYPE", "", "hello", ""), fails
     ExpectBool "Reject numeric literal mismatch", False, modDevTools.ValidateLine("MOVE", "10", "20", "later"), fails
