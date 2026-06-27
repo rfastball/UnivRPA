@@ -118,7 +118,7 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range) As Variant
                 textValue = HeaderText(cell)
             Else
                 textValue = cell.Text
-                If IsOverflowText(textValue) Then
+                If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(cell)) Then
                     textValue = GetSafeFormattedText(cell.Value, cell.NumberFormat)
                 End If
             End If
@@ -132,6 +132,11 @@ End Function
 Private Function HeaderText(ByVal cell As Range) As String
     If IsError(cell.Value) Or IsNull(cell.Value) Or IsEmpty(cell.Value) Then Exit Function
     HeaderText = CStr(cell.Value)
+End Function
+
+Private Function CellHasValue(ByVal cell As Range) As Boolean
+    If IsError(cell.Value) Or IsNull(cell.Value) Or IsEmpty(cell.Value) Then Exit Function
+    CellHasValue = (Len(CStr(cell.Value)) > 0)
 End Function
 
 Private Function IsOverflowText(ByVal textValue As String) As Boolean
