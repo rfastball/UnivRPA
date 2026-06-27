@@ -28,6 +28,7 @@ Public Sub Run_Flow_Diagnosis()
     Debug.Print "=== [Flow Diagnosis] Headless unit suite ==="
     failCount = failCount + Test_RunProgramSmoke()
     failCount = failCount + Test_FlowHappyPaths()
+    failCount = failCount + Test_ForeachRowExecution()
     failCount = failCount + Test_FlowNestedInteractions()
     failCount = failCount + Test_FlowNegativePaths()
     failCount = failCount + Test_MemoryResolverHeadless()
@@ -679,6 +680,103 @@ Private Function Test_FlowHappyPaths() As Long
     Test_FlowHappyPaths = fails
 End Function
 
+Private Function Test_ForeachRowExecution() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim ws As Worksheet
+    Dim sheetName As String
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Flow 2B] FOREACH_ROW table iteration ---"
+
+    sheetName = "FOREACH_DATA_TEST"
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets(sheetName).Delete
+    On Error GoTo ErrHandler
+    Application.DisplayAlerts = True
+
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = sheetName
+    ws.Range("A1:D1").value = Array("Code", "Rounded", "DateNarrow", "Note")
+    ws.Range("A2").NumberFormat = "@"
+    ws.Range("A2").value = "007"
+    ws.Range("B2").value = 10.5
+    ws.Range("B2").NumberFormat = "0"
+    ws.Range("C2").value = DateSerial(2024, 2, 1)
+    ws.Range("C2").NumberFormat = "yyyy-mm-dd"
+    ws.Columns("C").ColumnWidth = 1
+    ws.Range("D2").value = "first"
+    ws.Range("A3:D3").value = Array("B", 20, DateSerial(2024, 2, 2), "skip")
+    ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), "break")
+
+    Dim arr(1 To 21, 1 To 5) As Variant
+    Call MakeCmd(arr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
+    Call MakeCmd(arr, 2, "IF", "{$RIDX}", "EQ", "1")
+    Call MakeCmd(arr, 3, "SET", "{first_code}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 4, "SET", "{first_rounded}", 0, "{$ROW.Rounded}")
+    Call MakeCmd(arr, 5, "SET", "{first_date}", 0, "{$ROW.DateNarrow}")
+    Call MakeCmd(arr, 6, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 7, "SET", "{last_code}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 8, "SET", "{last_idx}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 9, "IF", "{$ROW.Code}", "EQ", "B")
+    Call MakeCmd(arr, 10, "CONTINUE", 0, 0, "")
+    Call MakeCmd(arr, 11, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 12, "INC", "{processed}", 0, "")
+    Call MakeCmd(arr, 13, "REPEAT", "2", 0, "")
+    Call MakeCmd(arr, 14, "SET", "{nested_ridx}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 15, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr, 16, "IF", "{$ROW.Code}", "EQ", "C")
+    Call MakeCmd(arr, 17, "BREAK", 0, 0, "")
+    Call MakeCmd(arr, 18, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 19, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(arr, 20, "SET", "{after_loop}", 0, "done")
+    Call MakeCmd(arr, 21, "EXIT", 0, 0, "")
+
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "first_code", "007", fails
+    ExpectVar "first_rounded", "11", fails
+    ExpectVar "first_date", "2024-02-01", fails
+    ExpectVar "last_code", "C", fails
+    ExpectVar "last_idx", "3", fails
+    ExpectVar "processed", "2", fails
+    ExpectVar "nested_ridx", "3", fails
+    ExpectVar "after_loop", "done", fails
+    ExpectLoopDepth 0, fails
+
+    ws.Range("A2:D4").ClearContents
+    Dim emptyArr(1 To 5, 1 To 5) As Variant
+    Call MakeCmd(emptyArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
+    Call MakeCmd(emptyArr, 2, "SET", "{empty_body}", 0, "bad")
+    Call MakeCmd(emptyArr, 3, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(emptyArr, 4, "SET", "{empty_after}", 0, "yes")
+    Call MakeCmd(emptyArr, 5, "EXIT", 0, 0, "")
+    result = RunProgram(emptyArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "empty_body", "", fails
+    ExpectVar "empty_after", "yes", fails
+    ExpectLoopDepth 0, fails
+
+CleanUp:
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    Test_ForeachRowExecution = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "FOREACH_ROW test", "no error", Err.Description
+    Resume CleanUp
+End Function
+
 Private Function Test_FlowNestedInteractions() As Long
     Dim fails As Long
     Dim trace() As Long
@@ -908,7 +1006,7 @@ End Sub
 
 Private Function Test_ScriptProgramModel() As Long
     Dim fails As Long
-    Dim arr(1 To 24, 1 To 5) As Variant
+    Dim arr(1 To 26, 1 To 5) As Variant
 
     Call MakeCmd(arr, 1, "> IF", "1", "EQ", "0")
     Call MakeCmd(arr, 2, "TYPE", 0, 0, "if-body")
@@ -934,6 +1032,8 @@ Private Function Test_ScriptProgramModel() As Long
     Call MakeCmd(arr, 22, "> # not comment", 0, 0, "")
     Call MakeCmd(arr, 23, ">", 0, 0, "")
     Call MakeCmd(arr, 24, "", 0, 0, "")
+    Call MakeCmd(arr, 25, "FOREACH_ROW", "Book", "Sheet", "")
+    Call MakeCmd(arr, 26, "END_FOREACH", 0, 0, "")
 
     Dim program As clsScriptProgram
     Set program = New clsScriptProgram
@@ -949,7 +1049,7 @@ Private Function Test_ScriptProgramModel() As Long
         LogPass "Program ValidateLabels"
     End If
 
-    ExpectLong "TotalLines", 24, program.totalLines, fails
+    ExpectLong "TotalLines", 26, program.totalLines, fails
     ExpectLong "SheetRowFromRuntimeLine", 5, program.SheetRowFromRuntimeLine(1), fails
     ExpectLong "RuntimeLineFromSheetRow", 1, program.RuntimeLineFromSheetRow(5), fails
     ExpectText "CmdAt indent", "IF", program.CmdAt(1), fails
@@ -964,6 +1064,8 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectLong "END_WHILE -> WHILE", 6, program.FindBlockPair(7, "WHILE", -1), fails
     ExpectLong "REPEAT -> END_REPEAT", 9, program.FindBlockPair(8, "REPEAT", 1), fails
     ExpectLong "END_REPEAT -> REPEAT", 8, program.FindBlockPair(9, "REPEAT", -1), fails
+    ExpectLong "FOREACH_ROW -> END_FOREACH", 26, program.FindBlockPair(25, "FOREACH", 1), fails
+    ExpectLong "END_FOREACH -> FOREACH_ROW", 25, program.FindBlockPair(26, "FOREACH", -1), fails
     ExpectLong "FindBlockPair rejects SELECT", CMD_ERROR, program.FindBlockPair(10, "SELECT", 1), fails
 
     Dim outerBlock As clsSelectBlock

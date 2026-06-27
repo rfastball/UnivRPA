@@ -148,13 +148,13 @@ Private Function P(ByVal Meaning As String, ByVal dtype As eDataType, _
 End Function
 
 '==============================================================================
-' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE 신규 = 33개)
+' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE + FOREACH_ROW = 35개)
 '   초기값: 설계문서 부록 A / A.1 / A.3
 '   RAW 슬롯은 둘뿐: lvalue(SET/INC/DEC P1), 연산자(IF/WHILE P2). 그 외 RESOLVE.
 '==============================================================================
 Private Sub BuildRegistry()
 
-    '--- [FLOW] 16개 ------------------------------------------------------------
+    '--- [FLOW] 18개 ------------------------------------------------------------
     Reg "IF", FLOW, STARTER, "IF", clrFLOW, FULLROW, _
         P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
     Reg "ELSE", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW
@@ -165,6 +165,9 @@ Private Sub BuildRegistry()
     Reg "REPEAT", FLOW, STARTER, "REPEAT", clrFLOW, FULLROW, _
         P("반복횟수(0/빈값=무한)", DT_NUM, RESOLVE, False)
     Reg "END_REPEAT", FLOW, ENDER, "REPEAT", clrFLOW, FULLROW
+    Reg "FOREACH_ROW", FLOW, STARTER, "FOREACH", clrFLOW, FULLROW, _
+        P("워크북 이름/경로", DT_STR, RESOLVE, True), P("시트 또는 시트!주소", DT_STR, RESOLVE, True)
+    Reg "END_FOREACH", FLOW, ENDER, "FOREACH", clrFLOW, FULLROW
     Reg "SELECT", FLOW, STARTER, "SELECT", clrFLOW, FULLROW, _
         P("대상값", DT_STR, RESOLVE, True)
     Reg "CASE", FLOW, MIDBLOCK, "SELECT", clrFLOW, FULLROW, _

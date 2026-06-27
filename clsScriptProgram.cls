@@ -117,7 +117,7 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
     ValidateLineRange startLine
 
     group = UCase$(Trim$(group))
-    If group <> "IF" And group <> "WHILE" And group <> "REPEAT" Then
+    If group <> "IF" And group <> "WHILE" And group <> "REPEAT" And group <> "FOREACH" Then
         FindBlockPair = LINE_NOT_FOUND
         Exit Function
     End If

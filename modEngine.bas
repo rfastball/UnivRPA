@@ -358,7 +358,19 @@ Private Function ResolveToken(ByVal inner As String) As String
         Case "$SPACE": ResolveToken = " ": Exit Function
         Case "$CLIP":  ResolveToken = modWinAPI.GetClipboardText(): Exit Function
         Case "$LOOP":  ResolveToken = CStr(modContext.GetActiveLoopIteration()): Exit Function
+        Case "$RIDX"
+            If modContext.GetActiveForeachOrdinal() > 0 Then
+                ResolveToken = CStr(modContext.GetActiveForeachOrdinal())
+            Else
+                ResolveToken = "{" & inner & "}"
+            End If
+            Exit Function
     End Select
+
+    If Left$(up, 5) = "$ROW." Then
+        ResolveToken = ResolveRowToken(Mid$(key, 6), inner)
+        Exit Function
+    End If
 
     ' [시스템 동적 토큰] {$PIXEL:x,y} (좌표는 이미 해석됨)
     If Left$(up, 7) = "$PIXEL:" Then
@@ -379,6 +391,31 @@ CleanUp:
     Exit Function
 ErrHandler:
     Err.Raise Err.Number, "modEngine.ResolveToken", Err.Description
+    Resume CleanUp
+End Function
+
+Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As String) As String
+    On Error GoTo ErrHandler
+
+    Dim tbl As Object
+    Set tbl = modContext.ActiveForeachTable()
+    If tbl Is Nothing Or modContext.ActiveForeachRow() <= 0 Then
+        ResolveRowToken = "{" & originalInner & "}"
+        Exit Function
+    End If
+
+    Dim value As Variant
+    value = tbl.GetValue(modContext.ActiveForeachRow(), colName)
+    If IsError(value) Or IsNull(value) Or IsEmpty(value) Then
+        ResolveRowToken = ""
+    Else
+        ResolveRowToken = CStr(value)
+    End If
+
+CleanUp:
+    Exit Function
+ErrHandler:
+    Err.Raise Err.Number, "modEngine.ResolveRowToken", Err.Description
     Resume CleanUp
 End Function
 

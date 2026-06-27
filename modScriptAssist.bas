@@ -207,6 +207,11 @@ Public Sub ShowParamHint(ByVal Target As Range)
         Exit Sub
     End If
 
+    If def.Canonical = "FOREACH_ROW" And Target.Column = cmdCell.Column + 1 Then
+        Application.StatusBar = modTableSource.OpenWorkbookHint(CStr(Target.value))
+        Exit Sub
+    End If
+
     Application.StatusBar = FormatParamHint(def)
 End Sub
 

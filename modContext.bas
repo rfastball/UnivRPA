@@ -20,13 +20,15 @@ Private IsRunning As Boolean        ' 현재 매크로 실행 중 여부
 
 ' [3] 루프 런타임: 활성 루프 스택 ({$LOOP}/BREAK/CONTINUE 통합)
 Private Type LoopFrame
-    kind As String      ' "WHILE" | "REPEAT"
+    kind As String      ' "WHILE" | "REPEAT" | "FOREACH"
     headerLine As Long  ' 점프 복귀 대상 (헤더 줄)
     endLine As Long     ' 종료(ENDER) 줄. BREAK 대상 = endLine + 1
     iteration As Long   ' 1-base 현재 회차 -> {$LOOP}
     maxCount As Long    ' REPEAT 전용 최대 횟수 (0=WHILE 또는 무한 REPEAT)
+    dataRow As Long     ' FOREACH 전용: 현재 테이블 내부 행 인덱스
 End Type
 Private LoopStack() As LoopFrame
+Private LoopTables() As Object      ' LoopStack과 같은 인덱스의 FOREACH 테이블 스냅샷
 Private LoopTop As Long             ' 0 = 빈 스택, n = 활성 프레임 개수
 
 '==============================================================================
@@ -129,6 +131,7 @@ End Function
 ' [초기화] 스택 비우기
 Public Sub LoopReset()
     Erase LoopStack
+    Erase LoopTables
     LoopTop = 0
 End Sub
 
@@ -141,21 +144,26 @@ End Function
 Public Sub LoopPush(ByVal kind As String, ByVal headerLine As Long, ByVal endLine As Long, ByVal maxCount As Long)
     LoopTop = LoopTop + 1
     ReDim Preserve LoopStack(1 To LoopTop)
+    ReDim Preserve LoopTables(1 To LoopTop)
     LoopStack(LoopTop).kind = kind
     LoopStack(LoopTop).headerLine = headerLine
     LoopStack(LoopTop).endLine = endLine
     LoopStack(LoopTop).iteration = 1
     LoopStack(LoopTop).maxCount = maxCount
+    Set LoopTables(LoopTop) = Nothing
 End Sub
 
 ' [이탈] 최상위 루프 프레임 POP
 Public Sub LoopPop()
     If LoopTop > 0 Then
+        Set LoopTables(LoopTop) = Nothing
         LoopTop = LoopTop - 1
         If LoopTop > 0 Then
             ReDim Preserve LoopStack(1 To LoopTop)
+            ReDim Preserve LoopTables(1 To LoopTop)
         Else
             Erase LoopStack
+            Erase LoopTables
         End If
     End If
 End Sub
@@ -169,6 +177,56 @@ End Function
 Public Sub LoopIncrement()
     If LoopTop > 0 Then LoopStack(LoopTop).iteration = LoopStack(LoopTop).iteration + 1
 End Sub
+
+Public Sub LoopPushForeach(ByVal headerLine As Long, ByVal endLine As Long, ByVal tbl As Object)
+    If tbl Is Nothing Then Err.Raise 5, "modContext.LoopPushForeach", "FOREACH table is required."
+
+    LoopPush "FOREACH", headerLine, endLine, 0
+    Set LoopTables(LoopTop) = tbl
+    LoopStack(LoopTop).dataRow = tbl.FirstDataRow
+End Sub
+
+Public Function ForeachAdvance() As Boolean
+    If LoopTop = 0 Then Exit Function
+    If LoopStack(LoopTop).kind <> "FOREACH" Then Exit Function
+    If LoopTables(LoopTop) Is Nothing Then Exit Function
+
+    If LoopStack(LoopTop).dataRow < LoopTables(LoopTop).RowCount Then
+        LoopStack(LoopTop).dataRow = LoopStack(LoopTop).dataRow + 1
+        LoopStack(LoopTop).iteration = LoopStack(LoopTop).iteration + 1
+        ForeachAdvance = True
+    End If
+End Function
+
+Public Function GetActiveForeachOrdinal() As Long
+    Dim i As Long
+    For i = LoopTop To 1 Step -1
+        If LoopStack(i).kind = "FOREACH" Then
+            GetActiveForeachOrdinal = LoopStack(i).iteration
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function ActiveForeachRow() As Long
+    Dim i As Long
+    For i = LoopTop To 1 Step -1
+        If LoopStack(i).kind = "FOREACH" Then
+            ActiveForeachRow = LoopStack(i).dataRow
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function ActiveForeachTable() As Object
+    Dim i As Long
+    For i = LoopTop To 1 Step -1
+        If LoopStack(i).kind = "FOREACH" Then
+            Set ActiveForeachTable = LoopTables(i)
+            Exit Function
+        End If
+    Next i
+End Function
 
 ' [접근자] 최상위 프레임 필드 읽기 (빈 스택이면 기본값)
 Public Function LoopTopKind() As String

@@ -7,7 +7,7 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' @desc 흐름제어 명령어(분기/반복/점프) 16종 디스패치 실행 담당
+' @desc 흐름제어 명령어(분기/반복/점프) 18종 디스패치 실행 담당
 ' @depends modEngine, modContext, modCmdRegistry, ICommand
 Option Explicit
 
@@ -130,6 +130,41 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 ElseIf modContext.GetActiveLoopIteration() < modContext.LoopTopMax() Then
                     modContext.LoopIncrement
                     ICommand_Execute = rHead + 1   ' 본문 재실행 (REPEAT 줄은 1회만)
+                Else
+                    modContext.LoopPop
+                    ICommand_Execute = CMD_NEXT_LINE
+                End If
+            Else
+                ICommand_Execute = CMD_ERROR
+            End If
+
+         '--- [Loop] FOREACH_ROW / END_FOREACH (table snapshot cursor) ---
+         Case "FOREACH_ROW"
+            Dim fEnd As Long
+            fEnd = modEngine.ActiveProgram().FindBlockPair(R, "FOREACH", 1)
+            If fEnd <= 0 Then
+                ICommand_Execute = CMD_ERROR
+                GoTo CleanUp
+            End If
+
+            Dim tbl As clsTableSnapshot
+            Set tbl = modTableSource.SnapshotSource(args(1), args(2))
+
+            If tbl.RowCount < tbl.FirstDataRow Then
+                modContext.LogStatus "FOREACH_ROW: 0행"
+                ICommand_Execute = fEnd + 1
+            Else
+                modContext.LoopPushForeach R, fEnd, tbl
+                ICommand_Execute = CMD_NEXT_LINE
+            End If
+
+         Case "END_FOREACH"
+            Dim fHead As Long
+            fHead = modEngine.ActiveProgram().FindBlockPair(R, "FOREACH", -1)
+            If fHead > 0 And modContext.LoopDepth() > 0 And _
+               modContext.LoopTopKind() = "FOREACH" And modContext.LoopTopHeader() = fHead Then
+                If modContext.ForeachAdvance() Then
+                    ICommand_Execute = fHead + 1
                 Else
                     modContext.LoopPop
                     ICommand_Execute = CMD_NEXT_LINE

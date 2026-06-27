@@ -276,3 +276,29 @@ END_IF
 ---
 
 다음: 포맷터·실시간 검증·단축키 등 작성을 돕는 도구는 **[03. 작성 보조 도구](03-authoring-tools.md)** 를 참고하세요.
+
+---
+
+## FOREACH_ROW data iteration
+
+`FOREACH_ROW` reads a worksheet or range from an open workbook or read-only external workbook into a memory snapshot, then loops over each data row. The first row is treated as headers, and iteration starts at the next row.
+
+| Command | P1 (C) | P2 (D) | P3 (E) | Description |
+|--------|--------|--------|--------|-------------|
+| `FOREACH_ROW` | workbook name/path (str, RESOLVE, required) | sheet or `sheet!address` (str, RESOLVE, required) |  | Start table-row iteration |
+| `END_FOREACH` |  |  |  | Advance to the next row or finish the loop |
+
+- If P1 contains `\`, `/`, or `:`, it is treated as a path and opened read-only. If the same file name is already open, the open workbook is reused and not closed.
+- If P1 is not a path, open workbook names are searched by case-insensitive partial match. Zero or multiple matches stop with an error.
+- P2 supports `Sheet1`, `Sheet1!A1`, and `Sheet1!A1:C10`.
+- Large explicit ranges are clamped to the worksheet's actual used range.
+- Cell values are read from `.Text` to preserve visible strings. Narrow-column `####` cells are reconstructed from `Value` and `NumberFormat`.
+
+### FOREACH_ROW tokens
+
+| Token | Value |
+|------|-------|
+| `{$ROW.column}` | Current row value for the matching header |
+| `{$RIDX}` | Current `FOREACH_ROW` iteration number, 1-based |
+
+`{$LOOP}` keeps its existing meaning: the innermost active loop iteration. Inside a `WHILE` or `REPEAT` nested within `FOREACH_ROW`, use `{$RIDX}` for the row index.
