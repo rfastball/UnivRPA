@@ -457,7 +457,7 @@ End Function
 ' @desc 좌변/연산자/우변 받아 조건 참거짓 반환
 Public Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
     On Error GoTo ErrHandler
-    CheckIfSyntax = modActions.Action_CheckCondition(v1, UCase(Trim(op)), v2)
+    CheckIfSyntax = modCondition.EvaluateCondition(v1, UCase(Trim(op)), v2)
 
 CleanUp:
     Exit Function
@@ -505,7 +505,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
         ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
         If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then
             fallbackLine = caseLine
-        ElseIf modActions.Action_CheckCondition(selVal, "EQ", caseVal) Then
+        ElseIf modCondition.EvaluateCondition(selVal, "EQ", caseVal) Then
             ResolveSelectTarget = caseLine + 1
             GoTo CleanUp
         End If

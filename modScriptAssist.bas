@@ -168,6 +168,7 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
     If modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value) _
        And modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row) Then
         ClearAssistNote Target
+        ClearStatusBar
     Else
         Dim suggestion As String
         Dim def As CmdDef
@@ -274,6 +275,8 @@ Public Sub ApplyErrorNote(ByVal Target As Range, ByVal rawCmd As Variant, ByVal 
     Else
         Application.StatusBar = Replace(body, vbCrLf, " ")
     End If
+
+    Application.StatusBar = Replace(body, vbCrLf, " ")
 End Sub
 
 Public Sub ClearAssistNote(ByVal Target As Range)
@@ -389,6 +392,9 @@ Private Function BuildErrorMessage(ByVal rawCmd As Variant, ByVal suggestion As 
         BuildErrorMessage = ASSIST_PREFIX & vbCrLf & "Unknown command: " & cmd
     Else
         BuildErrorMessage = ASSIST_PREFIX & vbCrLf & "Invalid command: " & cmd
+        Dim detail As String
+        detail = modDevTools.LastValidationMessage()
+        If Len(detail) > 0 Then BuildErrorMessage = BuildErrorMessage & vbCrLf & detail
     End If
 
     If Len(suggestion) > 0 Then

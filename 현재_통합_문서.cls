@@ -57,17 +57,25 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     cmdCol = modScriptAssist.ResolveCmdCol(ws)
     If cmdCol = 0 Then Exit Sub
 
-    Dim commandChanges As Range
-    Set commandChanges = Intersect(Target, ws.Columns(cmdCol))
-    If commandChanges Is Nothing Then Exit Sub
-    Set commandChanges = Intersect(commandChanges, ws.UsedRange)
-    If commandChanges Is Nothing Then Exit Sub
-    If commandChanges.Cells.CountLarge > MAX_VALIDATE_CELLS Then Exit Sub
+    Dim assistChanges As Range
+    Set assistChanges = Intersect(Target, ws.Range(ws.Columns(cmdCol), ws.Columns(cmdCol + 3)))
+    If assistChanges Is Nothing Then Exit Sub
+    Set assistChanges = Intersect(assistChanges, ws.UsedRange)
+    If assistChanges Is Nothing Then Exit Sub
+    If assistChanges.Cells.CountLarge > MAX_VALIDATE_CELLS Then Exit Sub
+
+    Dim rowsToValidate As Object
+    Set rowsToValidate = CreateObject("Scripting.Dictionary")
 
     Dim cell As Range
-    For Each cell In commandChanges.Cells
-        If cell.Row > 1 Then modScriptAssist.ValidateCommandCell cell
+    For Each cell In assistChanges.Cells
+        If cell.Row > 1 Then rowsToValidate(CStr(cell.Row)) = True
     Next cell
+
+    Dim key As Variant
+    For Each key In rowsToValidate.Keys
+        modScriptAssist.ValidateCommandCell ws.Cells(CLng(key), cmdCol)
+    Next key
 End Sub
 
 

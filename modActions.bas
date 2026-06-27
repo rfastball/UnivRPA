@@ -456,129 +456,13 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [Logic] 조건 비교 (개선됨)
+' [Compatibility] 조건 비교는 modCondition으로 이관됨.
 Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
-    On Error GoTo ErrHandler
-    Dim d1 As Double, d2 As Double
-    Dim s1 As String, s2 As String
-    Dim isNum As Boolean
-    Dim isExplicit As Boolean
-    Dim q1 As Boolean, q2 As Boolean
-    
-    ' 1. 입력값 정리
-    v1 = Trim(v1)
-    v2 = Trim(v2)
-    
-    ' 2. 명시적 텍스트(쌍따옴표) 감지 및 제거
-    If Left(v1, 1) = """" And Right(v1, 1) = """" And Len(v1) >= 2 Then
-        s1 = Mid(v1, 2, Len(v1) - 2)
-        q1 = True
-    Else
-        s1 = v1
-    End If
-    
-    If Left(v2, 1) = """" And Right(v2, 1) = """" And Len(v2) >= 2 Then
-        s2 = Mid(v2, 2, Len(v2) - 2)
-        q2 = True
-    Else
-        s2 = v2
-    End If
-    
-    ' 3. 모드 결정
-    ' 하나라도 쌍따옴표가 있으면 -> 텍스트 모드 (와일드카드 지원, 대소문자 구분)
-    If q1 Or q2 Then
-        isExplicit = True
-        isNum = False
-    Else
-        ' 둘 다 따옴표가 없으면 -> 숫자 변환 시도
-        ' [Smart Check] "0123" 처럼 0으로 시작하는 정수형 텍스트(0#*)는 문자열로 취급 (0.xx는 제외)
-        If IsNumeric(s1) And IsNumeric(s2) And Not (s1 Like "0#*" Or s2 Like "0#*") Then
-            d1 = val(s1)
-            d2 = val(s2)
-            isNum = True
-        Else
-            ' 변환 실패 또는 식별자형 숫자(0123 등) -> 암묵적 텍스트 모드
-            isNum = False
-            s1 = UCase(s1)
-            s2 = UCase(s2)
-        End If
-    End If
-    
-    op = UCase(Trim(op))
-
-    Select Case op
-        ' [Equal] 정확히 같다 (EQ 권장, *, ? 도 리터럴로 취급)
-        ' Excel 셀에는 ==를 그대로 입력할 수 없고, 사용하려면 '==로 입력해야 한다.
-        Case "EQ", "=="
-            If isNum Then
-                Action_CheckCondition = (d1 = d2)
-            Else
-                ' 명시 텍스트=대소문자 구분(원본), 암묵 텍스트=UCase 정규화됨
-                Action_CheckCondition = (s1 = s2)
-            End If
-
-        ' [Not Equal] 다르다 (!=)
-        Case "!="
-            If isNum Then
-                Action_CheckCondition = (d1 <> d2)
-            Else
-                Action_CheckCondition = (s1 <> s2)
-            End If
-
-        ' [Greater Than] 크다 (>)
-        Case ">"
-            If isNum Then Action_CheckCondition = (d1 > d2) Else Action_CheckCondition = (s1 > s2)
-
-        ' [Less Than] 작다 (<)
-        Case "<"
-            If isNum Then Action_CheckCondition = (d1 < d2) Else Action_CheckCondition = (s1 < s2)
-
-        ' [Greater or Equal] 크거나 같다 (>=)
-        Case ">="
-            If isNum Then Action_CheckCondition = (d1 >= d2) Else Action_CheckCondition = (s1 >= s2)
-
-        ' [Less or Equal] 작거나 같다 (<=)
-        Case "<="
-            If isNum Then Action_CheckCondition = (d1 <= d2) Else Action_CheckCondition = (s1 <= s2)
-
-        ' [Pattern] LIKE (* 임의 / ? 한글자 / # 한숫자) - 와일드카드는 여기서만
-        Case "LIKE"
-            Action_CheckCondition = (s1 Like s2)
-
-        ' [Starts With] ~로 시작
-        Case "STARTS"
-            Action_CheckCondition = (Len(s2) > 0 And Left$(s1, Len(s2)) = s2)
-
-        ' [Ends With] ~로 끝
-        Case "ENDS"
-            Action_CheckCondition = (Len(s2) > 0 And Right$(s1, Len(s2)) = s2)
-
-        ' [String Contains] 포함 (CONTAINS)
-        Case "CONTAINS"
-            ' 명시적이면 BinaryCompare(대소문자 구분), 암묵적이면 TextCompare(이미 UCase됨)
-            If isExplicit Then
-                Action_CheckCondition = (InStr(1, s1, s2, vbBinaryCompare) > 0)
-            Else
-                Action_CheckCondition = (InStr(1, s1, s2, vbTextCompare) > 0)
-            End If
-
-        Case Else
-            ' 알 수 없는 연산자 (맨 '=' 포함) -> False
-            Action_CheckCondition = False
-    End Select
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modActions.Action_CheckCondition", Err.Description
-    Resume CleanUp
+    Action_CheckCondition = modCondition.EvaluateCondition(v1, op, v2)
 End Function
 
 Public Function IsConditionOperator(ByVal op As String) As Boolean
-    Select Case UCase$(Trim$(op))
-        Case "EQ", "==", "!=", ">", "<", ">=", "<=", "LIKE", "STARTS", "ENDS", "CONTAINS"
-            IsConditionOperator = True
-    End Select
+    IsConditionOperator = modCondition.IsConditionOperator(op)
 End Function
 
 ' [알림 표시] 비차단형 메시지박스 (실행 흐름을 막지 않음)

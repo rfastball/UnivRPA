@@ -33,6 +33,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + Test_FlowNestedInteractions()
     failCount = failCount + Test_FlowNegativePaths()
     failCount = failCount + Test_MemoryResolverHeadless()
+    failCount = failCount + Test_ParamSpecValidation()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + Test_RegistryDispatchSync()
@@ -375,7 +376,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     '==========================================================================
-    ' [Test 11] 조건 연산자 단위 검증 (Action_CheckCondition 직접 호출)
+    ' [Test 11] 조건 연산자 단위 검증 (modCondition 직접 호출)
     '   EQ 정확비교 / LIKE 패턴 / STARTS / ENDS / CONTAINS / 맨 '=' 금지
     '   Excel 셀에는 ==를 그대로 입력할 수 없고, 사용하려면 '==로 입력해야 한다.
     '==========================================================================
@@ -516,7 +517,7 @@ End Function
 Private Sub AssertCond(ByVal name As String, ByVal v1 As String, ByVal op As String, _
                        ByVal v2 As String, ByVal expected As Boolean, ByRef failCount As Long)
     Dim actual As Boolean
-    actual = modActions.Action_CheckCondition(v1, op, v2)
+    actual = modCondition.EvaluateCondition(v1, op, v2)
     If actual = expected Then
         LogPass "Cond " & name
     Else
@@ -1078,6 +1079,28 @@ Private Function Test_MemoryResolverHeadless() As Long
     ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17), fails
 
     Test_MemoryResolverHeadless = fails
+End Function
+
+Private Function Test_ParamSpecValidation() As Long
+    Dim fails As Long
+
+    Debug.Print "--- [Flow 6] ParamSpec validation ---"
+
+    ExpectBool "Validate SLEEP P3", True, modDevTools.ValidateLine("SLEEP", "", "", "1000"), fails
+    ExpectBool "Reject SLEEP shifted P1", False, modDevTools.ValidateLine("SLEEP", "1000", "", ""), fails
+    ExpectBool "Validate TYPE P1/P3", True, modDevTools.ValidateLine("TYPE", "10", "", "hello"), fails
+    ExpectBool "Reject TYPE shifted P2", False, modDevTools.ValidateLine("TYPE", "", "hello", ""), fails
+    ExpectBool "Reject numeric literal mismatch", False, modDevTools.ValidateLine("MOVE", "10", "20", "later"), fails
+    ExpectBool "Allow numeric token", True, modDevTools.ValidateLine("MOVE", "{x}", "20", ""), fails
+    ExpectBool "Reject unused slot", False, modDevTools.ValidateLine("KEY", "ENTER", "unused", ""), fails
+    ExpectBool "Validate IF operator", True, modDevTools.ValidateLine("IF", "abc", "EQ", "abc"), fails
+    ExpectBool "Reject IF operator", False, modDevTools.ValidateLine("IF", "abc", "EQUALS", "abc"), fails
+    ExpectBool "Validate SET memory lvalue", True, modDevTools.ValidateLine("SET", "{name}", "", "value"), fails
+    ExpectBool "Validate SET clipboard lvalue", True, modDevTools.ValidateLine("SET", "{$CLIP}", "", "value"), fails
+    ExpectBool "Reject read-only lvalue", False, modDevTools.ValidateLine("INC", "{$LOOP}", "", ""), fails
+    ExpectBool "Reject raw label token", False, modDevTools.ValidateLine("LABEL", "", "", "{dynamic}"), fails
+
+    Test_ParamSpecValidation = fails
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)

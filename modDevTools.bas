@@ -3,6 +3,8 @@
 ' @depends modCmdRegistry
 Option Explicit
 
+Private m_lastValidationMessage As String
+
 Public Sub FormatRPAScript()
 Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim prevScreenUpdating As Boolean
@@ -51,6 +53,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     With ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 6))
         .Font.name = "돋움체"
         .Font.Size = 10
+        .Font.Bold = False
         .Interior.ColorIndex = xlNone
 
         ' --- [줄바꿈 방지 및 행 정렬] ---
@@ -75,6 +78,9 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
         .Borders(xlEdgeRight).LineStyle = xlNone
         .Borders(xlEdgeLeft).LineStyle = xlNone
     End With
+
+    ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 1)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(2, 2), ws.Cells(lastRow, 6)).HorizontalAlignment = xlLeft
 
     ' 2. [추가] 행 높이 일괄 고정 (IDE의 일정한 간격 구현)
     ' 18~20 정도가 Consolas 10pt에 가장 보기 좋은 높이입니다.
@@ -148,47 +154,172 @@ End Sub
 
 ' [신규] 헤더가 없으면 생성
 Public Sub EnsureHeaders(ws As Worksheet)
-    If ws.Cells(1, 2).value = "" Then
-        Dim headers As Variant
-        headers = Array("ROW", "COMMAND", "PARAM1", "PARAM2", "PARAM3", "COMMENT")
+    Dim headers As Variant
+    headers = Array("ROW", "COMMAND", "PARAM1", "PARAM2", "PARAM3", "COMMENT")
 
-        With ws.Range("A1:F1")
-            .value = headers
-            .Font.name = "돋움체"
-            .Font.Size = 10
-            .Font.Bold = True
-            .Interior.color = RGB(240, 240, 240)
-            .HorizontalAlignment = xlCenter
-            .Borders.LineStyle = xlContinuous
-        End With
-        ws.Columns("A").ColumnWidth = 5
-        ws.Columns("B").ColumnWidth = 35
-        ws.Columns("C:E").ColumnWidth = 15
-        ws.Columns("F").ColumnWidth = 30
-    End If
+    With ws.Range("A1:F1")
+        .value = headers
+        .Font.name = "돋움체"
+        .Font.Size = 10
+        .Font.Bold = True
+        .Font.color = vbBlack
+        .Interior.color = RGB(240, 240, 240)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Borders.LineStyle = xlContinuous
+    End With
+
+    ws.Columns("A").ColumnWidth = 5
+    ws.Columns("B").ColumnWidth = 35
+    ws.Columns("C:E").ColumnWidth = 15
+    ws.Columns("F").ColumnWidth = 30
 End Sub
 
 ' [파생] 명령어 및 파라미터 유효성 검사 → GetCmdDef 게이트로 환원
 Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As Variant) As Boolean
+    m_lastValidationMessage = ""
+
     Dim def As CmdDef
     Set def = modCmdRegistry.GetCmdDef(cmd)
 
     ' 1. 명령어 존재 여부 = 레지스트리 등록 여부
     If def Is Nothing Then
+        SetValidationError "Unknown command: " & modCmdRegistry.NormalizeCommand(cmd)
         ValidateLine = False
         Exit Function
     End If
 
     ValidateLine = True
 
-    ' 2. 조건 연산자: 허용 목록 기준
-    '    연산자 슬롯(P2=RAW)을 가진 명령어(IF/WHILE)에 한해 검사
-    If Not def.p2 Is Nothing Then
-        If def.p2.IsRaw Then
-            If Not modActions.IsConditionOperator(CStr(p2)) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 1, p1) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 2, p2) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 3, p3) Then ValidateLine = False
+
+    If Not ValidateParamShift(def, p1, p2, p3) Then ValidateLine = False
+End Function
+
+Public Function LastValidationMessage() As String
+    LastValidationMessage = m_lastValidationMessage
+End Function
+
+Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal rawValue As Variant) As Boolean
+    ValidateParamSlot = True
+
+    Dim text As String
+    text = ParamText(rawValue)
+
+    Dim spec As ParamSpec
+    Set spec = def.Param(idx)
+
+    If spec Is Nothing Then
+        If Len(text) > 0 Then
+            SetValidationError def.Canonical & " does not use P" & idx & "."
+            ValidateParamSlot = False
+        End If
+        Exit Function
+    End If
+
+    If spec.Required And Len(text) = 0 Then
+        SetValidationError def.Canonical & " requires P" & idx & " (" & spec.Meaning & ")."
+        ValidateParamSlot = False
+        Exit Function
+    End If
+
+    If Len(text) = 0 Then Exit Function
+
+    If spec.IsRaw Then
+        If IsConditionOperatorSlot(def, idx) Then
+            If Not modCondition.IsConditionOperator(text) Then
+                SetValidationError "Invalid condition operator: " & text
+                ValidateParamSlot = False
+            End If
+        ElseIf IsMemoryLValueSlot(def, idx) Then
+            If Not IsWritableLValue(text) Then
+                SetValidationError "Invalid writable target: " & text
+                ValidateParamSlot = False
+            End If
+        ElseIf ContainsTokenSyntax(text) Then
+            SetValidationError def.Canonical & " P" & idx & " must be raw text, not a token."
+            ValidateParamSlot = False
+        End If
+    End If
+
+    If spec.DataType = DT_NUM Then
+        If Not ContainsTokenSyntax(text) Then
+            If Not IsNumeric(text) Then
+                SetValidationError def.Canonical & " P" & idx & " must be numeric."
+                ValidateParamSlot = False
+            End If
         End If
     End If
 End Function
+
+Private Function ValidateParamShift(ByVal def As CmdDef, ByVal p1 As Variant, ByVal p2 As Variant, ByVal p3 As Variant) As Boolean
+    ValidateParamShift = True
+
+    Dim vals(1 To 3) As String
+    vals(1) = ParamText(p1)
+    vals(2) = ParamText(p2)
+    vals(3) = ParamText(p3)
+
+    Dim idx As Long, later As Long
+    For idx = 1 To 2
+        Dim spec As ParamSpec
+        Set spec = def.Param(idx)
+        If Not spec Is Nothing Then
+            If spec.Required And Len(vals(idx)) = 0 Then
+                For later = idx + 1 To 3
+                    If Len(vals(later)) > 0 Then
+                        SetValidationError def.Canonical & " P" & idx & " is blank, but a later parameter has a value."
+                        ValidateParamShift = False
+                        Exit Function
+                    End If
+                Next later
+            End If
+        End If
+    Next idx
+End Function
+
+Private Function ParamText(ByVal rawValue As Variant) As String
+    On Error GoTo SafeExit
+    If IsError(rawValue) Or IsNull(rawValue) Or IsEmpty(rawValue) Then Exit Function
+    ParamText = Trim$(CStr(rawValue))
+SafeExit:
+End Function
+
+Private Function ContainsTokenSyntax(ByVal text As String) As Boolean
+    ContainsTokenSyntax = (InStr(1, text, "{", vbTextCompare) > 0 Or InStr(1, text, "}", vbTextCompare) > 0)
+End Function
+
+Private Function IsConditionOperatorSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
+    IsConditionOperatorSlot = ((def.Canonical = "IF" Or def.Canonical = "WHILE") And idx = 2)
+End Function
+
+Private Function IsMemoryLValueSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
+    IsMemoryLValueSlot = ((def.Canonical = "SET" Or def.Canonical = "INC" Or def.Canonical = "DEC") And idx = 1)
+End Function
+
+Private Function IsWritableLValue(ByVal rawP1 As String) As Boolean
+    Dim s As String
+    s = Trim$(rawP1)
+    If Len(s) < 2 Then Exit Function
+    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
+
+    Dim inner As String
+    inner = Trim$(Mid$(s, 2, Len(s) - 2))
+    If Len(inner) = 0 Then Exit Function
+
+    If UCase$(inner) = "$CLIP" Then
+        IsWritableLValue = True
+    ElseIf Left$(inner, 1) <> "$" Then
+        IsWritableLValue = True
+    End If
+End Function
+
+Private Sub SetValidationError(ByVal msg As String)
+    If Len(m_lastValidationMessage) = 0 Then m_lastValidationMessage = msg
+End Sub
 
 Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
     ValidateSheetFlowAt = True
