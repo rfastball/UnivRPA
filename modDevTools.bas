@@ -469,7 +469,7 @@ Private Function HasLabelRoleWarning(ByVal program As clsScriptProgram, ByVal sh
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
-Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Integer, Optional isValid As Boolean = True, Optional isComment As Boolean = False, Optional hasWarning As Boolean = False)
+Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Long, Optional isValid As Boolean = True, Optional isComment As Boolean = False, Optional hasWarning As Boolean = False)
     Dim cmdCell As Range: Set cmdCell = rng.Cells(1, 1)
 
     '----------------------------------------------------------
