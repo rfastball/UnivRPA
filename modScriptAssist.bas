@@ -1,5 +1,5 @@
 ﻿Attribute VB_Name = "modScriptAssist"
-' @desc Script Assist: COMMAND validation, parameter hints, typo suggestions, and Assist-owned notes
+' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
 ' @depends modCmdRegistry, modDevTools, CmdDef, ParamSpec
 Option Explicit
 
@@ -299,7 +299,7 @@ Private Function HandleLabelParamDoubleClick(ByVal Target As Range) As Boolean
 
     Dim sourceRow As Long
     sourceRow = RecentCallSourceRow(ws, cmdCol, labelName)
-    If sourceRow = 0 Then sourceRow = FirstCallSourceRow(ws, cmdCol, labelName)
+    If sourceRow = 0 Then sourceRow = modDevTools.ResolveFirstCallSourceRow(ws, labelName)
 
     If sourceRow = 0 Then
         Application.StatusBar = "Script Assist: source CALL not found."
@@ -327,21 +327,6 @@ Private Function RecentCallSourceRow(ByVal ws As Worksheet, ByVal cmdCol As Long
     Dim sourceLabel As String
     sourceLabel = NormalizeLabelText(ws.Cells(m_lastCallNavSourceRow, cmdCol + 3).value)
     If sourceLabel = labelName Then RecentCallSourceRow = m_lastCallNavSourceRow
-End Function
-
-Private Function FirstCallSourceRow(ByVal ws As Worksheet, ByVal cmdCol As Long, ByVal labelName As String) As Long
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.rows.count, cmdCol).End(xlUp).Row
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If NormalizeCmd(ws.Cells(R, cmdCol).value) = "CALL" Then
-            If NormalizeLabelText(ws.Cells(R, cmdCol + 3).value) = labelName Then
-                FirstCallSourceRow = R
-                Exit Function
-            End If
-        End If
-    Next R
 End Function
 
 Private Sub ScrollActiveWindowToRow(ByVal rowNum As Long)

@@ -1,6 +1,6 @@
 ﻿Attribute VB_Name = "modDevTools"
-' @desc RPA 스크립트 시트 서식·검증을 레지스트리 파생으로 적용 담당
-' @depends modCmdRegistry
+' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
+' @depends modCmdRegistry, clsScriptProgram
 Option Explicit
 
 Private m_lastValidationMessage As String
@@ -30,18 +30,9 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Call EnsureHeaders(ws)
 
     Dim lastRow As Long: lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
-    Dim R As Long, pureCmd As String, depth As Integer: depth = 0
-    Dim baseDepths() As Long
-    Dim subDepths() As Long
-    Dim subStartRows As Object
-    Dim subEndRows As Object
-    Dim invalidRows As Object
-    Dim varInvalidRows As Object
-    Dim varWarningRows As Object
+    Dim R As Long, pureCmd As String
     Dim program As clsScriptProgram
     Set program = ProgramSnapshotFromSheet(ws, lastRow)
-    Call AnalyzeSubroutineFlow(ws, lastRow, program, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
-    Call AnalyzeSheetVariables(ws, lastRow, varInvalidRows, varWarningRows)
 
     ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
     Dim clearLastRow As Long
@@ -108,13 +99,12 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
         rowIsComment = IsCommentRow(ws, R)
         rowLooksLikeIndentedComment = (Not rowIsComment And Left$(pureCmd, 1) = "#")
 
-            ' 2. 깊이 계산
-            If IsBlockEnder(pureCmd) Then depth = IIf(depth > 0, depth - 1, 0)
-
-                ' [수정] Else 문 들여쓰기 보정 (출력 시에만 깊이 -1 적용)
-                Dim printDepth As Integer: printDepth = depth
-                If pureCmd = "ELSE" Or pureCmd = "CASE" Then printDepth = IIf(depth > 0, depth - 1, 0)
-                printDepth = printDepth + subDepths(R)
+                Dim printDepth As Long
+                Dim styleDepth As Long
+                If Not program Is Nothing Then
+                    printDepth = program.DisplayDepthAtSheetRow(R)
+                    styleDepth = program.StyleDepthAtSheetRow(R)
+                End If
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
                     If Not rowLooksLikeIndentedComment Then
@@ -128,23 +118,31 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                     Else
                         isValid = ValidateLine(pureCmd, ws.Cells(R, 3).value, ws.Cells(R, 4).value, ws.Cells(R, 5).value)
                     End If
-                    If invalidRows.exists(CStr(R)) Then isValid = False
-                    If varInvalidRows.exists(CStr(R)) Then isValid = False
+                    If Not program Is Nothing Then
+                        If program.IsFlowInvalidAtSheetRow(R) Then isValid = False
+                        If Len(program.VariableErrorAtSheetRow(R)) > 0 Then isValid = False
+                    End If
 
                     Dim hasWarning As Boolean
-                    hasWarning = varWarningRows.exists(CStr(R)) Or HasLabelRoleWarning(program, R)
+                    If Not program Is Nothing Then
+                        hasWarning = (Len(program.VariableWarningAtSheetRow(R)) > 0 Or HasLabelRoleWarning(program, R))
+                    End If
 
                     ' [통합 스타일 호출] 테두리 가이드와 배경색 처리
-                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, depth + subDepths(R), isValid, rowIsComment, hasWarning)
+                    Dim isSubStart As Boolean
+                    Dim isSubEnd As Boolean
+                    If Not program Is Nothing Then
+                        isSubStart = program.IsSubroutineStartAtSheetRow(R)
+                        isSubEnd = program.IsSubroutineEndAtSheetRow(R)
+                    End If
+
+                    Call ApplyUnifiedStyle(ws.Cells(R, 2).Resize(1, 4), pureCmd, styleDepth, isValid, rowIsComment, hasWarning)
                     Call ApplySubroutineBoundaryStyle(ws.Cells(R, 2).Resize(1, 4), _
-                                                       subStartRows.exists(CStr(R)), _
-                                                       subEndRows.exists(CStr(R)), _
+                                                       isSubStart, _
+                                                       isSubEnd, _
                                                        Not isValid)
                     Call ApplyJumpTargetLinkStyle(ws.Cells(R, 5), pureCmd)
                     Call ApplyLabelRoleDisplay(ws, R, pureCmd, program)
-
-                    ' 4. 깊이 증가
-                    If IsBlockStarter(pureCmd) Then depth = depth + 1
 
 NextRow:
                     Next R
@@ -364,17 +362,12 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
     lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
-    Dim baseDepths() As Long
-    Dim subDepths() As Long
-    Dim subStartRows As Object
-    Dim subEndRows As Object
-    Dim invalidRows As Object
     Dim program As clsScriptProgram
     Set program = ProgramSnapshotFromSheet(ws, lastRow)
-    Call AnalyzeSubroutineFlow(ws, lastRow, program, baseDepths, subDepths, subStartRows, subEndRows, invalidRows)
-
-    ValidateSheetFlowAt = Not invalidRows.exists(CStr(rowNum))
-    If Not program Is Nothing Then m_lastValidationWarning = program.LabelRoleWarningAtSheetRow(rowNum)
+    If Not program Is Nothing Then
+        ValidateSheetFlowAt = Not program.IsFlowInvalidAtSheetRow(rowNum)
+        m_lastValidationWarning = program.LabelRoleWarningAtSheetRow(rowNum)
+    End If
 End Function
 
 Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal preserveExistingWarning As Boolean = False) As Boolean
@@ -392,20 +385,24 @@ Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As 
     lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
-    Dim invalidRows As Object
-    Dim warningRows As Object
-    Call AnalyzeSheetVariables(ws, lastRow, invalidRows, warningRows)
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If program Is Nothing Then Exit Function
 
-    If invalidRows.exists(CStr(rowNum)) Then
-        SetValidationError CStr(invalidRows(CStr(rowNum)))
+    Dim variableError As String
+    variableError = program.VariableErrorAtSheetRow(rowNum)
+    If Len(variableError) > 0 Then
+        SetValidationError variableError
         ValidateSheetVariablesAt = False
     End If
 
-    If warningRows.exists(CStr(rowNum)) Then
+    Dim variableWarning As String
+    variableWarning = program.VariableWarningAtSheetRow(rowNum)
+    If Len(variableWarning) > 0 Then
         If Len(existingWarning) > 0 Then
-            m_lastValidationWarning = existingWarning & vbCrLf & CStr(warningRows(CStr(rowNum)))
+            m_lastValidationWarning = existingWarning & vbCrLf & variableWarning
         Else
-            m_lastValidationWarning = CStr(warningRows(CStr(rowNum)))
+            m_lastValidationWarning = variableWarning
         End If
     ElseIf Len(existingWarning) > 0 Then
         m_lastValidationWarning = existingWarning
@@ -421,6 +418,17 @@ Public Function ResolveLabelTargetRow(ByVal ws As Worksheet, ByVal targetName As
     Dim program As clsScriptProgram
     Set program = ProgramSnapshotFromSheet(ws, lastRow)
     If Not program Is Nothing Then ResolveLabelTargetRow = program.ResolveJumpTargetSheetRow(targetName)
+End Function
+
+Public Function ResolveFirstCallSourceRow(ByVal ws As Worksheet, ByVal labelName As String) As Long
+    If ws Is Nothing Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
+
+    Dim program As clsScriptProgram
+    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If Not program Is Nothing Then ResolveFirstCallSourceRow = program.FirstCallSourceSheetRowForLabel(labelName)
 End Function
 
 Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
@@ -458,11 +466,6 @@ End Function
 Private Function HasLabelRoleWarning(ByVal program As clsScriptProgram, ByVal sheetRow As Long) As Boolean
     If program Is Nothing Then Exit Function
     HasLabelRoleWarning = (Len(program.LabelRoleWarningAtSheetRow(sheetRow)) > 0)
-End Function
-
-Private Function IsCallTargetLabelRow(ByVal program As clsScriptProgram, ByVal sheetRow As Long) As Boolean
-    If program Is Nothing Then Exit Function
-    IsCallTargetLabelRow = program.IsCallTargetLabelAtSheetRow(sheetRow)
 End Function
 
 ' 통합 스타일 엔진: 하이라이트 강제 초기화 및 스타일 재적용
@@ -564,421 +567,6 @@ Private Function ColorOf(ByVal cg As eColorGroup) As Long
         Case clrSYSTEM: ColorOf = RGB(242, 242, 242)  ' 연회
         Case Else:      ColorOf = RGB(245, 255, 245)
     End Select
-End Function
-
-Private Sub AnalyzeSheetVariables(ByVal ws As Worksheet, ByVal lastRow As Long, _
-                                  ByRef invalidRows As Object, ByRef warningRows As Object)
-    Set invalidRows = CreateObject("Scripting.Dictionary")
-    Set warningRows = CreateObject("Scripting.Dictionary")
-    invalidRows.CompareMode = vbTextCompare
-    warningRows.CompareMode = vbTextCompare
-
-    If ws Is Nothing Or lastRow < 2 Then Exit Sub
-
-    Dim defined As Object
-    Dim used As Object
-    Dim defRows As Object
-    Set defined = CreateObject("Scripting.Dictionary")
-    Set used = CreateObject("Scripting.Dictionary")
-    Set defRows = CreateObject("Scripting.Dictionary")
-    defined.CompareMode = vbTextCompare
-    used.CompareMode = vbTextCompare
-    defRows.CompareMode = vbTextCompare
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-
-        Dim cmd As String
-        cmd = PureCommandAt(ws, R)
-        If Len(cmd) = 0 Then GoTo NextRow
-
-        Dim def As CmdDef
-        Set def = modCmdRegistry.GetCmdDef(cmd)
-        If def Is Nothing Then GoTo NextRow
-
-        Dim idx As Long
-        For idx = 1 To 3
-            Dim spec As ParamSpec
-            Set spec = def.Param(idx)
-            If Not spec Is Nothing Then
-                If Not spec.IsRaw Then
-                    Dim uses As Collection
-                    Set uses = New Collection
-                    CollectUserVarsFromText ParamText(ws.Cells(R, idx + 2).value), uses
-
-                    Dim varName As Variant
-                    For Each varName In uses
-                        used(CStr(varName)) = True
-                        If Not defined.exists(CStr(varName)) Then
-                            AddRowMessage invalidRows, R, UndefinedVarMessage(CStr(varName), defined.Keys)
-                        End If
-                    Next varName
-                End If
-            End If
-        Next idx
-
-        If cmd = "SET" Or cmd = "INC" Or cmd = "DEC" Then
-            Dim lvalueName As String
-            lvalueName = MemoryLValueName(ParamText(ws.Cells(R, 3).value))
-            If Len(lvalueName) > 0 Then
-                If (cmd = "INC" Or cmd = "DEC") And Not defined.exists(lvalueName) Then
-                    AddRowMessage invalidRows, R, UndefinedVarMessage(lvalueName, defined.Keys) & ". Initialize it with SET first."
-                End If
-
-                If Not defined.exists(lvalueName) Then
-                    defined.Add lvalueName, True
-                End If
-                AddDefRow defRows, lvalueName, R
-            End If
-        End If
-
-NextRow:
-    Next R
-
-    Dim nameKey As Variant
-    For Each nameKey In defRows.Keys
-        If Not used.exists(CStr(nameKey)) Then
-            Dim rows As Collection
-            Set rows = defRows(CStr(nameKey))
-
-            Dim rowItem As Variant
-            For Each rowItem In rows
-                If Not invalidRows.exists(CStr(rowItem)) Then
-                    AddRowMessage warningRows, CLng(rowItem), "Warning: defined variable is not used: {" & CStr(nameKey) & "}"
-                End If
-            Next rowItem
-        End If
-    Next nameKey
-End Sub
-
-Private Sub CollectUserVarsFromText(ByVal text As String, ByVal result As Collection)
-    Dim i As Long
-    Dim n As Long
-    n = Len(text)
-    i = 1
-
-    Do While i <= n
-        If Mid$(text, i, 1) = "{" Then
-            Dim depth As Long
-            Dim j As Long
-            Dim found As Long
-            depth = 1
-            For j = i + 1 To n
-                Select Case Mid$(text, j, 1)
-                    Case "{"
-                        depth = depth + 1
-                    Case "}"
-                        depth = depth - 1
-                        If depth = 0 Then
-                            found = j
-                            Exit For
-                        End If
-                End Select
-            Next j
-
-            If found = 0 Then Exit Do
-
-            Dim inner As String
-            inner = Mid$(text, i + 1, found - i - 1)
-            CollectUserVarsFromText inner, result
-
-            If IsUserVariableToken(inner) Then result.Add Trim$(inner)
-            i = found + 1
-        Else
-            i = i + 1
-        End If
-    Loop
-End Sub
-
-Private Function IsUserVariableToken(ByVal inner As String) As Boolean
-    Dim key As String
-    key = Trim$(inner)
-    If Len(key) = 0 Then Exit Function
-    If Left$(key, 1) = "$" Then Exit Function
-    If InStr(1, key, "{", vbTextCompare) > 0 Or InStr(1, key, "}", vbTextCompare) > 0 Then Exit Function
-
-    IsUserVariableToken = True
-End Function
-
-Private Function MemoryLValueName(ByVal rawP1 As String) As String
-    Dim s As String
-    s = Trim$(rawP1)
-    If Len(s) < 2 Then Exit Function
-    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
-
-    Dim inner As String
-    inner = Trim$(Mid$(s, 2, Len(s) - 2))
-    If Len(inner) = 0 Then Exit Function
-    If UCase$(inner) = "$CLIP" Then Exit Function
-    If Left$(inner, 1) = "$" Then Exit Function
-
-    MemoryLValueName = inner
-End Function
-
-Private Sub AddDefRow(ByVal defRows As Object, ByVal varName As String, ByVal rowNum As Long)
-    Dim rows As Collection
-    If defRows.exists(varName) Then
-        Set rows = defRows(varName)
-    Else
-        Set rows = New Collection
-        defRows.Add varName, rows
-    End If
-    rows.Add rowNum
-End Sub
-
-Private Sub AddRowMessage(ByVal rows As Object, ByVal rowNum As Long, ByVal message As String)
-    Dim key As String
-    key = CStr(rowNum)
-
-    If rows.exists(key) Then
-        If InStr(1, CStr(rows(key)), message, vbTextCompare) = 0 Then
-            rows(key) = CStr(rows(key)) & vbCrLf & message
-        End If
-    Else
-        rows.Add key, message
-    End If
-End Sub
-
-Private Function UndefinedVarMessage(ByVal varName As String, ByVal candidates As Variant) As String
-    Dim msg As String
-    msg = "Undefined variable: {" & varName & "}"
-
-    Dim suggestion As String
-    suggestion = ClosestName(varName, candidates)
-    If Len(suggestion) > 0 Then msg = msg & ". Did you mean {" & suggestion & "}?"
-
-    UndefinedVarMessage = msg
-End Function
-
-Private Function ClosestName(ByVal target As String, ByVal candidates As Variant) As String
-    On Error GoTo SafeExit
-
-    Dim threshold As Long
-    If Len(Trim$(target)) <= 4 Then
-        threshold = 1
-    Else
-        threshold = 2
-    End If
-
-    Dim bestDistance As Long
-    bestDistance = 32767
-
-    Dim bestName As String
-    Dim bestCount As Long
-    Dim item As Variant
-    For Each item In candidates
-        Dim candidate As String
-        candidate = CStr(item)
-
-        Dim distance As Long
-        distance = LevenshteinDistance(target, candidate)
-        If distance <= threshold Then
-            If distance < bestDistance Then
-                bestDistance = distance
-                bestName = candidate
-                bestCount = 1
-            ElseIf distance = bestDistance Then
-                bestCount = bestCount + 1
-            End If
-        End If
-    Next item
-
-    If bestCount = 1 Then ClosestName = bestName
-SafeExit:
-End Function
-
-Private Function LevenshteinDistance(ByVal leftText As String, ByVal rightText As String) As Long
-    Dim leftValue As String
-    Dim rightValue As String
-    leftValue = UCase$(Trim$(leftText))
-    rightValue = UCase$(Trim$(rightText))
-
-    Dim leftLen As Long
-    Dim rightLen As Long
-    leftLen = Len(leftValue)
-    rightLen = Len(rightValue)
-
-    If leftLen = 0 Then
-        LevenshteinDistance = rightLen
-        Exit Function
-    End If
-    If rightLen = 0 Then
-        LevenshteinDistance = leftLen
-        Exit Function
-    End If
-    If leftValue = rightValue Then
-        LevenshteinDistance = 0
-        Exit Function
-    End If
-
-    Dim dist() As Long
-    ReDim dist(0 To leftLen, 0 To rightLen) As Long
-
-    Dim i As Long
-    Dim j As Long
-    For i = 0 To leftLen
-        dist(i, 0) = i
-    Next i
-    For j = 0 To rightLen
-        dist(0, j) = j
-    Next j
-
-    For i = 1 To leftLen
-        For j = 1 To rightLen
-            Dim cost As Long
-            If Mid$(leftValue, i, 1) = Mid$(rightValue, j, 1) Then
-                cost = 0
-            Else
-                cost = 1
-            End If
-
-            dist(i, j) = Min3Long(dist(i - 1, j) + 1, _
-                         dist(i, j - 1) + 1, _
-                         dist(i - 1, j - 1) + cost)
-        Next j
-    Next i
-
-    LevenshteinDistance = dist(leftLen, rightLen)
-End Function
-
-Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, ByVal thirdValue As Long) As Long
-    Min3Long = firstValue
-    If secondValue < Min3Long Then Min3Long = secondValue
-    If thirdValue < Min3Long Then Min3Long = thirdValue
-End Function
-
-Private Sub AnalyzeSubroutineFlow(ByVal ws As Worksheet, ByVal lastRow As Long, ByVal program As clsScriptProgram, _
-                                  ByRef baseDepths() As Long, _
-                                  ByRef subDepths() As Long, _
-                                  ByRef subStartRows As Object, _
-                                  ByRef subEndRows As Object, _
-                                  ByRef invalidRows As Object)
-    ReDim baseDepths(1 To lastRow)
-    ReDim subDepths(1 To lastRow)
-
-    Set subStartRows = CreateObject("Scripting.Dictionary")
-    Set subEndRows = CreateObject("Scripting.Dictionary")
-    Set invalidRows = CreateObject("Scripting.Dictionary")
-    subStartRows.CompareMode = vbTextCompare
-    subEndRows.CompareMode = vbTextCompare
-    invalidRows.CompareMode = vbTextCompare
-
-    If lastRow < 2 Then Exit Sub
-
-    Call ComputeBaseDepths(ws, lastRow, baseDepths)
-    Call MarkMissingJumpTargets(ws, lastRow, program, invalidRows)
-
-    Dim inSubroutineRows As Object
-    Set inSubroutineRows = CreateObject("Scripting.Dictionary")
-    inSubroutineRows.CompareMode = vbTextCompare
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        If PureCommandAt(ws, R) = "LABEL" Then
-            If IsCallTargetLabelRow(program, R) Then
-                subStartRows(CStr(R)) = True
-
-                Dim endRow As Long
-                endRow = FindSubroutineReturn(ws, R, lastRow, baseDepths(R), baseDepths)
-
-                If endRow > 0 Then
-                    subEndRows(CStr(endRow)) = True
-                    inSubroutineRows(CStr(R)) = True
-                    inSubroutineRows(CStr(endRow)) = True
-
-                    Dim innerRow As Long
-                    For innerRow = R + 1 To endRow - 1
-                        subDepths(innerRow) = subDepths(innerRow) + 1
-                        inSubroutineRows(CStr(innerRow)) = True
-                    Next innerRow
-                Else
-                    invalidRows(CStr(R)) = True
-                End If
-
-                If Not HasFlowBreakBefore(ws, R) Then invalidRows(CStr(R)) = True
-            End If
-        End If
-NextRow:
-    Next R
-
-    For R = 2 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextReturnRow
-        If PureCommandAt(ws, R) = "RETURN" Then
-            If Not inSubroutineRows.exists(CStr(R)) Then invalidRows(CStr(R)) = True
-        End If
-NextReturnRow:
-    Next R
-End Sub
-
-Private Sub ComputeBaseDepths(ByVal ws As Worksheet, ByVal lastRow As Long, ByRef baseDepths() As Long)
-    Dim depth As Long
-    Dim R As Long
-
-    For R = 2 To lastRow
-        Dim cmd As String
-        cmd = PureCommandAt(ws, R)
-        If IsCommentRow(ws, R) Then GoTo NextRow
-
-        If IsBlockEnder(cmd) Then depth = IIf(depth > 0, depth - 1, 0)
-
-        baseDepths(R) = depth
-        If cmd = "ELSE" Or cmd = "CASE" Then baseDepths(R) = IIf(depth > 0, depth - 1, 0)
-
-        If IsBlockStarter(cmd) Then depth = depth + 1
-NextRow:
-    Next R
-End Sub
-
-Private Sub MarkMissingJumpTargets(ByVal ws As Worksheet, ByVal lastRow As Long, _
-                                   ByVal program As clsScriptProgram, ByVal invalidRows As Object)
-    If program Is Nothing Then Exit Sub
-
-    Dim R As Long
-    For R = 2 To lastRow
-        If program.IsJumpTargetMissingAtSheetRow(R) Then invalidRows(CStr(R)) = True
-    Next R
-End Sub
-
-Private Function FindSubroutineReturn(ByVal ws As Worksheet, ByVal startRow As Long, _
-                                      ByVal lastRow As Long, ByVal labelDepth As Long, _
-                                      ByRef baseDepths() As Long) As Long
-    Dim R As Long
-    For R = startRow + 1 To lastRow
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        Dim cmd As String
-        cmd = PureCommandAt(ws, R)
-        If Not IsExecutableCommand(cmd) Then GoTo NextRow
-
-        If baseDepths(R) < labelDepth Then Exit Function
-
-        If baseDepths(R) = labelDepth Then
-            Select Case cmd
-                Case "RETURN"
-                    FindSubroutineReturn = R
-                    Exit Function
-                Case "LABEL"
-                    Exit Function
-            End Select
-        End If
-
-NextRow:
-    Next R
-End Function
-
-Private Function HasFlowBreakBefore(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
-    Dim R As Long
-    For R = rowNum - 1 To 2 Step -1
-        If IsCommentRow(ws, R) Then GoTo NextRow
-        Dim cmd As String
-        cmd = PureCommandAt(ws, R)
-        If IsExecutableCommand(cmd) Then
-            HasFlowBreakBefore = (cmd = "EXIT" Or cmd = "GOTO" Or cmd = "RETURN")
-            Exit Function
-        End If
-NextRow:
-    Next R
 End Function
 
 Private Sub ApplySubroutineBoundaryStyle(ByVal rng As Range, ByVal isStart As Boolean, _
@@ -1090,27 +678,8 @@ Private Function PureCommandAt(ByVal ws As Worksheet, ByVal rowNum As Long) As S
     PureCommandAt = modCmdRegistry.NormalizeCommand(ws.Cells(rowNum, 2).value)
 End Function
 
-Private Function IsExecutableCommand(ByVal cmd As String) As Boolean
-    IsExecutableCommand = (Len(cmd) > 0)
-End Function
-
 Private Function IsCommentRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
     Dim rawCmd As String
     rawCmd = Trim$(CStr(ws.Cells(rowNum, 2).value))
     IsCommentRow = (Len(rawCmd) > 0 And Left$(rawCmd, 1) = "#")
 End Function
-
-' [파생] 블록 시작 판정 → BlockRole = STARTER
-Private Function IsBlockStarter(cmd As String) As Boolean
-    Dim def As CmdDef: Set def = modCmdRegistry.GetCmdDef(cmd)
-    If Not def Is Nothing Then IsBlockStarter = (def.BlockRole = STARTER)
-End Function
-
-' [파생] 블록 종료 판정 → BlockRole = ENDER
-Private Function IsBlockEnder(cmd As String) As Boolean
-    Dim def As CmdDef: Set def = modCmdRegistry.GetCmdDef(cmd)
-    If Not def Is Nothing Then IsBlockEnder = (def.BlockRole = ENDER)
-End Function
-
-
-

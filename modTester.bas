@@ -1372,6 +1372,9 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectLong "ResolveJumpTarget label", 19, program.ResolveJumpTarget("LOGIN"), fails
     ExpectLong "ResolveJumpTarget sheet row", 23, program.ResolveJumpTargetSheetRow("LOGIN"), fails
     ExpectText "LabelRole LOGIN", "JumpLabel", program.LabelRoleAt(19), fails
+    ExpectLong "DisplayDepth IF body", 1, program.DisplayDepthAt(2), fails
+    ExpectLong "DisplayDepth ELSE corrected", 0, program.DisplayDepthAt(3), fails
+    ExpectLong "StyleDepth ELSE guide", 1, program.StyleDepthAt(3), fails
     ExpectLong "ResolveJumpTarget numeric rejected", CMD_ERROR, program.ResolveJumpTarget("20"), fails
     ExpectLong "ResolveJumpTarget low out of range", CMD_ERROR, program.ResolveJumpTarget("0"), fails
     ExpectLong "ResolveJumpTarget high out of range", CMD_ERROR, program.ResolveJumpTarget("999"), fails
@@ -1393,7 +1396,31 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectText "LabelRole dead", "DeadLabel", program.LabelRoleAt(8), fails
     ExpectBool "Mixed is call target", True, program.IsCallTargetLabelAt(7), fails
     ExpectBool "Mixed warning", True, (InStr(1, program.LabelRoleWarningAt(7), "MixedLabel", vbTextCompare) > 0), fails
+    ExpectLong "First CALL source SUB", 10, program.FirstCallSourceSheetRowForLabel("SUB"), fails
+    ExpectLong "First CALL source MIX", 12, program.FirstCallSourceSheetRowForLabel("MIX"), fails
     ExpectLong "Resolve mixed sheet row", 16, program.ResolveJumpTargetSheetRow("MIX"), fails
+
+    Dim subArr(1 To 5, 1 To 5) As Variant
+    Call MakeCmd(subArr, 1, "CALL", 0, 0, "SUB")
+    Call MakeCmd(subArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(subArr, 3, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(subArr, 4, "TYPE", 0, 0, "inside")
+    Call MakeCmd(subArr, 5, "RETURN", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray subArr, 20
+    ExpectBool "Subroutine start", True, program.IsSubroutineStartAt(3), fails
+    ExpectBool "Subroutine end", True, program.IsSubroutineEndAt(5), fails
+    ExpectBool "Subroutine valid label", False, program.IsFlowInvalidAt(3), fails
+    ExpectLong "Subroutine body display depth", 1, program.DisplayDepthAt(4), fails
+
+    Dim varArr(1 To 3, 1 To 5) As Variant
+    Call MakeCmd(varArr, 1, "SET", "{score}", 0, "1")
+    Call MakeCmd(varArr, 2, "SET", "{out}", 0, "{scroe}")
+    Call MakeCmd(varArr, 3, "SET", "{unused}", 0, "value")
+    Set program = New clsScriptProgram
+    program.LoadFromArray varArr, 30
+    ExpectBool "Program variable suggestion", True, (InStr(1, program.VariableErrorAt(2), "{score}", vbTextCompare) > 0), fails
+    ExpectBool "Program unused warning", True, (InStr(1, program.VariableWarningAt(3), "{unused}", vbTextCompare) > 0), fails
 
     modEngine.LoadProgramFromArray arr, 5
     ExpectLong "ResolveSelectTarget first match", 12, modEngine.ResolveSelectTarget(10, "A"), fails
