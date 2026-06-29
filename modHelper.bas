@@ -21,17 +21,17 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
 
     Do While IsFormVisible(view)
         DoEvents
-        If Not IsFormVisible(view) Then Exit Do
+        If ShouldStopCapture(view) Then Exit Do
 
         If modWinAPI.IsToggleKeyOn(modWinAPI.VK_CAPITAL) Then
             If Not isRecorded Then
                 modWinAPI.GetCursorPos pt
                 colorValue = modWinAPI.GetColorAt(pt.x, pt.y)
                 hexColor = Right("000000" & hex(colorValue), 6)
-                strInfo = pt.x & vbTab & pt.y & vbTab & hexColor
+                strInfo = CaptureSnippet(view, pt.x, pt.y, hexColor)
 
                 If view.IsAutoMode Then
-                    FillActiveCell pt.x, pt.y, hexColor
+                    FillActiveCell view, pt.x, pt.y, hexColor
                     view.RenderAutoFilled pt.x, pt.y, hexColor
                 Else
                     modWinAPI.SetClipboardText strInfo
@@ -48,7 +48,7 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
             view.RenderScanning pt.x, pt.y, colorValue, hexColor
         End If
 
-        modWinAPI.Sleep 50
+        If WaitCaptureInterval(view, 50) Then Exit Do
     Loop
 End Sub
 
@@ -64,13 +64,28 @@ Public Sub CloseRpaStatus(ByVal view As frmRPAStatus)
     Unload view
 End Sub
 
-Private Sub FillActiveCell(ByVal x As Long, ByVal y As Long, ByVal hexColor As String)
+Private Function CaptureSnippet(ByVal view As frmCapture, ByVal x As Long, ByVal y As Long, ByVal hexColor As String) As String
+    If view.IsPixelIfMode Then
+        CaptureSnippet = "{$PIXEL:" & x & "," & y & "}" & vbTab & "EQ" & vbTab & hexColor
+    Else
+        CaptureSnippet = x & vbTab & y & vbTab & hexColor
+    End If
+End Function
+
+Private Sub FillActiveCell(ByVal view As frmCapture, ByVal x As Long, ByVal y As Long, ByVal hexColor As String)
     With ActiveCell
-        .value = x
-        .offset(0, 1).value = y
-        .offset(0, 2).value = hexColor
+        If view.IsPixelIfMode Then
+            .value = "{$PIXEL:" & x & "," & y & "}"
+            .offset(0, 1).value = "EQ"
+            .offset(0, 2).value = hexColor
+        Else
+            .value = x
+            .offset(0, 1).value = y
+            .offset(0, 2).value = hexColor
+        End If
         .Interior.color = RGB(220, 255, 220)
         .offset(0, 1).Interior.color = RGB(220, 255, 220)
+        .offset(0, 2).Interior.color = RGB(220, 255, 220)
         .offset(1, 0).Select
     End With
 End Sub
@@ -79,4 +94,26 @@ Private Function IsFormVisible(ByVal view As Object) As Boolean
     On Error GoTo SafeExit
     IsFormVisible = view.Visible
 SafeExit:
+End Function
+
+Private Function ShouldStopCapture(ByVal view As Object) As Boolean
+    If Not IsFormVisible(view) Then
+        ShouldStopCapture = True
+    ElseIf modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then
+        Unload view
+        ShouldStopCapture = True
+    End If
+End Function
+
+Private Function WaitCaptureInterval(ByVal view As Object, ByVal totalMs As Long) As Boolean
+    Dim elapsedMs As Long
+    Do While elapsedMs < totalMs
+        If ShouldStopCapture(view) Then
+            WaitCaptureInterval = True
+            Exit Function
+        End If
+        modWinAPI.Sleep 10
+        elapsedMs = elapsedMs + 10
+        DoEvents
+    Loop
 End Function

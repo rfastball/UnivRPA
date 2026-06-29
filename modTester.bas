@@ -256,6 +256,12 @@ Sub Run_System_SelfDiagnosis()
         LogFail "{$PIXEL}", actualColor, modContext.GetVar("px"): failCount = failCount + 1
     End If
 
+    If Left$(modContext.GetVar("px"), 1) <> "#" Then
+        LogPass "{$PIXEL:x,y} (RRGGBB without #)"
+    Else
+        LogFail "{$PIXEL}", "RRGGBB without #", modContext.GetVar("px"): failCount = failCount + 1
+    End If
+
     '==========================================================================
     ' [Test 5] 타이핑 (TYPE 텍스트 + KEY Enter)
     '==========================================================================
