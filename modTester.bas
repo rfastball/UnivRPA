@@ -323,16 +323,21 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     '==========================================================================
-    ' [Test 8] IF (참 갈래는 단일 라인으로 검증: 다음 줄 반환)
-    '   IF {$PIXEL:x,y} EQ <현재색>  -> 참 -> 0 반환
+    ' [Test 8] IF (참 갈래는 최소 블록으로 검증: 다음 줄 반환)
+    '   IF {$PIXEL:x,y} EQ <현재색> / END_IF  -> 참 -> 0 반환
     '==========================================================================
     Debug.Print "--- [Test 8] IF (true branch) ---"
 
     Call MakeCmd(arrCmd, 1, "IF", "{$PIXEL:" & screenX & "," & screenY & "}", "EQ", actualColor)
+    Call MakeCmd(arrCmd, 2, "END_IF", 0, 0, "")
     nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine = 0 Then
         LogPass "IF EQ (true -> next line)"
+        nextLine = ExecuteArrayLine(arrCmd, 2)
+        If nextLine <> 0 Then
+            LogFail "END_IF", "0 (next)", "Line=" & nextLine: failCount = failCount + 1
+        End If
     Else
         LogFail "IF EQ", "0 (next)", "Line=" & nextLine: failCount = failCount + 1
     End If
