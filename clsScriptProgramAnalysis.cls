@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -34,8 +34,8 @@ Private Sub Class_Initialize()
     ResetAnalysis
 End Sub
 
-Public Sub Init(ByVal source As clsScriptProgramSource, ByVal index As clsScriptProgramIndex)
-    Set m_source = source
+Public Sub Init(ByVal Source As clsScriptProgramSource, ByVal index As clsScriptProgramIndex)
+    Set m_source = Source
     Set m_index = index
     ResetAnalysis
 End Sub
@@ -55,9 +55,9 @@ Private Sub ResetAnalysis()
 End Sub
 
 Public Sub BuildStaticAnalysis()
-    ReDim m_displayDepths(1 To m_source.TotalLines)
-    ReDim m_styleDepths(1 To m_source.TotalLines)
-    ReDim m_subDepths(1 To m_source.TotalLines)
+    ReDim m_displayDepths(1 To m_source.totalLines)
+    ReDim m_styleDepths(1 To m_source.totalLines)
+    ReDim m_subDepths(1 To m_source.totalLines)
 
     Set m_subroutineStartRows = CreateObject("Scripting.Dictionary")
     Set m_subroutineEndRows = CreateObject("Scripting.Dictionary")
@@ -120,7 +120,7 @@ Public Function ValidateStructure() As Boolean
     Set blocks = m_index.SelectBlocks
 
     Dim key As Variant
-    For Each key In blocks.Keys
+    For Each key In blocks.keys
         Dim block As clsSelectBlock
         Set block = blocks(key)
         If block.EndSelectLine <= 0 Then AddValidationError "SELECT line " & key & " has no END_SELECT."
@@ -135,7 +135,7 @@ Public Function ValidateLabels() As Boolean
     BuildStaticAnalysis
 
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.CmdAt(R) = "LABEL" Then
             Dim rawLabel As String
             rawLabel = m_source.P3At(R)
@@ -162,50 +162,50 @@ End Function
 
 Private Sub BuildIfStructureAnalysis(ByVal reportValidation As Boolean)
     Dim stack() As IfValidationFrame
-    Dim top As Long
+    Dim Top As Long
     Dim R As Long
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
 
         Select Case m_source.CmdAt(R)
             Case "IF"
-                top = top + 1
-                ReDim Preserve stack(1 To top)
-                stack(top).headerLine = R
-                stack(top).sawElse = False
+                Top = Top + 1
+                ReDim Preserve stack(1 To Top)
+                stack(Top).headerLine = R
+                stack(Top).sawElse = False
 
             Case "ELSE_IF"
-                If top = 0 Then
+                If Top = 0 Then
                     MarkIfStructureIssue R, "ELSE_IF line " & R & " has no matching IF.", reportValidation
-                ElseIf stack(top).sawElse Then
+                ElseIf stack(Top).sawElse Then
                     MarkIfStructureIssue R, "ELSE_IF line " & R & " cannot appear after ELSE.", reportValidation
                 End If
                 ValidateElseIfParams R, reportValidation
 
             Case "ELSE"
-                If top = 0 Then
+                If Top = 0 Then
                     MarkIfStructureIssue R, "ELSE line " & R & " has no matching IF.", reportValidation
-                ElseIf stack(top).sawElse Then
+                ElseIf stack(Top).sawElse Then
                     MarkIfStructureIssue R, "ELSE line " & R & " duplicates an ELSE in the same IF block.", reportValidation
                 Else
-                    stack(top).sawElse = True
+                    stack(Top).sawElse = True
                 End If
 
             Case "END_IF"
-                If top = 0 Then
+                If Top = 0 Then
                     MarkIfStructureIssue R, "END_IF line " & R & " has no matching IF.", reportValidation
                 Else
-                    top = top - 1
+                    Top = Top - 1
                 End If
         End Select
 
 NextRow:
     Next R
 
-    Do While top > 0
-        MarkIfStructureIssue stack(top).headerLine, "IF line " & stack(top).headerLine & " has no END_IF.", reportValidation
-        top = top - 1
+    Do While Top > 0
+        MarkIfStructureIssue stack(Top).headerLine, "IF line " & stack(Top).headerLine & " has no END_IF.", reportValidation
+        Top = Top - 1
     Loop
 End Sub
 
@@ -232,7 +232,7 @@ Private Sub BuildDisplayDepths()
     Dim depth As Long
     Dim R As Long
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         Dim cmd As String
         cmd = m_source.CmdAt(R)
 
@@ -254,7 +254,7 @@ Private Sub BuildSubroutineFlowAnalysis()
     inSubroutineRows.CompareMode = vbTextCompare
 
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsCommentLine(R) Then GoTo NextRow
 
         If m_source.CmdAt(R) = "LABEL" Then
@@ -284,7 +284,7 @@ Private Sub BuildSubroutineFlowAnalysis()
 NextRow:
     Next R
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsCommentLine(R) Then GoTo NextReturnRow
         If m_source.CmdAt(R) = "RETURN" Then
             If Not inSubroutineRows.exists(CStr(R)) Then m_flowInvalidRows(CStr(R)) = True
@@ -292,7 +292,7 @@ NextRow:
 NextReturnRow:
     Next R
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         m_displayDepths(R) = m_displayDepths(R) + m_subDepths(R)
         m_styleDepths(R) = m_styleDepths(R) + m_subDepths(R)
     Next R
@@ -300,7 +300,7 @@ End Sub
 
 Private Sub MarkMissingJumpTargets()
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_index.IsJumpTargetMissingAt(R) Then m_flowInvalidRows(CStr(R)) = True
     Next R
 End Sub
@@ -310,7 +310,7 @@ Private Function FindSubroutineReturnLineForFlow(ByVal startLine As Long) As Lon
     labelDepth = m_displayDepths(startLine)
 
     Dim R As Long
-    For R = startLine + 1 To m_source.TotalLines
+    For R = startLine + 1 To m_source.totalLines
         If m_source.IsCommentLine(R) Then GoTo NextRow
 
         Dim cmd As String
@@ -359,7 +359,7 @@ Private Sub BuildVariableAnalysis()
     defRows.CompareMode = vbTextCompare
 
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsCommentLine(R) Then GoTo NextRow
 
         Dim cmd As String
@@ -384,7 +384,7 @@ Private Sub BuildVariableAnalysis()
                     For Each varName In uses
                         used(CStr(varName)) = True
                         If Not defined.exists(CStr(varName)) Then
-                            AddRowMessage m_variableErrors, R, UndefinedVarMessage(CStr(varName), defined.Keys)
+                            AddRowMessage m_variableErrors, R, UndefinedVarMessage(CStr(varName), defined.keys)
                         End If
                     Next varName
                 End If
@@ -396,7 +396,7 @@ Private Sub BuildVariableAnalysis()
             lvalueName = MemoryLValueName(m_source.P1At(R))
             If Len(lvalueName) > 0 Then
                 If (cmd = "INC" Or cmd = "DEC") And Not defined.exists(lvalueName) Then
-                    AddRowMessage m_variableErrors, R, UndefinedVarMessage(lvalueName, defined.Keys) & ". Initialize it with SET first."
+                    AddRowMessage m_variableErrors, R, UndefinedVarMessage(lvalueName, defined.keys) & ". Initialize it with SET first."
                 End If
 
                 If Not defined.exists(lvalueName) Then defined.Add lvalueName, True
@@ -408,7 +408,7 @@ NextRow:
     Next R
 
     Dim nameKey As Variant
-    For Each nameKey In defRows.Keys
+    For Each nameKey In defRows.keys
         If Not used.exists(CStr(nameKey)) Then
             Dim rows As Collection
             Set rows = defRows(CStr(nameKey))
@@ -425,7 +425,7 @@ End Sub
 
 Private Sub ValidateJumpTargets()
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         Dim cmd As String
         cmd = m_source.CmdAt(R)
         If cmd <> "GOTO" And cmd <> "CALL" Then GoTo NextRow
@@ -564,11 +564,11 @@ Private Function UndefinedVarMessage(ByVal varName As String, ByVal candidates A
     UndefinedVarMessage = msg
 End Function
 
-Private Function ClosestName(ByVal target As String, ByVal candidates As Variant) As String
+Private Function ClosestName(ByVal Target As String, ByVal candidates As Variant) As String
     On Error GoTo SafeExit
 
     Dim threshold As Long
-    If Len(Trim$(target)) <= 4 Then
+    If Len(Trim$(Target)) <= 4 Then
         threshold = 1
     Else
         threshold = 2
@@ -585,7 +585,7 @@ Private Function ClosestName(ByVal target As String, ByVal candidates As Variant
         candidate = CStr(item)
 
         Dim distance As Long
-        distance = LevenshteinDistance(target, candidate)
+        distance = LevenshteinDistance(Target, candidate)
         If distance <= threshold Then
             If distance < bestDistance Then
                 bestDistance = distance

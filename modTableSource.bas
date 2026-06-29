@@ -1,4 +1,4 @@
-Attribute VB_Name = "modTableSource"
+﻿Attribute VB_Name = "modTableSource"
 Option Explicit
 
 Public Function SnapshotSource(ByVal pWorkbook As String, ByVal pSource As String, Optional ByVal pMode As String = "") As clsTableSnapshot
@@ -52,16 +52,16 @@ Public Function OpenWorkbookHint(ByVal filterText As String) As String
     Dim matches As Collection
     Set matches = FindWorkbooksByPartialName(filterText)
 
-    If matches.Count = 0 Then
+    If matches.count = 0 Then
         OpenWorkbookHint = "FOREACH_ROW: 열린 워크북 없음"
         Exit Function
     End If
 
     Dim i As Long
     Dim text As String
-    For i = 1 To matches.Count
+    For i = 1 To matches.count
         If Len(text) > 0 Then text = text & " | "
-        text = text & matches(i).Name
+        text = text & matches(i).name
     Next i
 
     OpenWorkbookHint = "FOREACH_ROW P1 후보: " & text
@@ -79,13 +79,13 @@ Public Function ResolveWorkbook(ByVal workbookSpec As String, ByRef openedHere A
 
         Dim wb As Workbook
         For Each wb In Application.Workbooks
-            If StrComp(wb.Name, baseName, vbTextCompare) = 0 Then
+            If StrComp(wb.name, baseName, vbTextCompare) = 0 Then
                 Set ResolveWorkbook = wb
                 Exit Function
             End If
         Next wb
 
-        Set ResolveWorkbook = Application.Workbooks.Open(Filename:=workbookSpec, ReadOnly:=True, UpdateLinks:=False)
+        Set ResolveWorkbook = Application.Workbooks.Open(fileName:=workbookSpec, ReadOnly:=True, UpdateLinks:=False)
         openedHere = True
         Exit Function
     End If
@@ -93,7 +93,7 @@ Public Function ResolveWorkbook(ByVal workbookSpec As String, ByRef openedHere A
     Dim matches As Collection
     Set matches = FindWorkbooksByPartialName(workbookSpec)
 
-    Select Case matches.Count
+    Select Case matches.count
         Case 1
             Set ResolveWorkbook = matches(1)
         Case 0
@@ -131,7 +131,7 @@ Public Function FindWorkbooksByPartialName(ByVal filterText As String) As Collec
 
     needle = Trim$(filterText)
     For Each wb In Application.Workbooks
-        If Len(needle) = 0 Or InStr(1, wb.Name, needle, vbTextCompare) > 0 Then
+        If Len(needle) = 0 Or InStr(1, wb.name, needle, vbTextCompare) > 0 Then
             result.Add wb
         End If
     Next wb
@@ -172,7 +172,7 @@ End Function
 
 Private Function JoinWorkbookFullNames(ByVal matches As Collection) As String
     Dim i As Long
-    For i = 1 To matches.Count
+    For i = 1 To matches.count
         If Len(JoinWorkbookFullNames) > 0 Then JoinWorkbookFullNames = JoinWorkbookFullNames & vbCrLf
         JoinWorkbookFullNames = JoinWorkbookFullNames & matches(i).FullName
     Next i

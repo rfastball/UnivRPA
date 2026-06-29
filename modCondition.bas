@@ -1,4 +1,4 @@
-Attribute VB_Name = "modCondition"
+﻿Attribute VB_Name = "modCondition"
 ' @desc Condition comparison/operator SSOT for the script runtime layer.
 Option Explicit
 

@@ -59,19 +59,19 @@ End Function
 
 ' @desc LogShim 자체 최소 JSON escape (본체 JsonEscape는 애드인 부재 시 못 부르므로 독립 구현)
 Private Function ShimEscape(s As String) As String
-    Dim i As Long, ch As String, r As String
+    Dim i As Long, ch As String, R As String
     For i = 1 To Len(s)
         ch = Mid$(s, i, 1)
         Select Case ch
-            Case """": r = r & "\"""
-            Case "\":  r = r & "\\"
-            Case vbCr: r = r & "\r"
-            Case vbLf: r = r & "\n"
-            Case vbTab: r = r & "\t"
-            Case Else: r = r & ch
+            Case """": R = R & "\"""
+            Case "\":  R = R & "\\"
+            Case vbCr: R = R & "\r"
+            Case vbLf: R = R & "\n"
+            Case vbTab: R = R & "\t"
+            Case Else: R = R & ch
         End Select
     Next i
-    ShimEscape = r
+    ShimEscape = R
 End Function
 
 ' @desc 가용성 판정 단계: Ping→Workbooks.Open 폴백→Ping 재시도. sbroenne hidden 세션의 추가기능 자동 로드 부재 대응

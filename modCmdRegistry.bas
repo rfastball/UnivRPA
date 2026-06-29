@@ -103,7 +103,7 @@ End Sub
 ' @desc 등록된 모든 명령어 정식명 배열 반환 (역검증 순회용)
 Public Function AllCommands() As Variant
     EnsureRegistry
-    AllCommands = m_reg.Keys
+    AllCommands = m_reg.keys
 End Function
 
 ' @desc 카테고리 받아 담당 ICommand 핸들러 인스턴스 반환 (1단 디스패치)

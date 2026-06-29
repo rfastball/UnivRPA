@@ -110,7 +110,7 @@ Public Function DefinedVarNames() As Variant
     If Memory Is Nothing Then
         DefinedVarNames = Array()
     Else
-        DefinedVarNames = Memory.Keys
+        DefinedVarNames = Memory.keys
     End If
 End Function
 

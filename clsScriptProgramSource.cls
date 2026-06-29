@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -36,8 +36,8 @@ Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheet
     BuildInstructionCache
 End Sub
 
-Public Property Get TotalLines() As Long
-    TotalLines = m_TotalLines
+Public Property Get totalLines() As Long
+    totalLines = m_TotalLines
 End Property
 
 Public Function RawCmdAt(ByVal lineNo As Long) As String

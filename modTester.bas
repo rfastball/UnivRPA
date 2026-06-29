@@ -822,19 +822,19 @@ Private Function Test_TableSnapshotReadOnly() As Long
     ExpectLong "Snapshot RowCount", 4, tbl.RowCount, fails
     ExpectLong "Snapshot FirstDataRow", 2, tbl.FirstDataRow, fails
     ExpectLong "Snapshot ColCount", 3, tbl.ColCount, fails
-    ExpectBool "Snapshot Headers CODE", True, tbl.Headers.exists("CODE"), fails
+    ExpectBool "Snapshot Headers CODE", True, tbl.headers.exists("CODE"), fails
     ExpectText "Snapshot GetValue", "Alice", CStr(tbl.GetValue(2, "Name")), fails
 
     rec = tbl.GetRecord(3)
     ExpectText "Snapshot GetRecord", "Bob", CStr(rec(2)), fails
 
     Set rows = tbl.SelectRows("Group", "A")
-    ExpectLong "Snapshot SelectRows count", 2, rows.Count, fails
+    ExpectLong "Snapshot SelectRows count", 2, rows.count, fails
     ExpectLong "Snapshot SelectRows first", 2, CLng(rows(1)), fails
     ExpectLong "Snapshot SelectRows second", 4, CLng(rows(2)), fails
 
     Set rows = tbl.SelectRowsByIndex(1, "002")
-    ExpectLong "Snapshot SelectRowsByIndex count", 1, rows.Count, fails
+    ExpectLong "Snapshot SelectRowsByIndex count", 1, rows.count, fails
     ExpectLong "Snapshot SelectRowsByIndex row", 3, CLng(rows(1)), fails
 
     keys = tbl.GetUniqueKeys("Group")
@@ -876,8 +876,8 @@ Private Function Test_ForeachRowExecution() As Long
     On Error GoTo ErrHandler
     Application.DisplayAlerts = True
 
-    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-    ws.Name = sheetName
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+    ws.name = sheetName
     ws.Range("A1:D1").value = Array("Code", "Rounded", "DateNarrow", "Note")
     ws.Range("A2").NumberFormat = "@"
     ws.Range("A2").value = "007"

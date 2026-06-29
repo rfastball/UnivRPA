@@ -62,7 +62,7 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
         
     ElseIf TypeOf vSource Is Range Then
         ' [Case B] Range 객체가 넘어온 경우
-        If vSource.Cells.Count = 1 Then
+        If vSource.Cells.count = 1 Then
             ' [Case B-1] 단일 셀(예: A1)만 넘김 -> 여기서부터 끝까지 자동 탐색
             Set rngTarget = GetRealUsedRange(vSource.Worksheet, vSource)
         Else
@@ -112,37 +112,37 @@ End Function
 
 Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly As Boolean) As Variant
     Dim result() As Variant
-    Dim r As Long, c As Long
+    Dim R As Long, c As Long
     Dim targetRow As Long
     Dim includedRows As Long
     Dim cell As Range
     Dim textValue As String
 
     includedRows = 1
-    For r = 2 To rngTarget.Rows.Count
-        If IsSnapshotRowIncluded(r, rngTarget.Rows(r), visibleOnly) Then includedRows = includedRows + 1
-    Next r
+    For R = 2 To rngTarget.rows.count
+        If IsSnapshotRowIncluded(R, rngTarget.rows(R), visibleOnly) Then includedRows = includedRows + 1
+    Next R
 
-    ReDim result(1 To includedRows, 1 To rngTarget.Columns.Count)
+    ReDim result(1 To includedRows, 1 To rngTarget.Columns.count)
 
-    For r = 1 To rngTarget.Rows.Count
-        If Not IsSnapshotRowIncluded(r, rngTarget.Rows(r), visibleOnly) Then GoTo NextSourceRow
+    For R = 1 To rngTarget.rows.count
+        If Not IsSnapshotRowIncluded(R, rngTarget.rows(R), visibleOnly) Then GoTo NextSourceRow
 
         targetRow = targetRow + 1
-        For c = 1 To rngTarget.Columns.Count
-            Set cell = rngTarget.Cells(r, c)
-            If r = 1 Then
+        For c = 1 To rngTarget.Columns.count
+            Set cell = rngTarget.Cells(R, c)
+            If R = 1 Then
                 textValue = HeaderText(cell)
             Else
-                textValue = cell.Text
+                textValue = cell.text
                 If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(cell)) Then
-                    textValue = GetSafeFormattedText(cell.Value, cell.NumberFormat)
+                    textValue = GetSafeFormattedText(cell.value, cell.NumberFormat)
                 End If
             End If
             result(targetRow, c) = textValue
         Next c
 NextSourceRow:
-    Next r
+    Next R
 
     SnapshotVisibleText = result
 End Function
@@ -171,13 +171,13 @@ SafeExit:
 End Function
 
 Private Function HeaderText(ByVal cell As Range) As String
-    If IsError(cell.Value) Or IsNull(cell.Value) Or IsEmpty(cell.Value) Then Exit Function
-    HeaderText = CStr(cell.Value)
+    If IsError(cell.value) Or IsNull(cell.value) Or IsEmpty(cell.value) Then Exit Function
+    HeaderText = CStr(cell.value)
 End Function
 
 Private Function CellHasValue(ByVal cell As Range) As Boolean
-    If IsError(cell.Value) Or IsNull(cell.Value) Or IsEmpty(cell.Value) Then Exit Function
-    CellHasValue = (Len(CStr(cell.Value)) > 0)
+    If IsError(cell.value) Or IsNull(cell.value) Or IsEmpty(cell.value) Then Exit Function
+    CellHasValue = (Len(CStr(cell.value)) > 0)
 End Function
 
 Private Function IsOverflowText(ByVal textValue As String) As Boolean
@@ -454,7 +454,7 @@ Public Function GetUniqueKeys(ByVal sColName As String) As Variant
     If dicIdx Is Nothing Then
         GetUniqueKeys = Array()
     Else
-        GetUniqueKeys = dicIdx.Keys
+        GetUniqueKeys = dicIdx.keys
     End If
 End Function
 
@@ -466,7 +466,7 @@ Public Function GetUniqueKeysByIndex(ByVal lCol As Long) As Variant
     If dicIdx Is Nothing Then
         GetUniqueKeysByIndex = Array()
     Else
-        GetUniqueKeysByIndex = dicIdx.Keys
+        GetUniqueKeysByIndex = dicIdx.keys
     End If
 End Function
 
@@ -486,8 +486,8 @@ Public Property Get ColCount() As Long
     ColCount = m_lColCount
 End Property
 
-Public Property Get Headers() As Object
-    Set Headers = m_dicHeaders
+Public Property Get headers() As Object
+    Set headers = m_dicHeaders
 End Property
 
 Public Property Get RawArray() As Variant

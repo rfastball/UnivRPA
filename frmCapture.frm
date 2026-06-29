@@ -18,6 +18,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 Private Const CAPTURE_MODE_COORDS As String = "좌표/색상"
@@ -86,8 +87,4 @@ Private Function SelectedSnippetMode() As String
 SafeExit:
     SelectedSnippetMode = CAPTURE_MODE_COORDS
 End Function
-
-Private Sub cboSnippetMode_Change()
-
-End Sub
 

@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -43,7 +43,7 @@ Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheet
 End Sub
 
 Public Property Get totalLines() As Long
-    totalLines = m_source.TotalLines
+    totalLines = m_source.totalLines
 End Property
 
 Public Function RawCmdAt(ByVal lineNo As Long) As String

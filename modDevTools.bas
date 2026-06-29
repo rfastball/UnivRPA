@@ -49,7 +49,7 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     ' 1. 기본 스타일 및 명확한 격자 초기화
     With ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 6))
         .Font.name = "돋움체"
-        .Font.Size = 10
+        .Font.size = 10
         .Font.Bold = False
         .Font.Underline = xlUnderlineStyleNone
         .Interior.ColorIndex = xlNone
@@ -175,7 +175,7 @@ Public Sub EnsureHeaders(ws As Worksheet)
     With ws.Range("A1:F1")
         .value = headers
         .Font.name = "돋움체"
-        .Font.Size = 10
+        .Font.size = 10
         .Font.Bold = True
         .Font.color = vbBlack
         .Interior.color = RGB(240, 240, 240)

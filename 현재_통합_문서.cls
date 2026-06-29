@@ -89,10 +89,12 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     Next cell
 
     Dim key As Variant
-    For Each key In rowsToValidate.Keys
+    For Each key In rowsToValidate.keys
         modScriptAssist.ValidateCommandCell ws.Cells(CLng(key), cmdCol)
     Next key
 End Sub
+
+
 
 
 

@@ -458,11 +458,11 @@ Private Function UndefinedVarMessage(ByVal key As String, ByVal candidates As Va
     UndefinedVarMessage = msg
 End Function
 
-Private Function ClosestName(ByVal target As String, ByVal candidates As Variant) As String
+Private Function ClosestName(ByVal Target As String, ByVal candidates As Variant) As String
     On Error GoTo SafeExit
 
     Dim threshold As Long
-    If Len(Trim$(target)) <= 4 Then
+    If Len(Trim$(Target)) <= 4 Then
         threshold = 1
     Else
         threshold = 2
@@ -479,7 +479,7 @@ Private Function ClosestName(ByVal target As String, ByVal candidates As Variant
         candidate = CStr(item)
 
         Dim distance As Long
-        distance = LevenshteinDistance(target, candidate)
+        distance = LevenshteinDistance(Target, candidate)
         If distance <= threshold Then
             If distance < bestDistance Then
                 bestDistance = distance

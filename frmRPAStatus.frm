@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 ' 동적 컨트롤 변수
@@ -35,7 +36,7 @@ Private Sub UserForm_Initialize()
     Set lblProgress = Me.Controls.Add("Forms.Label.1", "lblProgress")
     With lblProgress
         .Top = 6: .Left = 8: .Width = 150: .Height = 14
-        .Font.name = "Malgun Gothic": .Font.Size = 9: .Font.Bold = True
+        .Font.name = "Malgun Gothic": .Font.size = 9: .Font.Bold = True
         .ForeColor = &H404040 ' 진한 회색
         .Caption = "Ready"
     End With
@@ -44,7 +45,7 @@ Private Sub UserForm_Initialize()
     Set lblCmd = Me.Controls.Add("Forms.Label.1", "lblCmd")
     With lblCmd
         .Top = 24: .Left = 8: .Width = 220: .Height = 30
-        .Font.name = "Consolas": .Font.Size = 8
+        .Font.name = "Consolas": .Font.size = 8
         .ForeColor = &H808080 ' 연한 회색
         .WordWrap = False ' 한 줄로 표시 (잘리면 잘리는대로)
         .Caption = ""

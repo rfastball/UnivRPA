@@ -1,4 +1,4 @@
-Attribute VB_Name = "modFilterUtils"
+﻿Attribute VB_Name = "modFilterUtils"
 Option Explicit
 
 ' Applies an Excel number format with graceful fallback for narrow-column "####" snapshots.
@@ -17,7 +17,7 @@ Public Function GetSafeFormattedText(ByVal vVal As Variant, ByVal sFmt As String
 
     If sFmt <> "" Then
         On Error Resume Next
-        sResult = Application.WorksheetFunction.Text(vVal, sFmt)
+        sResult = Application.WorksheetFunction.text(vVal, sFmt)
         bSuccess = (Err.Number = 0)
         Err.Clear
         On Error GoTo 0

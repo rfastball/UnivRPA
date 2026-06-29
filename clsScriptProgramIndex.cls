@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+﻿VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -38,8 +38,8 @@ Private Sub Class_Initialize()
     ResetIndexes
 End Sub
 
-Public Sub Init(ByVal source As clsScriptProgramSource)
-    Set m_source = source
+Public Sub Init(ByVal Source As clsScriptProgramSource)
+    Set m_source = Source
     ResetIndexes
 End Sub
 
@@ -87,7 +87,7 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
     Dim R As Long
     Dim endLine As Long
     Dim depth As Long
-    If Direction = 1 Then endLine = m_source.TotalLines Else endLine = 1
+    If Direction = 1 Then endLine = m_source.totalLines Else endLine = 1
 
     For R = startLine + Direction To endLine Step Direction
         If m_source.IsSkippable(R) Then GoTo NextRow
@@ -141,7 +141,7 @@ Public Sub BuildStructureIndex()
     Set m_ifEndLines = CreateObject("Scripting.Dictionary")
 
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.CmdAt(R) = "SELECT" Then BuildSelectBlock R
     Next R
     BuildIfEndIndex
@@ -173,8 +173,8 @@ Public Sub BuildLabelIndex()
 End Sub
 
 Public Sub BuildStateCoordinates()
-    ReDim m_loopDepths(1 To m_source.TotalLines)
-    ReDim m_subAreaIds(1 To m_source.TotalLines)
+    ReDim m_loopDepths(1 To m_source.totalLines)
+    ReDim m_subAreaIds(1 To m_source.totalLines)
     Set m_loopRanges = New Collection
 
     BuildLoopCoordinates
@@ -295,7 +295,7 @@ Private Sub BuildLabelReferenceIndex()
     m_labelRoleWarnings.CompareMode = vbTextCompare
 
     Dim R As Long
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
 
         Dim cmd As String
@@ -356,7 +356,7 @@ End Sub
 
 Private Sub BuildLabelRoles()
     Dim labelName As Variant
-    For Each labelName In m_labelRows.Keys
+    For Each labelName In m_labelRows.keys
         Dim isCallTarget As Boolean
         Dim isGotoTarget As Boolean
         isCallTarget = m_callLabelTargets.exists(CStr(labelName))
@@ -391,7 +391,7 @@ Private Sub BuildLoopCoordinates()
     Dim depth As Long
     Dim R As Long
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         Dim cmd As String
         cmd = m_source.CmdAt(R)
 
@@ -410,7 +410,7 @@ End Sub
 Private Sub BuildSubAreaCoordinates()
     Dim areaId As Long
     Dim key As Variant
-    For Each key In m_callLabelTargets.Keys
+    For Each key In m_callLabelTargets.keys
         If m_labels.exists(CStr(key)) Then
             areaId = areaId + 1
             Dim startLine As Long
@@ -428,7 +428,7 @@ Private Function FindSubroutineReturnLine(ByVal startLine As Long) As Long
     labelDepth = LoopDepthAt(startLine)
 
     Dim R As Long
-    For R = startLine + 1 To m_source.TotalLines
+    For R = startLine + 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
 
         Dim cmd As String
@@ -459,10 +459,10 @@ End Sub
 
 Private Sub BuildIfEndIndex()
     Dim memberStacks() As Collection
-    Dim top As Long
+    Dim Top As Long
     Dim R As Long
 
-    For R = 1 To m_source.TotalLines
+    For R = 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
 
         Dim def As CmdDef
@@ -472,24 +472,24 @@ Private Sub BuildIfEndIndex()
 
         Select Case def.BlockRole
             Case STARTER
-                top = top + 1
-                ReDim Preserve memberStacks(1 To top)
-                Set memberStacks(top) = New Collection
-                memberStacks(top).Add R
+                Top = Top + 1
+                ReDim Preserve memberStacks(1 To Top)
+                Set memberStacks(Top) = New Collection
+                memberStacks(Top).Add R
 
             Case MIDBLOCK
-                If top > 0 Then memberStacks(top).Add R
+                If Top > 0 Then memberStacks(Top).Add R
 
             Case ENDER
-                If top > 0 Then
-                    memberStacks(top).Add R
+                If Top > 0 Then
+                    memberStacks(Top).Add R
 
                     Dim memberLine As Variant
-                    For Each memberLine In memberStacks(top)
+                    For Each memberLine In memberStacks(Top)
                         m_ifEndLines(CStr(memberLine)) = R
                     Next memberLine
 
-                    top = top - 1
+                    Top = Top - 1
                 End If
         End Select
 
@@ -506,7 +506,7 @@ Private Sub BuildSelectBlock(ByVal SelectLine As Long)
 
     Dim depth As Long
     Dim R As Long
-    For R = SelectLine + 1 To m_source.TotalLines
+    For R = SelectLine + 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
 
         Dim def As CmdDef
@@ -593,7 +593,7 @@ End Function
 
 Private Function JoinDictionaryKeys(ByVal dict As Object) As String
     Dim key As Variant
-    For Each key In dict.Keys
+    For Each key In dict.keys
         If Len(JoinDictionaryKeys) > 0 Then JoinDictionaryKeys = JoinDictionaryKeys & ", "
         JoinDictionaryKeys = JoinDictionaryKeys & CStr(key)
     Next key
