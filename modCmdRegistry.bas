@@ -148,14 +148,16 @@ Private Function P(ByVal Meaning As String, ByVal dtype As eDataType, _
 End Function
 
 '==============================================================================
-' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE + FOREACH_ROW = 35개)
+' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE + FOREACH_ROW + ELSE_IF = 36개)
 '   초기값: 설계문서 부록 A / A.1 / A.3
-'   RAW 슬롯은 둘뿐: lvalue(SET/INC/DEC P1), 연산자(IF/WHILE P2). 그 외 RESOLVE.
+'   RAW 슬롯은 둘뿐: lvalue(SET/INC/DEC P1), 연산자(IF/ELSE_IF/WHILE P2). 그 외 RESOLVE.
 '==============================================================================
 Private Sub BuildRegistry()
 
-    '--- [FLOW] 18개 ------------------------------------------------------------
+    '--- [FLOW] 19개 ------------------------------------------------------------
     Reg "IF", FLOW, STARTER, "IF", clrFLOW, FULLROW, _
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
+    Reg "ELSE_IF", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW, _
         P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
     Reg "ELSE", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW
     Reg "END_IF", FLOW, ENDER, "IF", clrFLOW, FULLROW

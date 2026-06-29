@@ -1,6 +1,6 @@
 # UnivRPA 사용자 매뉴얼
 
-> 기준 소스 버전: `ccad021`
+> 기준 소스 버전: `8438ce0`
 
 UnivRPA는 **Excel 시트를 IDE처럼 사용하는 저코드 RPA(업무 자동화) 프레임워크**입니다.
 스크립트는 6열짜리 명령어 테이블로 작성하고, 단축키 한 번으로 줄 단위 실행합니다.
@@ -20,8 +20,8 @@ A=ROW   B=COMMAND   C=PARAM1   D=PARAM2   E=PARAM3   F=COMMENT
 | 문서 | 내용 |
 |------|------|
 | **[01. 시작하기](01-getting-started.md)** | 시트 구조, 스크립트 작성·실행, 상태 폼, 좌표 캡처, 첫 스크립트 따라하기 |
-| **[02. 명령어 레퍼런스](02-command-reference.md)** | 5개 카테고리 33개 명령어 전체, 조건 연산자, 토큰·변수 시스템 |
-| **[03. 작성 보조 도구](03-authoring-tools.md)** | 고정 단축키, 포맷터, 실시간 검증·힌트, 주석 토글, 색상 캡처 HUD |
+| **[02. 명령어 레퍼런스](02-command-reference.md)** | 5개 카테고리 36개 명령어 전체, 조건 연산자, 토큰·변수 시스템, 행 단위 데이터 순회 |
+| **[03. 작성 보조 도구](03-authoring-tools.md)** | 고정 단축키, 포맷터, 실시간 검증·힌트, 라벨 이동, 주석 토글, 색상 캡처 HUD |
 
 ---
 
@@ -51,11 +51,11 @@ A=ROW   B=COMMAND   C=PARAM1   D=PARAM2   E=PARAM3   F=COMMENT
 
 > 실행 중 제어: `Pause` = 일시정지/재개, `Esc` = 중단
 
-### 명령어 카테고리 (총 33개)
+### 명령어 카테고리 (총 36개)
 
 | 카테고리 | 개수 | 명령어 |
 |----------|------|--------|
-| 흐름 제어 (FLOW) | 16 | IF · ELSE · END_IF · WHILE · END_WHILE · REPEAT · END_REPEAT · SELECT · CASE · END_SELECT · BREAK · CONTINUE · GOTO · CALL · RETURN · LABEL |
+| 흐름 제어 (FLOW) | 19 | IF · ELSE_IF · ELSE · END_IF · WHILE · END_WHILE · REPEAT · END_REPEAT · FOREACH_ROW · END_FOREACH · SELECT · CASE · END_SELECT · BREAK · CONTINUE · GOTO · CALL · RETURN · LABEL |
 | 동작 (ACTION) | 6 | MOVE · CLICK · RCLICK · KEY · COMBO · TYPE |
 | 메모리 (MEMORY) | 3 | SET · INC · DEC |
 | 시스템 (SYSTEM) | 4 | FOCUS · SLEEP · NOTIFY · EXIT |

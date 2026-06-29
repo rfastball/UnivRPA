@@ -540,6 +540,28 @@ Private Sub AssertCond(ByVal name As String, ByVal v1 As String, ByVal op As Str
     End If
 End Sub
 
+Private Sub AssertElseIfOperator(ByVal name As String, ByVal v1 As String, ByVal op As String, _
+                                 ByVal v2 As String, ByRef failCount As Long)
+    Dim arr(1 To 6, 1 To 5) As Variant
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Call MakeCmd(arr, 1, "IF", "never", "EQ", "match")
+    Call MakeCmd(arr, 2, "SET", "{elseif_op_hit}", 0, "bad")
+    Call MakeCmd(arr, 3, "ELSE_IF", v1, op, v2)
+    Call MakeCmd(arr, 4, "SET", "{elseif_op_hit}", 0, name)
+    Call MakeCmd(arr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 6, "EXIT", 0, 0, "")
+
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, failCount
+    ExpectVisits trace, 4, 1, failCount
+    ExpectVar "elseif_op_hit", name, failCount
+    ExpectIfBranchDepth 0, failCount
+End Sub
+
 Private Function Test_RunProgramSmoke() As Long
     Dim fails As Long
     Dim arr(1 To 3, 1 To 5) As Variant
@@ -640,6 +662,60 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVisits trace, 2, 0, fails
     ExpectVisits trace, 4, 1, fails
     ExpectVar "else_body", "yes", fails
+
+    Dim elseIfNoElseArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(elseIfNoElseArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(elseIfNoElseArr, 2, "SET", "{elseif_if_body}", 0, "bad")
+    Call MakeCmd(elseIfNoElseArr, 3, "ELSE_IF", "2", "EQ", "0")
+    Call MakeCmd(elseIfNoElseArr, 4, "SET", "{elseif_body}", 0, "bad")
+    Call MakeCmd(elseIfNoElseArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(elseIfNoElseArr, 6, "EXIT", 0, 0, "")
+    result = RunProgram(elseIfNoElseArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 0, fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim elseIfElseArr(1 To 8, 1 To 5) As Variant
+    Call MakeCmd(elseIfElseArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(elseIfElseArr, 2, "SET", "{elseif_first}", 0, "bad")
+    Call MakeCmd(elseIfElseArr, 3, "ELSE_IF", "2", "EQ", "0")
+    Call MakeCmd(elseIfElseArr, 4, "SET", "{elseif_second}", 0, "bad")
+    Call MakeCmd(elseIfElseArr, 5, "ELSE", 0, 0, "")
+    Call MakeCmd(elseIfElseArr, 6, "SET", "{elseif_else}", 0, "yes")
+    Call MakeCmd(elseIfElseArr, 7, "END_IF", 0, 0, "")
+    Call MakeCmd(elseIfElseArr, 8, "EXIT", 0, 0, "")
+    result = RunProgram(elseIfElseArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 2, 0, fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectVisits trace, 6, 1, fails
+    ExpectVar "elseif_else", "yes", fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim elseIfChainArr(1 To 10, 1 To 5) As Variant
+    Call MakeCmd(elseIfChainArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(elseIfChainArr, 2, "SET", "{elseif_chain_if}", 0, "bad")
+    Call MakeCmd(elseIfChainArr, 3, "ELSE_IF", "2", "EQ", "2")
+    Call MakeCmd(elseIfChainArr, 4, "SET", "{elseif_chain_hit}", 0, "yes")
+    Call MakeCmd(elseIfChainArr, 5, "ELSE_IF", "3", "EQ", "3")
+    Call MakeCmd(elseIfChainArr, 6, "SET", "{elseif_chain_late}", 0, "bad")
+    Call MakeCmd(elseIfChainArr, 7, "ELSE", 0, 0, "")
+    Call MakeCmd(elseIfChainArr, 8, "SET", "{elseif_chain_else}", 0, "bad")
+    Call MakeCmd(elseIfChainArr, 9, "END_IF", 0, 0, "")
+    Call MakeCmd(elseIfChainArr, 10, "EXIT", 0, 0, "")
+    result = RunProgram(elseIfChainArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 4, 1, fails
+    ExpectVisits trace, 6, 0, fails
+    ExpectVisits trace, 8, 0, fails
+    ExpectVar "elseif_chain_hit", "yes", fails
+    ExpectIfBranchDepth 0, fails
+
+    AssertElseIfOperator "LIKE", "abc", "LIKE", "a*", fails
+    AssertElseIfOperator "STARTS", "abcdef", "STARTS", "abc", fails
+    AssertElseIfOperator "ENDS", "abcdef", "ENDS", "def", fails
+    AssertElseIfOperator "CONTAINS", "abcdef", "CONTAINS", "cd", fails
 
     Dim whileArr(1 To 13, 1 To 5) As Variant
     Call MakeCmd(whileArr, 1, "SET", "{i}", 0, "0")
@@ -1010,6 +1086,80 @@ Private Function Test_FlowNestedInteractions() As Long
     ExpectStackDepth 0, fails
     ExpectTrace trace, Array(1, 4, 5, 8, 9, 10, 6, 7, 2, 3), fails
 
+    Dim nestedElseIfArr(1 To 10, 1 To 5) As Variant
+    Call MakeCmd(nestedElseIfArr, 1, "IF", "outer", "EQ", "outer")
+    Call MakeCmd(nestedElseIfArr, 2, "IF", "inner", "EQ", "miss")
+    Call MakeCmd(nestedElseIfArr, 3, "SET", "{nested_inner_if}", 0, "bad")
+    Call MakeCmd(nestedElseIfArr, 4, "ELSE_IF", "inner", "EQ", "inner")
+    Call MakeCmd(nestedElseIfArr, 5, "SET", "{nested_inner_hit}", 0, "yes")
+    Call MakeCmd(nestedElseIfArr, 6, "END_IF", 0, 0, "")
+    Call MakeCmd(nestedElseIfArr, 7, "ELSE_IF", "outer2", "EQ", "outer2")
+    Call MakeCmd(nestedElseIfArr, 8, "SET", "{nested_outer_late}", 0, "bad")
+    Call MakeCmd(nestedElseIfArr, 9, "END_IF", 0, 0, "")
+    Call MakeCmd(nestedElseIfArr, 10, "EXIT", 0, 0, "")
+    result = RunProgram(nestedElseIfArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 5, 1, fails
+    ExpectVisits trace, 8, 0, fails
+    ExpectVar "nested_inner_hit", "yes", fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim gotoIfArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(gotoIfArr, 1, "IF", "1", "EQ", "1")
+    Call MakeCmd(gotoIfArr, 2, "GOTO", 0, 0, "OUT_IF")
+    Call MakeCmd(gotoIfArr, 3, "ELSE_IF", "1", "EQ", "1")
+    Call MakeCmd(gotoIfArr, 4, "SET", "{goto_if_bad}", 0, "bad")
+    Call MakeCmd(gotoIfArr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(gotoIfArr, 6, "LABEL", 0, 0, "OUT_IF")
+    Call MakeCmd(gotoIfArr, 7, "EXIT", 0, 0, "")
+    result = RunProgram(gotoIfArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 4, 0, fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim breakIfArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(breakIfArr, 1, "REPEAT", "3", 0, "")
+    Call MakeCmd(breakIfArr, 2, "IF", "1", "EQ", "1")
+    Call MakeCmd(breakIfArr, 3, "BREAK", 0, 0, "")
+    Call MakeCmd(breakIfArr, 4, "END_IF", 0, 0, "")
+    Call MakeCmd(breakIfArr, 5, "INC", "{break_if_bad}", 0, "")
+    Call MakeCmd(breakIfArr, 6, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(breakIfArr, 7, "EXIT", 0, 0, "")
+    result = RunProgram(breakIfArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 5, 0, fails
+    ExpectLoopDepth 0, fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim continueIfArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(continueIfArr, 1, "REPEAT", "1", 0, "")
+    Call MakeCmd(continueIfArr, 2, "IF", "1", "EQ", "1")
+    Call MakeCmd(continueIfArr, 3, "CONTINUE", 0, 0, "")
+    Call MakeCmd(continueIfArr, 4, "END_IF", 0, 0, "")
+    Call MakeCmd(continueIfArr, 5, "INC", "{continue_if_bad}", 0, "")
+    Call MakeCmd(continueIfArr, 6, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(continueIfArr, 7, "EXIT", 0, 0, "")
+    result = RunProgram(continueIfArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 5, 0, fails
+    ExpectLoopDepth 0, fails
+    ExpectIfBranchDepth 0, fails
+
+    Dim returnIfArr(1 To 8, 1 To 5) As Variant
+    Call MakeCmd(returnIfArr, 1, "CALL", 0, 0, "SUB_IF")
+    Call MakeCmd(returnIfArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(returnIfArr, 3, "LABEL", 0, 0, "SUB_IF")
+    Call MakeCmd(returnIfArr, 4, "IF", "1", "EQ", "1")
+    Call MakeCmd(returnIfArr, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(returnIfArr, 6, "ELSE_IF", "1", "EQ", "1")
+    Call MakeCmd(returnIfArr, 7, "SET", "{return_if_bad}", 0, "bad")
+    Call MakeCmd(returnIfArr, 8, "END_IF", 0, 0, "")
+    result = RunProgram(returnIfArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVisits trace, 7, 0, fails
+    ExpectStackDepth 0, fails
+    ExpectIfBranchDepth 0, fails
+
     Test_FlowNestedInteractions = fails
 End Function
 
@@ -1379,6 +1529,32 @@ Private Function Test_ScriptProgramModel() As Long
     ExpectLong "ResolveJumpTarget low out of range", CMD_ERROR, program.ResolveJumpTarget("0"), fails
     ExpectLong "ResolveJumpTarget high out of range", CMD_ERROR, program.ResolveJumpTarget("999"), fails
 
+    Dim ifChainModelArr(1 To 7, 1 To 5) As Variant
+    Call MakeCmd(ifChainModelArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(ifChainModelArr, 2, "TYPE", 0, 0, "if")
+    Call MakeCmd(ifChainModelArr, 3, "ELSE_IF", "2", "EQ", "2")
+    Call MakeCmd(ifChainModelArr, 4, "TYPE", 0, 0, "elseif")
+    Call MakeCmd(ifChainModelArr, 5, "ELSE_IF", "3", "EQ", "3")
+    Call MakeCmd(ifChainModelArr, 6, "ELSE", 0, 0, "")
+    Call MakeCmd(ifChainModelArr, 7, "END_IF", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray ifChainModelArr, 1
+    If Not program.ValidateStructure() Then
+        LogFail "ELSE_IF ValidateStructure", "True", program.ValidationErrors(): fails = fails + 1
+    Else
+        LogPass "ELSE_IF ValidateStructure"
+    End If
+    ExpectLong "IF -> ELSE_IF", 3, program.FindBlockPair(1, "IF", 1), fails
+    ExpectLong "ELSE_IF -> ELSE_IF", 5, program.FindBlockPair(3, "IF", 1), fails
+    ExpectLong "ELSE_IF -> ELSE", 6, program.FindBlockPair(5, "IF", 1), fails
+    ExpectLong "ELSE -> END_IF model", 7, program.FindBlockPair(6, "IF", 1), fails
+    ExpectLong "EndIfOf IF", 7, program.EndIfOf(1), fails
+    ExpectLong "EndIfOf ELSE_IF", 7, program.EndIfOf(3), fails
+    ExpectLong "EndIfOf ELSE", 7, program.EndIfOf(6), fails
+    ExpectLong "EndIfOf END_IF", 7, program.EndIfOf(7), fails
+    ExpectLong "DisplayDepth ELSE_IF corrected", 0, program.DisplayDepthAt(3), fails
+    ExpectLong "StyleDepth ELSE_IF guide", 1, program.StyleDepthAt(3), fails
+
     Dim roleArr(1 To 8, 1 To 5) As Variant
     Call MakeCmd(roleArr, 1, "CALL", 0, 0, "SUB")
     Call MakeCmd(roleArr, 2, "GOTO", 0, 0, "JMP")
@@ -1468,6 +1644,57 @@ Private Function Test_ScriptProgramModel() As Long
         LogPass "Dynamic CALL validation"
     End If
 
+    Dim orphanElseIfArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(orphanElseIfArr, 1, "ELSE_IF", "1", "EQ", "1")
+    Set program = New clsScriptProgram
+    program.LoadFromArray orphanElseIfArr, 1
+    If program.ValidateStructure() Then
+        LogFail "Orphan ELSE_IF validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "Orphan ELSE_IF validation"
+    End If
+    ExpectBool "Orphan ELSE_IF flow invalid", True, program.IsFlowInvalidAt(1), fails
+
+    Dim afterElseIfArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(afterElseIfArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(afterElseIfArr, 2, "ELSE", 0, 0, "")
+    Call MakeCmd(afterElseIfArr, 3, "ELSE_IF", "1", "EQ", "1")
+    Call MakeCmd(afterElseIfArr, 4, "END_IF", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray afterElseIfArr, 1
+    If program.ValidateStructure() Then
+        LogFail "ELSE_IF after ELSE validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "ELSE_IF after ELSE validation"
+    End If
+    ExpectBool "ELSE_IF after ELSE flow invalid", True, program.IsFlowInvalidAt(3), fails
+
+    Dim badElseIfOpArr(1 To 3, 1 To 5) As Variant
+    Call MakeCmd(badElseIfOpArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(badElseIfOpArr, 2, "ELSE_IF", "1", "EQUALS", "1")
+    Call MakeCmd(badElseIfOpArr, 3, "END_IF", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray badElseIfOpArr, 1
+    If program.ValidateStructure() Then
+        LogFail "ELSE_IF operator validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "ELSE_IF operator validation"
+    End If
+    ExpectBool "ELSE_IF operator flow invalid", True, program.IsFlowInvalidAt(2), fails
+
+    Dim missingElseIfParamArr(1 To 3, 1 To 5) As Variant
+    Call MakeCmd(missingElseIfParamArr, 1, "IF", "1", "EQ", "0")
+    Call MakeCmd(missingElseIfParamArr, 2, "ELSE_IF", "", "", "")
+    Call MakeCmd(missingElseIfParamArr, 3, "END_IF", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray missingElseIfParamArr, 1
+    If program.ValidateStructure() Then
+        LogFail "ELSE_IF missing params validation", "False", "True": fails = fails + 1
+    Else
+        LogPass "ELSE_IF missing params validation"
+    End If
+    ExpectBool "ELSE_IF missing params flow invalid", True, program.IsFlowInvalidAt(2), fails
+
     Test_ScriptProgramModel = fails
 End Function
 
@@ -1508,6 +1735,10 @@ End Sub
 
 Private Sub ExpectLoopDepth(ByVal expected As Long, ByRef failCount As Long)
     ExpectLong "LoopDepth", expected, modContext.LoopDepth(), failCount
+End Sub
+
+Private Sub ExpectIfBranchDepth(ByVal expected As Long, ByRef failCount As Long)
+    ExpectLong "IfBranchDepth", expected, modContext.IfBranchDepth(), failCount
 End Sub
 
 Private Sub ExpectTerminal(ByVal expected As eRunResult, ByVal actual As eRunResult, ByRef failCount As Long)

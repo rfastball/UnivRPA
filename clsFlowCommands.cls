@@ -7,11 +7,45 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' @desc 흐름제어 명령어(분기/반복/점프) 18종 디스패치 실행 담당
+' @desc 흐름제어 명령어(분기/반복/점프) 19종 디스패치 실행 담당
 ' @depends modEngine, modContext, modCmdRegistry, ICommand
 Option Explicit
 
 Implements ICommand
+
+Private Function ExecuteIfBranch(ByVal R As Long, ByRef args() As String) As Long
+    Dim endIfLine As Long
+    endIfLine = modEngine.ActiveProgram().EndIfOf(R)
+    If endIfLine <= 0 Then
+        ExecuteIfBranch = CMD_ERROR
+        Exit Function
+    End If
+
+    If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
+        modContext.IfBranchPush R, endIfLine
+        ExecuteIfBranch = CMD_NEXT_LINE
+    Else
+        ExecuteIfBranch = NextIfBranchTarget(R)
+    End If
+End Function
+
+Private Function NextIfBranchTarget(ByVal R As Long) As Long
+    Dim targetLine As Long
+    targetLine = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
+    If targetLine <= 0 Then
+        NextIfBranchTarget = CMD_ERROR
+        Exit Function
+    End If
+
+    Select Case modEngine.ActiveProgram().CmdAt(targetLine)
+        Case "ELSE"
+            NextIfBranchTarget = targetLine + 1
+        Case "ELSE_IF", "END_IF"
+            NextIfBranchTarget = targetLine
+        Case Else
+            NextIfBranchTarget = targetLine
+    End Select
+End Function
 
 ' @desc 흐름제어 명령어와 디코드된 args 받아 다음 줄/점프/에러 코드 반환
 Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef args() As String) As Long
@@ -56,6 +90,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim restoredDepth As Long
             retLine = modContext.PopStack(restoredDepth)
             If retLine > 0 Then
+                modContext.ReconcileIfBranchStackForJump retLine
                 LogShim.LogEvent "return.pop", _
                     Array("line", "returnRow", "stackDepth_after", "loopDepth_restored"), _
                     Array(R, retLine, modContext.GetStackDepth(), restoredDepth)
@@ -65,26 +100,27 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "IF"
-            If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
-                ICommand_Execute = CMD_NEXT_LINE
+            ICommand_Execute = ExecuteIfBranch(R, args)
+
+         Case "ELSE_IF"
+            Dim elseIfEnd As Long
+            elseIfEnd = modEngine.ActiveProgram().EndIfOf(R)
+            If elseIfEnd <= 0 Then
+                ICommand_Execute = CMD_ERROR
+            ElseIf modContext.IfBranchPeekEnd() = elseIfEnd Then
+                ICommand_Execute = elseIfEnd
             Else
-                Dim targetLine As Long: targetLine = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
-                If targetLine > 0 Then
-                    ' ELSE 면 그 다음 줄로, END_IF 면 그 줄로
-                    If modEngine.ActiveProgram().CmdAt(targetLine) = "ELSE" Then
-                        ICommand_Execute = targetLine + 1
-                    Else
-                        ICommand_Execute = targetLine
-                    End If
-                Else
-                    ICommand_Execute = CMD_ERROR
-                End If
+                ICommand_Execute = ExecuteIfBranch(R, args)
             End If
 
          Case "ELSE"
             ICommand_Execute = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
 
-         Case "END_IF", "END_SELECT"
+         Case "END_IF"
+            If modContext.IfBranchPeekEnd() = R Then modContext.IfBranchPop
+            ICommand_Execute = CMD_NEXT_LINE
+
+         Case "END_SELECT"
             ICommand_Execute = CMD_NEXT_LINE
 
          '--- [Loop] WHILE / END_WHILE (활성 루프 스택) ---
@@ -200,8 +236,10 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "BREAK"
             If modContext.LoopDepth() > 0 Then
                 Dim brkEnd As Long: brkEnd = modContext.LoopTopEnd()
+                Dim brkTarget As Long: brkTarget = brkEnd + 1
                 modContext.LoopPop "break" ' 카운터 정리
-                ICommand_Execute = brkEnd + 1
+                modContext.ReconcileIfBranchStackForJump brkTarget
+                ICommand_Execute = brkTarget
             Else
                 ICommand_Execute = CMD_ERROR
             End If
@@ -209,7 +247,9 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "CONTINUE"
             If modContext.LoopDepth() > 0 Then
                 ' 감싸는 루프의 ENDER로 점프 → WHILE/REPEAT 각각의 ENDER가 알맞게 처리
-                ICommand_Execute = modContext.LoopTopEnd()
+                Dim continueTarget As Long: continueTarget = modContext.LoopTopEnd()
+                modContext.ReconcileIfBranchStackForJump continueTarget
+                ICommand_Execute = continueTarget
             Else
                 ICommand_Execute = CMD_ERROR
             End If

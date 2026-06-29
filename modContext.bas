@@ -31,6 +31,14 @@ Private LoopStack() As LoopFrame
 Private LoopTables() As Object      ' LoopStack과 같은 인덱스의 FOREACH 테이블 스냅샷
 Private LoopTop As Long             ' 0 = 빈 스택, n = 활성 프레임 개수
 
+' [4] IF 런타임: 이미 선택된 IF/ELSE_IF 분기 추적
+Private Type IfBranchFrame
+    headerLine As Long
+    endIfLine As Long
+End Type
+Private IfBranchStack() As IfBranchFrame
+Private IfBranchTop As Long
+
 '==============================================================================
 ' 1. Initialization & Reset (초기화)
 '==============================================================================
@@ -50,8 +58,9 @@ Public Sub InitContext()
     ' 4. 상태바 초기화
     Application.StatusBar = "RPA Ready..."
 
-    ' 5. 루프 스택 초기화
+    ' 5. 런타임 스택 초기화
     LoopReset
+    IfBranchReset
 End Sub
 
 ' [종료] 매크로 중단/완료 시 호출
@@ -60,6 +69,7 @@ Public Sub ResetContext()
     Set CallStack = Nothing
     Set Memory = Nothing
     LoopReset
+    IfBranchReset
     Application.StatusBar = False ' 엑셀 기본 상태로 복귀
 End Sub
 
@@ -310,5 +320,60 @@ Public Function ReconcileLoopStackForJump(ByVal targetLine As Long, ByVal target
     Do While LoopTop > keepDepth
         LoopPop "goto_reconcile"
         ReconcileLoopStackForJump = ReconcileLoopStackForJump + 1
+    Loop
+End Function
+
+'--------------------------------------------------
+' 6. [IF Branch Management] 선택된 IF/ELSE_IF 분기 스택
+'--------------------------------------------------
+
+Public Sub IfBranchReset()
+    Erase IfBranchStack
+    IfBranchTop = 0
+End Sub
+
+Public Function IfBranchDepth() As Long
+    IfBranchDepth = IfBranchTop
+End Function
+
+Public Sub IfBranchPush(ByVal headerLine As Long, ByVal endIfLine As Long)
+    If endIfLine <= 0 Then Exit Sub
+
+    IfBranchTop = IfBranchTop + 1
+    ReDim Preserve IfBranchStack(1 To IfBranchTop)
+    IfBranchStack(IfBranchTop).headerLine = headerLine
+    IfBranchStack(IfBranchTop).endIfLine = endIfLine
+End Sub
+
+Public Sub IfBranchPop()
+    If IfBranchTop <= 0 Then Exit Sub
+
+    IfBranchTop = IfBranchTop - 1
+    If IfBranchTop > 0 Then
+        ReDim Preserve IfBranchStack(1 To IfBranchTop)
+    Else
+        Erase IfBranchStack
+    End If
+End Sub
+
+Public Function IfBranchPeekEnd() As Long
+    If IfBranchTop > 0 Then IfBranchPeekEnd = IfBranchStack(IfBranchTop).endIfLine
+End Function
+
+Public Function ReconcileIfBranchStackForJump(ByVal targetLine As Long) As Long
+    Dim keepDepth As Long
+    Dim i As Long
+
+    keepDepth = 0
+    For i = IfBranchTop To 1 Step -1
+        If targetLine >= IfBranchStack(i).headerLine And targetLine <= IfBranchStack(i).endIfLine Then
+            keepDepth = i
+            Exit For
+        End If
+    Next i
+
+    Do While IfBranchTop > keepDepth
+        IfBranchPop
+        ReconcileIfBranchStackForJump = ReconcileIfBranchStackForJump + 1
     Loop
 End Function

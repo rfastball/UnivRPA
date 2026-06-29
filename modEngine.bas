@@ -315,6 +315,7 @@ Public Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As Stri
     Dim popped As Long
     popped = modContext.ReconcileLoopStackForJump(targetLine, m_program.LoopDepthAt(targetLine))
     If popped < 0 Then Exit Function
+    modContext.ReconcileIfBranchStackForJump targetLine
 
     framesPopped = popped
     ResolveGotoTarget = targetLine

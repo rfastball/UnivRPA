@@ -36,6 +36,7 @@ Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheet
     If Not IsArray(sourceArray) Then Err.Raise 5, "clsScriptProgram.LoadFromArray", "Program source must be a 2D array."
     m_source.LoadFromArray sourceArray, firstSheetRow
     WireInternals
+    m_index.BuildStructureIndex
     m_index.BuildLabelIndex
     m_index.BuildStateCoordinates
     m_analysis.BuildStaticAnalysis
@@ -103,6 +104,10 @@ End Function
 
 Public Function EndSelectOfCase(ByVal caseLine As Long) As Long
     EndSelectOfCase = m_index.EndSelectOfCase(caseLine)
+End Function
+
+Public Function EndIfOf(ByVal lineNo As Long) As Long
+    EndIfOf = m_index.EndIfOf(lineNo)
 End Function
 
 Public Sub BuildLabelIndex()

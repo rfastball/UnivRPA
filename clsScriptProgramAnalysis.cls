@@ -13,6 +13,11 @@ Attribute VB_Exposed = False
 ' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex
 Option Explicit
 
+Private Type IfValidationFrame
+    headerLine As Long
+    sawElse As Boolean
+End Type
+
 Private m_source As clsScriptProgramSource
 Private m_index As clsScriptProgramIndex
 Private m_subroutineStartRows As Object
@@ -66,6 +71,7 @@ Public Sub BuildStaticAnalysis()
     m_variableWarnings.CompareMode = vbTextCompare
 
     BuildDisplayDepths
+    BuildIfStructureAnalysis False
     BuildSubroutineFlowAnalysis
     BuildVariableAnalysis
 End Sub
@@ -108,6 +114,7 @@ End Function
 Public Function ValidateStructure() As Boolean
     ClearValidationErrors
     m_index.BuildStructureIndex
+    BuildIfStructureAnalysis True
 
     Dim blocks As Object
     Set blocks = m_index.SelectBlocks
@@ -153,6 +160,74 @@ Public Function ValidationErrors() As String
     Next i
 End Function
 
+Private Sub BuildIfStructureAnalysis(ByVal reportValidation As Boolean)
+    Dim stack() As IfValidationFrame
+    Dim top As Long
+    Dim R As Long
+
+    For R = 1 To m_source.TotalLines
+        If m_source.IsSkippable(R) Then GoTo NextRow
+
+        Select Case m_source.CmdAt(R)
+            Case "IF"
+                top = top + 1
+                ReDim Preserve stack(1 To top)
+                stack(top).headerLine = R
+                stack(top).sawElse = False
+
+            Case "ELSE_IF"
+                If top = 0 Then
+                    MarkIfStructureIssue R, "ELSE_IF line " & R & " has no matching IF.", reportValidation
+                ElseIf stack(top).sawElse Then
+                    MarkIfStructureIssue R, "ELSE_IF line " & R & " cannot appear after ELSE.", reportValidation
+                End If
+                ValidateElseIfParams R, reportValidation
+
+            Case "ELSE"
+                If top = 0 Then
+                    MarkIfStructureIssue R, "ELSE line " & R & " has no matching IF.", reportValidation
+                ElseIf stack(top).sawElse Then
+                    MarkIfStructureIssue R, "ELSE line " & R & " duplicates an ELSE in the same IF block.", reportValidation
+                Else
+                    stack(top).sawElse = True
+                End If
+
+            Case "END_IF"
+                If top = 0 Then
+                    MarkIfStructureIssue R, "END_IF line " & R & " has no matching IF.", reportValidation
+                Else
+                    top = top - 1
+                End If
+        End Select
+
+NextRow:
+    Next R
+
+    Do While top > 0
+        MarkIfStructureIssue stack(top).headerLine, "IF line " & stack(top).headerLine & " has no END_IF.", reportValidation
+        top = top - 1
+    Loop
+End Sub
+
+Private Sub ValidateElseIfParams(ByVal lineNo As Long, ByVal reportValidation As Boolean)
+    If Len(Trim$(m_source.P1At(lineNo))) = 0 Then
+        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P1.", reportValidation
+    End If
+    If Len(Trim$(m_source.P2At(lineNo))) = 0 Then
+        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P2.", reportValidation
+    ElseIf Not modCondition.IsConditionOperator(m_source.P2At(lineNo)) Then
+        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has invalid condition operator: " & m_source.P2At(lineNo), reportValidation
+    End If
+    If Len(Trim$(m_source.P3At(lineNo))) = 0 Then
+        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P3.", reportValidation
+    End If
+End Sub
+
+Private Sub MarkIfStructureIssue(ByVal lineNo As Long, ByVal message As String, ByVal reportValidation As Boolean)
+    If lineNo > 0 Then m_flowInvalidRows(CStr(lineNo)) = True
+    If reportValidation Then AddValidationError message
+End Sub
+
 Private Sub BuildDisplayDepths()
     Dim depth As Long
     Dim R As Long
@@ -165,7 +240,7 @@ Private Sub BuildDisplayDepths()
 
         m_styleDepths(R) = depth
         m_displayDepths(R) = depth
-        If cmd = "ELSE" Or cmd = "CASE" Then m_displayDepths(R) = IIf(depth > 0, depth - 1, 0)
+        If cmd = "ELSE" Or cmd = "ELSE_IF" Or cmd = "CASE" Then m_displayDepths(R) = IIf(depth > 0, depth - 1, 0)
 
         If IsFormatBlockStarter(cmd) Then depth = depth + 1
     Next R

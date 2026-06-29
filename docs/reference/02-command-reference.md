@@ -1,10 +1,10 @@
 # 02. 명령어 레퍼런스
 
-> 기준 소스 버전: `ccad021`
+> 기준 소스 버전: `8438ce0`
 > 단일 출처(SSOT): 파라미터 정의는 `modCmdRegistry.bas`, 조건 연산자는 `modActions.bas`(`IsConditionOperator`), 키 이름은 `modActions.bas`(`ParseKeyCode`) 등록값을 그대로 따릅니다.
 > 관련 문서: [시작하기](01-getting-started.md) · [작성 보조 도구](03-authoring-tools.md)
 
-총 **5개 카테고리, 33개 명령어**. 각 표의 `P1/P2/P3`은 시트의 `PARAM1(C) / PARAM2(D) / PARAM3(E)` 열에 대응합니다.
+총 **5개 카테고리, 36개 명령어**. 각 표의 `P1/P2/P3`은 시트의 `PARAM1(C) / PARAM2(D) / PARAM3(E)` 열에 대응합니다.
 
 ---
 
@@ -14,24 +14,27 @@
 - **타입**: `num`(숫자) / `str`(문자).
 - **RAW / RESOLVE**: 파라미터의 토큰 처리 방식.
   - **RESOLVE** (기본): `{변수}`·`{$토큰}`을 실제 값으로 치환한 뒤 사용.
-  - **RAW**: 치환하지 않고 원문 그대로 사용. **딱 두 군데뿐** — `SET/INC/DEC`의 좌변(P1), `IF/WHILE`의 연산자(P2).
+  - **RAW**: 치환하지 않고 원문 그대로 사용. `SET/INC/DEC`의 좌변(P1), `IF/ELSE_IF/WHILE`의 연산자(P2), `LABEL`의 라벨명(P3)이 RAW입니다.
 - 빈 칸은 해당 열을 비워둔다는 뜻입니다. 예: `KEY`는 P2를 사용하지 않습니다.
 
 ---
 
-## A. 흐름 제어 (FLOW) — 16개
+## A. 흐름 제어 (FLOW) — 19개
 
 분기, 반복, 라벨/점프, 서브루틴을 담당합니다. 블록 명령은 시작–종료가 짝을 이루며 자유롭게 중첩됩니다.
 
 | 명령어 | P1 (C) | P2 (D) | P3 (E) | 설명 |
 |--------|--------|--------|--------|------|
-| `IF` | 좌변 (str, 필수) | 연산자 (str, **RAW**, 필수) | 우변 (str, 필수) | 조건이 참이면 다음 줄 실행, 거짓이면 `ELSE`(있으면) 또는 `END_IF`로 점프 |
+| `IF` | 좌변 (str, 필수) | 연산자 (str, **RAW**, 필수) | 우변 (str, 필수) | 조건이 참이면 다음 줄 실행, 거짓이면 다음 `ELSE_IF`/`ELSE`/`END_IF`로 점프 |
+| `ELSE_IF` | 좌변 (str, 필수) | 연산자 (str, **RAW**, 필수) | 우변 (str, 필수) | 앞 분기가 거짓일 때 평가되는 추가 조건 분기 |
 | `ELSE` | — | — | — | `IF`의 거짓 분기 (선택) |
 | `END_IF` | — | — | — | `IF` 블록 종료 |
 | `WHILE` | 좌변 (str, 필수) | 연산자 (str, **RAW**, 필수) | 우변 (str, 필수) | 조건이 참인 동안 블록 반복 |
 | `END_WHILE` | — | — | — | `WHILE` 블록 종료 (헤더로 복귀) |
 | `REPEAT` | 반복횟수 (num, 옵션) | — | — | N회 반복. **0 또는 빈값이면 무한 반복** |
 | `END_REPEAT` | — | — | — | `REPEAT` 블록 종료 |
+| `FOREACH_ROW` | 워크북 이름/경로 (str, 필수) | 시트 또는 `시트!주소` (str, 필수) | 순회모드 (str, 옵션) | 워크시트/범위의 데이터 행을 한 줄씩 순회 |
+| `END_FOREACH` | — | — | — | 다음 데이터 행으로 이동하거나 순회 종료 |
 | `SELECT` | 대상값 (str, 필수) | — | — | 다중 분기. 일치하는 `CASE`로 이동 |
 | `CASE` | 비교값 (str, 옵션) | — | — | `SELECT` 안의 분기 라벨. 빈값/`ELSE`는 기본값 |
 | `END_SELECT` | — | — | — | `SELECT` 블록 종료 |
@@ -44,22 +47,47 @@
 
 > `GOTO`·`CALL`·`LABEL`의 인자는 **P3(E열)**에 들어갑니다 (P1·P2는 비움).
 
-**블록 짝**: `IF ↔ END_IF`, `WHILE ↔ END_WHILE`, `REPEAT ↔ END_REPEAT`, `SELECT ↔ END_SELECT`. 모든 블록이 짝을 이뤄야 하며 중첩 가능합니다.
+**블록 짝**: `IF ↔ END_IF`, `WHILE ↔ END_WHILE`, `REPEAT ↔ END_REPEAT`, `FOREACH_ROW ↔ END_FOREACH`, `SELECT ↔ END_SELECT`. 모든 블록이 짝을 이뤄야 하며 중첩 가능합니다.
 
 **루프 토큰**: 루프 안에서 `{$LOOP}`은 현재 반복 횟수(1부터)를 반환합니다.
+
+### FOREACH_ROW
+
+`FOREACH_ROW`는 열린 워크북 또는 읽기 전용 외부 워크북의 워크시트/범위를 메모리 스냅샷으로 읽은 뒤, 첫 행을 헤더로 보고 두 번째 행부터 반복합니다.
+
+| 항목 | 설명 |
+|------|------|
+| P1 | 워크북 이름 일부 또는 파일 경로. `\`, `/`, `:`가 있으면 경로로 보고 읽기 전용으로 엽니다. 같은 파일명이 이미 열려 있으면 열린 워크북을 재사용합니다. |
+| P2 | `Sheet1`, `Sheet1!A1`, `Sheet1!A1:C10` 형식. 시트명은 `'상세 매출'!A1:D20`처럼 작은따옴표로 감쌀 수 있습니다. |
+| P3 | 빈값/`ALL_ROWS`는 모든 데이터 행, `VISIBLE_ROWS`는 필터나 숨김으로 보이는 행만 순회합니다. |
+
+- 명시 범위가 너무 크면 실제 사용 범위로 잘라서 읽습니다.
+- 셀 값은 화면에 보이는 `.Text` 기준으로 읽습니다. 열 폭이 좁아 `####`로 보이는 값은 원 값과 표시 형식으로 복원해 읽습니다.
+- 데이터 행이 없으면 블록 본문을 실행하지 않고 `END_FOREACH` 다음으로 이동합니다.
+
+반복 안에서 사용할 수 있는 토큰:
+
+| 토큰 | 값 |
+|------|-----|
+| `{$ROW.헤더명}` | 현재 행에서 해당 헤더 열의 값 |
+| `{$RIDX}` | 현재 `FOREACH_ROW` 순번(1부터) |
+
+`{$LOOP}`은 기존처럼 가장 안쪽 활성 루프의 반복 횟수입니다. `FOREACH_ROW` 안에 `WHILE`이나 `REPEAT`가 중첩되어 있으면, 행 순번은 `{$RIDX}`를 사용하세요.
 
 ### 예제
 
 ```
-# IF / ELSE
+# IF / ELSE_IF / ELSE
 IF | {결과} | EQ | 성공
   CLICK | 100 | 100
+ELSE_IF | {결과} | EQ | 재시도
+  CLICK | 150 | 150
 ELSE
   CLICK | 200 | 200
 END_IF
 
 # WHILE 루프
-SET | {i} | 0
+SET | {i} |  | 0
 WHILE | {i} | < | 5
   CLICK | 100 | {i}
   INC | {i}
@@ -79,11 +107,16 @@ SELECT | {모드}
 END_SELECT
 
 # 서브루틴
-CALL | 인사하기
+CALL |  |  | 인사하기
 EXIT
-LABEL | 인사하기
+LABEL |  |  | 인사하기
   TYPE | 0 |  | 안녕하세요
 RETURN
+
+# FOREACH_ROW
+FOREACH_ROW | 고객목록.xlsx | Sheet1!A1:C100 | VISIBLE_ROWS
+  NOTIFY | 1 |  | {$RIDX}: {$ROW.이름}
+END_FOREACH
 ```
 
 ---
@@ -149,13 +182,13 @@ TYPE  | 50    |   | 안녕하세요  # 50ms 간격으로 입력
 ### 예제
 
 ```
-SET | {카운터} | 0          # 카운터 = 0
-SET | {이름}   | 홍길동      # 이름 = 홍길동
-SET | {복사본} | {$CLIP}     # 클립보드 내용을 변수로
-SET | {$CLIP}  | {이름}      # 변수 값을 클립보드로
+SET | {카운터} |  | 0          # 카운터 = 0
+SET | {이름}   |  | 홍길동      # 이름 = 홍길동
+SET | {복사본} |  | {$CLIP}     # 클립보드 내용을 변수로
+SET | {$CLIP}  |  | {이름}      # 변수 값을 클립보드로
 INC | {카운터}               # +1 (기본)
-INC | {카운터} | 5           # +5
-DEC | {카운터} | 2           # -2
+INC | {카운터} |  | 5          # +5
+DEC | {카운터} |  | 2          # -2
 ```
 
 ---
@@ -214,9 +247,9 @@ ASSERT      | 50  | 50  | !#FFFFFF  # (50,50)이 흰색이면 실패
 
 ---
 
-## 조건 연산자 (IF / WHILE 의 P2)
+## 조건 연산자 (IF / ELSE_IF / WHILE 의 P2)
 
-`IF`/`WHILE`의 연산자(P2)는 **RAW**로 처리되며, 아래 목록만 허용됩니다 (`IsConditionOperator` 기준).
+`IF`/`ELSE_IF`/`WHILE`의 연산자(P2)는 **RAW**로 처리되며, 아래 목록만 허용됩니다 (`IsConditionOperator` 기준).
 
 | 연산자 | 의미 |
 |--------|------|
@@ -259,6 +292,8 @@ RESOLVE 슬롯의 파라미터는 실행 시 `{ }` 토큰이 실제 값으로 �
 |------|-----|
 | `{$CLIP}` | 현재 클립보드 텍스트 |
 | `{$LOOP}` | 최내곽 루프의 현재 반복(1부터), 루프 밖이면 빈값 |
+| `{$RIDX}` | 최내곽 `FOREACH_ROW`의 현재 행 순번(1부터), 순회 밖이면 빈값 |
+| `{$ROW.헤더명}` | 현재 `FOREACH_ROW` 행의 헤더별 값, 순회 밖이면 원문 유지 |
 | `{$PIXEL:x,y}` | (x,y) 픽셀 색상 `#RRGGBB` |
 
 ### 사용자 변수
@@ -274,8 +309,8 @@ RESOLVE 슬롯의 파라미터는 실행 시 `{ }` 토큰이 실제 값으로 �
 토큰 안에 토큰을 넣을 수 있습니다(재귀 치환):
 
 ```
-SET | {x} | 100
-SET | {y} | 200
+SET | {x} |  | 100
+SET | {y} |  | 200
 IF  | {$PIXEL:{x},{y}} | EQ | #FFFFFF     # (100,200) 색이 흰색이면
   NOTIFY |  |  | 흰색 감지
 END_IF
@@ -284,31 +319,3 @@ END_IF
 ---
 
 다음: 포맷터·실시간 검증·단축키 등 작성을 돕는 도구는 **[03. 작성 보조 도구](03-authoring-tools.md)** 를 참고하세요.
-
----
-
-## FOREACH_ROW data iteration
-
-`FOREACH_ROW` reads a worksheet or range from an open workbook or read-only external workbook into a memory snapshot, then loops over each data row. The first row is treated as headers, and iteration starts at the next row.
-
-| Command | P1 (C) | P2 (D) | P3 (E) | Description |
-|--------|--------|--------|--------|-------------|
-| `FOREACH_ROW` | workbook name/path (str, RESOLVE, required) | sheet or `sheet!address` (str, RESOLVE, required) | mode: `ALL_ROWS`/`VISIBLE_ROWS` (optional) | Start table-row iteration |
-| `END_FOREACH` |  |  |  | Advance to the next row or finish the loop |
-
-- If P1 contains `\`, `/`, or `:`, it is treated as a path and opened read-only. If the same file name is already open, the open workbook is reused and not closed.
-- If P1 is not a path, open workbook names are searched by case-insensitive partial match. Zero or multiple matches stop with an error.
-- P2 supports `Sheet1`, `Sheet1!A1`, and `Sheet1!A1:C10`.
-- P3 blank or `ALL_ROWS` loops over all data rows.
-- P3 `VISIBLE_ROWS` loops over the header plus currently visible data rows only. Rows hidden by filters or manual row hiding are skipped; hidden columns are still loaded.
-- Large explicit ranges are clamped to the worksheet's actual used range.
-- Cell values are read from `.Text` to preserve visible strings. Narrow-column `####` cells are reconstructed from `Value` and `NumberFormat`.
-
-### FOREACH_ROW tokens
-
-| Token | Value |
-|------|-------|
-| `{$ROW.column}` | Current row value for the matching header |
-| `{$RIDX}` | Current `FOREACH_ROW` iteration number, 1-based |
-
-`{$LOOP}` keeps its existing meaning: the innermost active loop iteration. Inside a `WHILE` or `REPEAT` nested within `FOREACH_ROW`, use `{$RIDX}` for the row index.

@@ -320,7 +320,7 @@ Private Function ContainsTokenSyntax(ByVal text As String) As Boolean
 End Function
 
 Private Function IsConditionOperatorSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
-    IsConditionOperatorSlot = ((def.Canonical = "IF" Or def.Canonical = "WHILE") And idx = 2)
+    IsConditionOperatorSlot = ((def.Canonical = "IF" Or def.Canonical = "ELSE_IF" Or def.Canonical = "WHILE") And idx = 2)
 End Function
 
 Private Function IsMemoryLValueSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean

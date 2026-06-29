@@ -15,11 +15,13 @@ Option Explicit
 
 Private Const LINE_NOT_FOUND As Long = CMD_ERROR
 Private Const END_SELECT_NOT_FOUND As Long = CMD_ERROR
+Private Const END_IF_NOT_FOUND As Long = CMD_ERROR
 Private Const LABEL_NOT_FOUND As Long = CMD_ERROR
 
 Private m_source As clsScriptProgramSource
 Private m_selectBlocks As Object
 Private m_caseEndSelectLines As Object
+Private m_ifEndLines As Object
 Private m_labels As Object
 Private m_labelRows As Object
 Private m_duplicateLabels As Object
@@ -44,6 +46,7 @@ End Sub
 Private Sub ResetIndexes()
     Set m_selectBlocks = CreateObject("Scripting.Dictionary")
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
+    Set m_ifEndLines = CreateObject("Scripting.Dictionary")
     Set m_labels = CreateObject("Scripting.Dictionary")
     Set m_labelRows = CreateObject("Scripting.Dictionary")
     Set m_duplicateLabels = CreateObject("Scripting.Dictionary")
@@ -135,11 +138,13 @@ End Function
 Public Sub BuildStructureIndex()
     Set m_selectBlocks = CreateObject("Scripting.Dictionary")
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
+    Set m_ifEndLines = CreateObject("Scripting.Dictionary")
 
     Dim R As Long
     For R = 1 To m_source.TotalLines
         If m_source.CmdAt(R) = "SELECT" Then BuildSelectBlock R
     Next R
+    BuildIfEndIndex
 End Sub
 
 Public Function SelectBlock(ByVal SelectLine As Long) As clsSelectBlock
@@ -151,6 +156,15 @@ Public Function EndSelectOfCase(ByVal caseLine As Long) As Long
         EndSelectOfCase = CLng(m_caseEndSelectLines(CStr(caseLine)))
     Else
         EndSelectOfCase = END_SELECT_NOT_FOUND
+    End If
+End Function
+
+Public Function EndIfOf(ByVal lineNo As Long) As Long
+    m_source.ValidateLineRange lineNo
+    If m_ifEndLines.exists(CStr(lineNo)) Then
+        EndIfOf = CLng(m_ifEndLines(CStr(lineNo)))
+    Else
+        EndIfOf = END_IF_NOT_FOUND
     End If
 End Function
 
@@ -440,6 +454,46 @@ Private Sub MarkSubArea(ByVal startLine As Long, ByVal endLine As Long, ByVal ar
     Dim R As Long
     For R = startLine To endLine
         If m_subAreaIds(R) = 0 Then m_subAreaIds(R) = areaId
+    Next R
+End Sub
+
+Private Sub BuildIfEndIndex()
+    Dim memberStacks() As Collection
+    Dim top As Long
+    Dim R As Long
+
+    For R = 1 To m_source.TotalLines
+        If m_source.IsSkippable(R) Then GoTo NextRow
+
+        Dim def As CmdDef
+        Set def = modCmdRegistry.GetCmdDef(m_source.CmdAt(R))
+        If def Is Nothing Then GoTo NextRow
+        If UCase$(def.BlockGroup) <> "IF" Then GoTo NextRow
+
+        Select Case def.BlockRole
+            Case STARTER
+                top = top + 1
+                ReDim Preserve memberStacks(1 To top)
+                Set memberStacks(top) = New Collection
+                memberStacks(top).Add R
+
+            Case MIDBLOCK
+                If top > 0 Then memberStacks(top).Add R
+
+            Case ENDER
+                If top > 0 Then
+                    memberStacks(top).Add R
+
+                    Dim memberLine As Variant
+                    For Each memberLine In memberStacks(top)
+                        m_ifEndLines(CStr(memberLine)) = R
+                    Next memberLine
+
+                    top = top - 1
+                End If
+        End Select
+
+NextRow:
     Next R
 End Sub
 
