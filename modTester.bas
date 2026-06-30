@@ -35,6 +35,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + Test_MemoryResolverHeadless()
     failCount = failCount + Test_ParamSpecValidation()
     failCount = failCount + Test_StaticVariableAnalysis()
+    failCount = failCount + Test_ScriptAssistFormatterRegression()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + Test_RegistryDispatchSync()
@@ -1421,6 +1422,72 @@ CleanUp:
 ErrHandler:
     fails = fails + 1
     LogFail "Static variable analysis", "no error", Err.Description
+    Resume CleanUp
+End Function
+
+Private Function Test_ScriptAssistFormatterRegression() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim ws As Worksheet
+    Dim previousSheet As Object
+    Dim sheetName As String
+
+    Debug.Print "--- [Flow 6B] Script Assist formatter comments ---"
+
+    Set previousSheet = ActiveSheet
+    sheetName = "RPA_FORMAT_COMMENT_TEST"
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets(sheetName).Delete
+    On Error GoTo ErrHandler
+    Application.DisplayAlerts = True
+
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+    ws.name = sheetName
+    modDevTools.EnsureHeaders ws
+
+    ws.Cells(2, 2).value = "IF"
+    ws.Cells(2, 3).value = "1"
+    ws.Cells(2, 4).value = "EQ"
+    ws.Cells(2, 5).value = "1"
+    ws.Cells(3, 2).value = "#> TYPE"
+    ws.Cells(3, 3).value = "0"
+    ws.Cells(3, 5).value = "inside"
+    ws.Cells(4, 2).value = "END_IF"
+
+    ws.Activate
+    modDevTools.FormatRPAScript
+    ExpectText "Formatter normalizes #> indent", "# > TYPE", CStr(ws.Cells(3, 2).value), fails
+
+    modDevTools.FormatRPAScript
+    ExpectText "Formatter keeps comment stable", "# > TYPE", CStr(ws.Cells(3, 2).value), fails
+
+    Dim program As clsScriptProgram
+    Set program = New clsScriptProgram
+    program.LoadFromRange ws.Range(ws.Cells(2, 1), ws.Cells(4, 6))
+    ExpectBool "Formatter comment remains skippable", True, program.IsCommentLine(2), fails
+
+    ws.Cells(3, 2).Select
+    modScriptAssist.ToggleSelectedCommandComment
+    modDevTools.FormatRPAScript
+    ExpectText "Formatter restores uncommented indent", "> TYPE", CStr(ws.Cells(3, 2).value), fails
+
+CleanUp:
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = True
+    If Not previousSheet Is Nothing Then previousSheet.Activate
+    Application.StatusBar = False
+    On Error GoTo 0
+    Test_ScriptAssistFormatterRegression = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "Script Assist formatter comments", "no error", Err.Description
     Resume CleanUp
 End Function
 

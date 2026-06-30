@@ -41,6 +41,14 @@ Public Sub UnregisterScriptAssistHotkeys()
     Application.OnKey "^+E"
 End Sub
 
+Public Sub ShutdownScriptAssist()
+    On Error Resume Next
+    UnregisterScriptAssistHotkeys
+    ClearLastCallNavigation
+    Application.StatusBar = False
+    On Error GoTo 0
+End Sub
+
 Public Sub ToggleSelectedCommandComment()
     Dim activeObject As Object
     Set activeObject = ActiveSheet

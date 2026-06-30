@@ -18,11 +18,11 @@ Private Sub Workbook_Activate()
 End Sub
 
 Private Sub Workbook_Deactivate()
-    modScriptAssist.UnregisterScriptAssistHotkeys
+    modScriptAssist.ShutdownScriptAssist
 End Sub
 
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
-    modScriptAssist.UnregisterScriptAssistHotkeys
+    modScriptAssist.ShutdownScriptAssist
 End Sub
 
 Private Sub Workbook_SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range)

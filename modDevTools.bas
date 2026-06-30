@@ -107,8 +107,10 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                 End If
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
-                    If Not rowLooksLikeIndentedComment Then
-                        ws.Cells(R, 2).value = String(printDepth, ">") & (IIf(printDepth > 0, " ", "")) & pureCmd
+                    If rowIsComment Then
+                        ws.Cells(R, 2).value = FormatCommentCommandText(ws.Cells(R, 2).value, printDepth)
+                    ElseIf Not rowLooksLikeIndentedComment Then
+                        ws.Cells(R, 2).value = FormatCommandText(pureCmd, printDepth)
                     End If
 
                     ' [추가] 문법 및 파라미터 검사
@@ -142,7 +144,11 @@ Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
                                                        isSubEnd, _
                                                        Not isValid)
                     Call ApplyJumpTargetLinkStyle(ws.Cells(R, 5), pureCmd)
-                    Call ApplyLabelRoleDisplay(ws, R, pureCmd, program)
+                    If rowIsComment Then
+                        Call ClearLabelRoleDisplay(ws, R)
+                    Else
+                        Call ApplyLabelRoleDisplay(ws, R, pureCmd, program)
+                    End If
 
 NextRow:
                     Next R
@@ -682,4 +688,22 @@ Private Function IsCommentRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Bo
     Dim rawCmd As String
     rawCmd = Trim$(CStr(ws.Cells(rowNum, 2).value))
     IsCommentRow = (Len(rawCmd) > 0 And Left$(rawCmd, 1) = "#")
+End Function
+
+Private Function FormatCommandText(ByVal cmd As String, ByVal depth As Long) As String
+    FormatCommandText = String(depth, ">") & IIf(depth > 0, " ", "") & cmd
+End Function
+
+Private Function FormatCommentCommandText(ByVal rawCmd As Variant, ByVal depth As Long) As String
+    Dim body As String
+    body = modCmdRegistry.NormalizeCommand(rawCmd)
+    If Left$(body, 1) = "#" Then body = Trim$(Mid$(body, 2))
+
+    If Len(body) = 0 Then
+        FormatCommentCommandText = "#"
+    ElseIf depth > 0 Then
+        FormatCommentCommandText = "# " & String(depth, ">") & " " & body
+    Else
+        FormatCommentCommandText = "# " & body
+    End If
 End Function
