@@ -56,8 +56,9 @@ Public Sub ShowRpaStatus(ByVal view As frmRPAStatus, ByVal totalLines As Long)
     view.Prepare totalLines
 End Sub
 
-Public Sub UpdateRpaStatus(ByVal view As frmRPAStatus, ByVal curLine As Long, ByVal detailText As String)
-    view.RenderProgress curLine, detailText
+Public Sub UpdateRpaStatus(ByVal view As frmRPAStatus, ByVal curLine As Long, ByVal detailText As String, _
+                           Optional ByVal rowIndex As Long = 0, Optional ByVal rowTotal As Long = 0)
+    view.RenderProgress curLine, detailText, rowIndex, rowTotal
 End Sub
 
 Public Sub CloseRpaStatus(ByVal view As frmRPAStatus)

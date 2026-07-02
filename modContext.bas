@@ -242,6 +242,7 @@ Public Sub LoopPushForeach(ByVal headerLine As Long, ByVal endLine As Long, ByVa
     LoopPush "FOREACH", headerLine, endLine, 0
     Set LoopTables(LoopTop) = tbl
     LoopStack(LoopTop).dataRow = tbl.FirstDataRow
+    LogForeachProgress "foreach.start", LoopTop
 End Sub
 
 Public Function ForeachAdvance() As Boolean
@@ -253,6 +254,7 @@ Public Function ForeachAdvance() As Boolean
         LoopStack(LoopTop).dataRow = LoopStack(LoopTop).dataRow + 1
         LoopStack(LoopTop).iteration = LoopStack(LoopTop).iteration + 1
         ForeachAdvance = True
+        LogForeachProgress "foreach.advance", LoopTop
     End If
 End Function
 
@@ -261,6 +263,26 @@ Public Function GetActiveForeachOrdinal() As Long
     For i = LoopTop To 1 Step -1
         If LoopStack(i).kind = "FOREACH" Then
             GetActiveForeachOrdinal = LoopStack(i).iteration
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function GetActiveForeachTotalRows() As Long
+    Dim i As Long
+    For i = LoopTop To 1 Step -1
+        If LoopStack(i).kind = "FOREACH" Then
+            GetActiveForeachTotalRows = ForeachTotalRowsAt(i)
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function GetActiveForeachHeaderLine() As Long
+    Dim i As Long
+    For i = LoopTop To 1 Step -1
+        If LoopStack(i).kind = "FOREACH" Then
+            GetActiveForeachHeaderLine = LoopStack(i).headerLine
             Exit Function
         End If
     Next i
@@ -299,6 +321,27 @@ End Function
 Public Function LoopTopMax() As Long
     If LoopTop > 0 Then LoopTopMax = LoopStack(LoopTop).maxCount Else LoopTopMax = 0
 End Function
+
+Private Function ForeachTotalRowsAt(ByVal stackIndex As Long) As Long
+    If stackIndex <= 0 Or stackIndex > LoopTop Then Exit Function
+    If LoopTables(stackIndex) Is Nothing Then Exit Function
+
+    ForeachTotalRowsAt = LoopTables(stackIndex).RowCount - LoopTables(stackIndex).FirstDataRow + 1
+    If ForeachTotalRowsAt < 0 Then ForeachTotalRowsAt = 0
+End Function
+
+Private Sub LogForeachProgress(ByVal eventName As String, ByVal stackIndex As Long)
+    If stackIndex <= 0 Or stackIndex > LoopTop Then Exit Sub
+    If LoopStack(stackIndex).kind <> "FOREACH" Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = ForeachTotalRowsAt(stackIndex)
+
+    LogStatus "FOREACH_ROW RIDX " & LoopStack(stackIndex).iteration & "/" & totalRows & " 처리 중"
+    LogShim.LogEvent eventName, _
+        Array("headerLine", "ridx", "rtotal"), _
+        Array(LoopStack(stackIndex).headerLine, LoopStack(stackIndex).iteration, totalRows)
+End Sub
 
 Public Function ReconcileLoopStackForJump(ByVal targetLine As Long, ByVal targetStaticLoopDepth As Long) As Long
     Dim keepDepth As Long

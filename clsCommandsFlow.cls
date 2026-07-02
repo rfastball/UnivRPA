@@ -209,8 +209,15 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim tbl As clsTableSnapshot
             Set tbl = modTableSource.SnapshotSource(args(1), args(2), args(3))
 
+            Dim totalRows As Long
+            totalRows = tbl.RowCount - tbl.FirstDataRow + 1
+            If totalRows < 0 Then totalRows = 0
+
             If tbl.RowCount < tbl.FirstDataRow Then
                 modContext.LogStatus "FOREACH_ROW: 0행"
+                LogShim.LogEvent "foreach.empty", _
+                    Array("headerLine", "rtotal"), _
+                    Array(R, totalRows)
                 ICommand_Execute = fEnd + 1
             Else
                 modContext.LoopPushForeach R, fEnd, tbl

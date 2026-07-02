@@ -891,7 +891,7 @@ Private Function Test_ForeachRowExecution() As Long
     ws.Range("A3:D3").value = Array("B", 20, DateSerial(2024, 2, 2), "skip")
     ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), "break")
 
-    Dim arr(1 To 22, 1 To 5) As Variant
+    Dim arr(1 To 23, 1 To 5) As Variant
     Call MakeCmd(arr, 1, "SET", "{processed}", 0, "0")
     Call MakeCmd(arr, 2, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
     Call MakeCmd(arr, 3, "IF", "{$RIDX}", "EQ", "1")
@@ -901,19 +901,20 @@ Private Function Test_ForeachRowExecution() As Long
     Call MakeCmd(arr, 7, "END_IF", 0, 0, "")
     Call MakeCmd(arr, 8, "SET", "{last_code}", 0, "{$ROW.Code}")
     Call MakeCmd(arr, 9, "SET", "{last_idx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 10, "IF", "{$ROW.Code}", "EQ", "B")
-    Call MakeCmd(arr, 11, "CONTINUE", 0, 0, "")
-    Call MakeCmd(arr, 12, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 13, "INC", "{processed}", 0, "")
-    Call MakeCmd(arr, 14, "REPEAT", "2", 0, "")
-    Call MakeCmd(arr, 15, "SET", "{nested_ridx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 16, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(arr, 17, "IF", "{$ROW.Code}", "EQ", "C")
-    Call MakeCmd(arr, 18, "BREAK", 0, 0, "")
-    Call MakeCmd(arr, 19, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 20, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(arr, 21, "SET", "{after_loop}", 0, "done")
-    Call MakeCmd(arr, 22, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 10, "SET", "{last_total}", 0, "{$RTOTAL}")
+    Call MakeCmd(arr, 11, "IF", "{$ROW.Code}", "EQ", "B")
+    Call MakeCmd(arr, 12, "CONTINUE", 0, 0, "")
+    Call MakeCmd(arr, 13, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 14, "INC", "{processed}", 0, "")
+    Call MakeCmd(arr, 15, "REPEAT", "2", 0, "")
+    Call MakeCmd(arr, 16, "SET", "{nested_ridx}", 0, "{$RIDX}")
+    Call MakeCmd(arr, 17, "SET", "{nested_total}", 0, "{$RTOTAL}")
+    Call MakeCmd(arr, 18, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr, 19, "IF", "{$ROW.Code}", "EQ", "C")
+    Call MakeCmd(arr, 20, "BREAK", 0, 0, "")
+    Call MakeCmd(arr, 21, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 22, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(arr, 23, "EXIT", 0, 0, "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
@@ -922,26 +923,29 @@ Private Function Test_ForeachRowExecution() As Long
     ExpectVar "first_date", "2024-02-01", fails
     ExpectVar "last_code", "C", fails
     ExpectVar "last_idx", "3", fails
+    ExpectVar "last_total", "3", fails
     ExpectVar "processed", "2", fails
     ExpectVar "nested_ridx", "3", fails
-    ExpectVar "after_loop", "done", fails
+    ExpectVar "nested_total", "3", fails
     ExpectLoopDepth 0, fails
 
     ws.Range("A1:D4").AutoFilter Field:=1, Criteria1:="<>B"
-    Dim visibleArr(1 To 10, 1 To 5) As Variant
+    Dim visibleArr(1 To 11, 1 To 5) As Variant
     Call MakeCmd(visibleArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE_ROWS")
     Call MakeCmd(visibleArr, 2, "SET", "{visible_last_idx}", 0, "{$RIDX}")
-    Call MakeCmd(visibleArr, 3, "IF", "{$RIDX}", "EQ", "1")
-    Call MakeCmd(visibleArr, 4, "SET", "{visible1}", 0, "{$ROW.Code}")
-    Call MakeCmd(visibleArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(visibleArr, 6, "IF", "{$RIDX}", "EQ", "2")
-    Call MakeCmd(visibleArr, 7, "SET", "{visible2}", 0, "{$ROW.Code}")
-    Call MakeCmd(visibleArr, 8, "END_IF", 0, 0, "")
-    Call MakeCmd(visibleArr, 9, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(visibleArr, 10, "EXIT", 0, 0, "")
+    Call MakeCmd(visibleArr, 3, "SET", "{visible_total}", 0, "{$RTOTAL}")
+    Call MakeCmd(visibleArr, 4, "IF", "{$RIDX}", "EQ", "1")
+    Call MakeCmd(visibleArr, 5, "SET", "{visible1}", 0, "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 6, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleArr, 7, "IF", "{$RIDX}", "EQ", "2")
+    Call MakeCmd(visibleArr, 8, "SET", "{visible2}", 0, "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 9, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleArr, 10, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(visibleArr, 11, "EXIT", 0, 0, "")
     result = RunProgram(visibleArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "visible_last_idx", "2", fails
+    ExpectVar "visible_total", "2", fails
     ExpectVar "visible1", "007", fails
     ExpectVar "visible2", "C", fails
     ExpectLoopDepth 0, fails
@@ -1284,7 +1288,7 @@ End Function
 
 Private Function Test_MemoryResolverHeadless() As Long
     Dim fails As Long
-    Dim arr(1 To 21, 1 To 5) As Variant
+    Dim arr(1 To 22, 1 To 5) As Variant
     Dim trace() As Long
     Dim lastCode As Long
     Dim lastLine As Long
@@ -1302,17 +1306,18 @@ Private Function Test_MemoryResolverHeadless() As Long
     Call MakeCmd(arr, 8, "SET", "{sp}", 0, "A{$SPACE}B")
     Call MakeCmd(arr, 9, "SET", "{unknown}", 0, "{$XXX}")
     Call MakeCmd(arr, 10, "SET", "{ridx_out}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 11, "SET", "{row_out}", 0, "{$ROW.Code}")
-    Call MakeCmd(arr, 12, "SET", "{open}", 0, "A{broken")
-    Call MakeCmd(arr, 13, "SET", "{x}", 0, "300")
-    Call MakeCmd(arr, 14, "SET", "{y}", 0, "300")
-    Call MakeCmd(arr, 15, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
-    Call MakeCmd(arr, 16, "SET", "{delta}", 0, "-2")
-    Call MakeCmd(arr, 17, "SET", "{n}", 0, "0")
-    Call MakeCmd(arr, 18, "INC", "{n}", 0, "")
-    Call MakeCmd(arr, 19, "INC", "{n}", 0, "{delta}")
-    Call MakeCmd(arr, 20, "DEC", "{n}", 0, "-3")
-    Call MakeCmd(arr, 21, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 11, "SET", "{rtotal_out}", 0, "{$RTOTAL}")
+    Call MakeCmd(arr, 12, "SET", "{row_out}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 13, "SET", "{open}", 0, "A{broken")
+    Call MakeCmd(arr, 14, "SET", "{x}", 0, "300")
+    Call MakeCmd(arr, 15, "SET", "{y}", 0, "300")
+    Call MakeCmd(arr, 16, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
+    Call MakeCmd(arr, 17, "SET", "{delta}", 0, "-2")
+    Call MakeCmd(arr, 18, "SET", "{n}", 0, "0")
+    Call MakeCmd(arr, 19, "INC", "{n}", 0, "")
+    Call MakeCmd(arr, 20, "INC", "{n}", 0, "{delta}")
+    Call MakeCmd(arr, 21, "DEC", "{n}", 0, "-3")
+    Call MakeCmd(arr, 22, "EXIT", 0, 0, "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     pxExpected = modWinAPI.GetColorHexAt(300, 300)
@@ -1327,11 +1332,12 @@ Private Function Test_MemoryResolverHeadless() As Long
     ExpectVar "sp", "A B", fails
     ExpectVar "unknown", "{$XXX}", fails
     ExpectVar "ridx_out", "{$RIDX}", fails
+    ExpectVar "rtotal_out", "{$RTOTAL}", fails
     ExpectVar "row_out", "{$ROW.Code}", fails
     ExpectVar "open", "A{broken", fails
     ExpectVar "px", pxExpected, fails
     ExpectVar "n", "2", fails
-    ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21), fails
+    ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22), fails
 
     Test_MemoryResolverHeadless = fails
 End Function
@@ -1400,7 +1406,7 @@ Private Function Test_StaticVariableAnalysis() As Long
 
     ws.Cells(5, 2).value = "SET"
     ws.Cells(5, 3).value = "{sys}"
-    ws.Cells(5, 5).value = "{$BLANK}{$LOOP}{$RIDX}{$ROW.Code}{$PIXEL:1,1}{$XXX}"
+    ws.Cells(5, 5).value = "{$BLANK}{$LOOP}{$RIDX}{$RTOTAL}{$ROW.Code}{$PIXEL:1,1}{$XXX}"
 
     ExpectBool "Static undefined var", False, modDevTools.ValidateSheetVariablesAt(ws, 3), fails
     ExpectBool "Static var suggestion", True, (InStr(1, modDevTools.LastValidationMessage(), "{score}", vbTextCompare) > 0), fails

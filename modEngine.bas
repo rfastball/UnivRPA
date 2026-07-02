@@ -92,6 +92,8 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     Do While currentLine >= 1 And currentLine <= totalLines
         If CheckControlSignals() = ControlAbort Then
             finalMessage = "매크로가 중단되었습니다."
+            LogForeachResumeHint "foreach.interrupted"
+            If Len(ForeachResumeHint()) > 0 Then finalMessage = finalMessage & vbCrLf & ForeachResumeHint()
             GoTo CleanUp
         End If
 
@@ -107,7 +109,12 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
         stepInfo = inst.cmd & " " & inst.p1 & " " & inst.p2 & " " & inst.p3
 
         ' [UI] 폼 업데이트
-        modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo
+        Dim activeRidx As Long
+        Dim activeRtotal As Long
+        activeRidx = modContext.GetActiveForeachOrdinal()
+        activeRtotal = modContext.GetActiveForeachTotalRows()
+        modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
+        UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
         DoEvents
 
         '----------------------------------------------------------
@@ -129,8 +136,9 @@ Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
                 LogShim.LogEvent "cmd_error", _
                     Array("line", "sheetRow", "cmd", "code"), _
                     Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, CLng(nextLine))
+                LogForeachResumeHint "foreach.cmd_error"
                 modActions.Action_ShowNotification _
-                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd, 3
+                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ForeachHintSuffix(), 3
                 GoTo CleanUp
 
             Case Is > 0
@@ -160,10 +168,44 @@ FatalError:
     LogShim.LogEvent "fatal_error", _
         Array("line", "cmd", "desc"), _
         Array(currentLine, pureCmd, fatalDesc)
+    LogForeachResumeHint "foreach.fatal_error"
     modActions.Action_ShowNotification _
-        "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & fatalDesc, 3
+        "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & fatalDesc & ForeachHintSuffix(), 3
     finalMessage = "매크로가 종료되었습니다."
     Resume CleanUp
+End Sub
+
+Private Sub UpdateStatusBarProgress(ByVal curLine As Long, ByVal totalLines As Long, _
+                                    ByVal ridx As Long, ByVal rtotal As Long)
+    Dim msg As String
+    msg = "Line " & curLine & "/" & totalLines
+    If ridx > 0 Then msg = msg & " | FOREACH_ROW RIDX " & ridx & "/" & rtotal
+    modContext.LogStatus msg
+End Sub
+
+Private Function ForeachResumeHint() As String
+    Dim ridx As Long
+    ridx = modContext.GetActiveForeachOrdinal()
+    If ridx <= 0 Then Exit Function
+
+    ForeachResumeHint = "FOREACH_ROW RIDX " & ridx & "/" & _
+                        modContext.GetActiveForeachTotalRows() & " 처리 중"
+End Function
+
+Private Function ForeachHintSuffix() As String
+    Dim hint As String
+    hint = ForeachResumeHint()
+    If Len(hint) > 0 Then ForeachHintSuffix = vbCrLf & hint
+End Function
+
+Private Sub LogForeachResumeHint(ByVal eventName As String)
+    Dim ridx As Long
+    ridx = modContext.GetActiveForeachOrdinal()
+    If ridx <= 0 Then Exit Sub
+
+    LogShim.LogEvent eventName, _
+        Array("headerLine", "ridx", "rtotal"), _
+        Array(modContext.GetActiveForeachHeaderLine(), ridx, modContext.GetActiveForeachTotalRows())
 End Sub
 
 Private Function CheckControlSignals() As eControlSignal
@@ -406,6 +448,13 @@ Private Function ResolveToken(ByVal inner As String) As String
         Case "$SPACE": ResolveToken = " ": Exit Function
         Case "$CLIP":  ResolveToken = modWinAPI.GetClipboardText(): Exit Function
         Case "$LOOP":  ResolveToken = CStr(modContext.GetActiveLoopIteration()): Exit Function
+        Case "$RTOTAL"
+            If modContext.GetActiveForeachTotalRows() > 0 Then
+                ResolveToken = CStr(modContext.GetActiveForeachTotalRows())
+            Else
+                ResolveToken = "{" & inner & "}"
+            End If
+            Exit Function
         Case "$RIDX"
             If modContext.GetActiveForeachOrdinal() > 0 Then
                 ResolveToken = CStr(modContext.GetActiveForeachOrdinal())
