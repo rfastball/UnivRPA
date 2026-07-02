@@ -28,14 +28,14 @@ Private m_TotalLines As Long
 Private Sub UserForm_Initialize()
     ' [디자인] 슬림 & 모던 스타일
     Me.Caption = "RPA Running"
-    Me.Width = 280  ' FOREACH 행 진행률까지 표시
+    Me.Width = 255  ' FOREACH 행 진행률 표시용 최소 확장
     Me.Height = 80  ' 높이 축소 (슬림)
     Me.BackColor = &HFFFFFF ' 흰색 배경 (Clean Look)
     
     ' 1. 진행 상태 (좌측 상단)
     Set lblProgress = Me.Controls.Add("Forms.Label.1", "lblProgress")
     With lblProgress
-        .Top = 6: .Left = 8: .Width = 260: .Height = 14
+        .Top = 6: .Left = 8: .Width = 235: .Height = 14
         .Font.name = "Malgun Gothic": .Font.size = 9: .Font.Bold = True
         .ForeColor = &H404040 ' 진한 회색
         .Caption = "Ready"
@@ -44,7 +44,7 @@ Private Sub UserForm_Initialize()
     ' 3. 현재 실행 정보 (하단)
     Set lblCmd = Me.Controls.Add("Forms.Label.1", "lblCmd")
     With lblCmd
-        .Top = 24: .Left = 8: .Width = 260: .Height = 30
+        .Top = 24: .Left = 8: .Width = 235: .Height = 30
         .Font.name = "Consolas": .Font.size = 8
         .ForeColor = &H808080 ' 연한 회색
         .WordWrap = False ' 한 줄로 표시 (잘리면 잘리는대로)
