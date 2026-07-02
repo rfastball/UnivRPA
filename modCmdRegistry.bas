@@ -116,11 +116,11 @@ End Function
 Private Sub EnsureHandlers()
     If Not m_handlers Is Nothing Then Exit Sub
     Set m_handlers = CreateObject("Scripting.Dictionary")
-    Set m_handlers(FLOW) = New clsFlowCommands
-    Set m_handlers(ACTION) = New clsActionCommands
-    Set m_handlers(VISION) = New clsVisionCommands
-    Set m_handlers(Memory) = New clsMemoryCommands
-    Set m_handlers(SYSTEM) = New clsSystemCommands
+    Set m_handlers(FLOW) = New clsCommandsFlow
+    Set m_handlers(ACTION) = New clsCommandsAction
+    Set m_handlers(VISION) = New clsCommandsVision
+    Set m_handlers(Memory) = New clsCommandsMemory
+    Set m_handlers(SYSTEM) = New clsCommandsSystem
 End Sub
 
 '==============================================================================

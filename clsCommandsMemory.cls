@@ -2,7 +2,7 @@
 BEGIN
   MultiUse = -1  'True
 END
-Attribute VB_Name = "clsMemoryCommands"
+Attribute VB_Name = "clsCommandsMemory"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
@@ -33,7 +33,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 
         Case "INC", "DEC"
             If kind = "MEM" And Not modContext.HasVar(key) Then
-                Err.Raise 5, "clsMemoryCommands.Execute", "Undefined variable: {" & key & "}. Initialize it with SET first."
+                Err.Raise 5, "clsCommandsMemory.Execute", "Undefined variable: {" & key & "}. Initialize it with SET first."
             End If
 
             ' [정수 read-modify-write] 기존값을 CLng(Val(...))로 강제 -> 비숫자는 0

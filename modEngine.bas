@@ -598,7 +598,7 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [이관됨] ParseLValue는 clsMemoryCommands로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
+' [이관됨] ParseLValue는 clsCommandsMemory로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
 
 ' [호환 엔진 서비스] 블록의 짝 탐색은 ActiveProgram으로 위임
 ' StartLine: 탐색 시작 위치 (현재 줄)

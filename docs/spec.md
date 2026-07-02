@@ -5,7 +5,7 @@
 
 ## 범위
 - `modCmdRegistry` — `ELSE_IF` 명령어 등록 (1개 추가)
-- `clsFlowCommands` — `IF` / `ELSE` / `END_IF` 핸들러 수정, `ELSE_IF` 핸들러 신설
+- `clsCommandsFlow` — `IF` / `ELSE` / `END_IF` 핸들러 수정, `ELSE_IF` 핸들러 신설
 - `clsScriptProgramIndex` (또는 동등 모듈) — `EndIfOf(R) As Long` 인덱스 신설
 - `clsScriptProgramAnalysis` — `IF` 블록 구조 정적 검증 규칙 추가
 - `modContext` — `IfBranchStack` 신설 + 점프 reconcile 헬퍼
@@ -147,7 +147,7 @@ END_IF at R:
    - `ReconcileIfBranchStackForJump(targetLine)` 신설.
    - `InitContext`에서 초기화.
 
-4. **`clsFlowCommands` 실행 로직**
+4. **`clsCommandsFlow` 실행 로직**
    - `IF` 핸들러 수정: false 분기에서 target이 `ELSE_IF`면 target으로(평가), `ELSE`면 target+1로, `END_IF`면 target으로. true 시 `IfBranchPush`.
    - `ELSE_IF` 핸들러 신설: fallthrough 감지 → `EndIfOf`로 점프 / jump 진입 → IF와 동일 로직.
    - `END_IF` 핸들러 수정: peek 일치 시 pop.
@@ -155,7 +155,7 @@ END_IF at R:
 
 5. **점프 명령들 reconcile 호출**
    - `modEngine.ResolveGotoTarget`에 `ReconcileIfBranchStackForJump` 호출 추가.
-   - `clsFlowCommands`의 `BREAK` / `CONTINUE` / `RETURN` 분기에서 IfBranchStack reconcile.
+   - `clsCommandsFlow`의 `BREAK` / `CONTINUE` / `RETURN` 분기에서 IfBranchStack reconcile.
 
 6. **정적 검증**
    - `clsScriptProgramAnalysis`에 IF 블록 구조 규칙 추가 (ELSE 뒤 ELSE_IF 금지, ELSE_IF 고아 금지, 파라미터/연산자 검증).

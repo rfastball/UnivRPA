@@ -2,7 +2,7 @@
 BEGIN
   MultiUse = -1  'True
 END
-Attribute VB_Name = "clsFlowCommands"
+Attribute VB_Name = "clsCommandsFlow"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False

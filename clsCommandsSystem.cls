@@ -2,7 +2,7 @@
 BEGIN
   MultiUse = -1  'True
 END
-Attribute VB_Name = "clsSystemCommands"
+Attribute VB_Name = "clsCommandsSystem"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
