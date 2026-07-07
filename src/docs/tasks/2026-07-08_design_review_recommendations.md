@@ -21,7 +21,7 @@
 
 ---
 
-## A. vbaflow 온보딩 필수: 헤드리스 실행 계약
+## A. vbaflow 온보딩 필수: 헤드리스 실행 계약 [완료 2026-07-08]
 
 ### A1. Action_Notify의 MsgBox 분기 제거 (유일한 hang 지점)
 
@@ -163,9 +163,50 @@
 ## 실행 순서
 
 1. **A1~A4**: 헤드리스 계약. vbaflow test가 실제로 돌기 위한 전제.
-   vbaflow 벤더링(self-contained LogShim 교체)과 같은 커밋 흐름에서 처리
+   vbaflow 벤더링(self-contained LogShim 교체)과 같은 커밋 흐름에서 처리 [완료]
 2. **C1**: 디코드 게이트 검증. 파급 대비 효과 최대
 3. **B1, B2**: 신호 전파. 이후 모든 디버깅 품질의 토대
 4. **C2, C3**: 시맨틱 사본 회수 + 검증 공백
 5. **D**: 위 작업에 얹어 점진 정리
 6. **E**: 실측 후 판단
+
+---
+
+## A군 적용 및 vbaflow 파일럿 검증 결과 (2026-07-08)
+
+적용 내용:
+
+- LogShim.bas를 vbaflow self-contained 버전으로 벤더링 (애드인 의존 제거)
+- A1/A2: `modActions.SetUnattendedMode` 도입. 알림은 `Action_Notify` 단일 게이트로
+  통합되고, 무인 모드에서는 차단형(MsgBox) 포함 전부 LogShim jsonl로 강등.
+  `Action_ShowNotification`은 게이트 위임 + 0 이하 지속시간을 자동종료로 강제.
+  진입점 배선: RunRPA=대화형, RunProgramFromLine/ExecuteArrayLine=무인.
+  `WaitIfPaused`는 무인 모드에서 즉시 반환 (Pause 팝업/폴링은 대화형 전용)
+- A3: modTester의 12개 스위트를 Private `TC_*`로 개명하고 인자 없는
+  Public Sub `Test_*` 래퍼 추가 (`ReportSuiteResult`가 fail_count를 AssertEq로 기록).
+  `LogFail`은 Debug.Print에 더해 ok:false A레코드도 기록
+- A4: FormatterRegression의 ActiveSheet/Activate/Select 의존 제거.
+  `FormatRPAScript`/`ToggleSelectedCommandComment`에 명시적 대상 파라미터 추가
+  (기본값은 기존 ActiveSheet/Selection, OnKey 호출 호환).
+  `Run_System_SelfDiagnosis`의 Test 13/14 중복 제거
+
+검증 결과: doctor 전 항목 통과, push 37모듈 무결성 통과,
+**vbaflow test 13/13 pass** (modTester 12 + SmokeTest 1), 재pull 멱등성 수렴 확인.
+
+### vbaflow에 전달할 파일럿 피드백 (_VbaFlow 백로그 후보)
+
+1. **frx Export 비결정성**: `.frx`는 Export마다 고정 크기 내 소수 바이트(실측
+   3096바이트 중 13바이트, OLE 휘발성 필드)가 달라진다. 결과:
+   (a) pull마다 .frx가 재기록되어 git 노이즈,
+   (b) push의 `frxSame` 판정이 항상 false가 되어 폼이 매 push마다
+   위험 경로(Remove+Import)를 탄다. 가드는 유효했으나 in-place 최적화가 무력화됨.
+   제안: 최종 push/pull 시점의 frx 해시를 메타파일에 캐시하고 fresh Export
+   대신 캐시와 비교
+2. **프로시저 수준 속성 소실**: `VB_ProcData.VB_Invoke_Func`(매크로 단축키)는
+   BSTR 경로로 왕복 불가라 최초 pull에서 소실 (설계 문서에 명시된 한계).
+   UnivRPA는 OnKey 런타임 등록이 실등록이라 무해했음. 온보딩 체크리스트에
+   "단축키가 VB_ProcData에만 있으면 OnKey로 이전" 항목 추가 권장
+3. **VBE 식별자 대소문자 전역 통일**: push 후 재pull에서 식별자 케이스가
+   프로젝트 전역 규칙으로 바뀌어 1회성 diff 발생 (수렴 후 안정). 문서화 권장
+4. **status의 srcNewerThanPush가 mtime 기준**: pull이 src를 재기록해도
+   "src가 push보다 최신"으로 표시됨. fingerprint 비교로 바꾸면 오해 소지 제거

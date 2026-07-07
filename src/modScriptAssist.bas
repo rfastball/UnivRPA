@@ -49,17 +49,34 @@ Public Sub ShutdownScriptAssist()
     On Error GoTo 0
 End Sub
 
-Public Sub ToggleSelectedCommandComment()
-    Dim activeObject As Object
-    Set activeObject = ActiveSheet
+' @desc 대상 범위(기본 Selection)의 COMMAND 셀 주석을 토글함
+Public Sub ToggleSelectedCommandComment(Optional ByVal targetRange As Range = Nothing)
+    Dim selectedRange As Range
 
-    If Not TypeOf activeObject Is Worksheet Then
-        Application.StatusBar = "Script Assist: worksheet에서만 사용할 수 있습니다."
-        Exit Sub
+    If targetRange Is Nothing Then
+        Dim activeObject As Object
+        Set activeObject = ActiveSheet
+
+        If Not TypeOf activeObject Is Worksheet Then
+            Application.StatusBar = "Script Assist: worksheet에서만 사용할 수 있습니다."
+            Exit Sub
+        End If
+
+        Dim selectedObject As Object
+        Set selectedObject = Selection
+
+        If Not TypeOf selectedObject Is Range Then
+            Application.StatusBar = "Script Assist: 셀 범위를 선택해 주세요."
+            Exit Sub
+        End If
+
+        Set selectedRange = selectedObject
+    Else
+        Set selectedRange = targetRange
     End If
 
     Dim ws As Worksheet
-    Set ws = activeObject
+    Set ws = selectedRange.Worksheet
 
     Dim cmdCol As Long
     cmdCol = ResolveCmdCol(ws)
@@ -67,17 +84,6 @@ Public Sub ToggleSelectedCommandComment()
         Application.StatusBar = "Script Assist: 스크립트 시트에서만 사용할 수 있습니다."
         Exit Sub
     End If
-
-    Dim selectedObject As Object
-    Set selectedObject = Selection
-
-    If Not TypeOf selectedObject Is Range Then
-        Application.StatusBar = "Script Assist: 셀 범위를 선택해 주세요."
-        Exit Sub
-    End If
-
-    Dim selectedRange As Range
-    Set selectedRange = selectedObject
 
     If selectedRange.Areas.count <> 1 Then
         Application.StatusBar = "Script Assist: 연속된 범위만 주석 토글할 수 있습니다."

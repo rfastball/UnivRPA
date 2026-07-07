@@ -41,6 +41,7 @@ Sub RunRPA()
     Dim fatalDesc As String
 
     finalMessage = "매크로가 종료되었습니다."
+    modActions.SetUnattendedMode False   ' 수동 실행 = 대화형 알림
     modContext.InitContext
 
     '==========================================================

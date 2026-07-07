@@ -26,20 +26,20 @@ Public Sub Run_Flow_Diagnosis()
     failCount = 0
 
     Debug.Print "=== [Flow Diagnosis] Headless unit suite ==="
-    failCount = failCount + Test_RunProgramSmoke()
-    failCount = failCount + Test_FlowHappyPaths()
-    failCount = failCount + Test_TableSnapshotReadOnly()
-    failCount = failCount + Test_ForeachRowExecution()
-    failCount = failCount + Test_FlowNestedInteractions()
-    failCount = failCount + Test_FlowNegativePaths()
-    failCount = failCount + Test_MemoryResolverHeadless()
-    failCount = failCount + Test_ParamSpecValidation()
-    failCount = failCount + Test_StaticVariableAnalysis()
-    failCount = failCount + Test_ScriptAssistFormatterRegression()
+    failCount = failCount + TC_RunProgramSmoke()
+    failCount = failCount + TC_FlowHappyPaths()
+    failCount = failCount + TC_TableSnapshotReadOnly()
+    failCount = failCount + TC_ForeachRowExecution()
+    failCount = failCount + TC_FlowNestedInteractions()
+    failCount = failCount + TC_FlowNegativePaths()
+    failCount = failCount + TC_MemoryResolverHeadless()
+    failCount = failCount + TC_ParamSpecValidation()
+    failCount = failCount + TC_StaticVariableAnalysis()
+    failCount = failCount + TC_ScriptAssistFormatterRegression()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
-    failCount = failCount + Test_RegistryDispatchSync()
-    failCount = failCount + Test_ScriptProgramModel()
+    failCount = failCount + TC_RegistryDispatchSync()
+    failCount = failCount + TC_ScriptProgramModel()
 
     If failCount = 0 Then
         Debug.Print "[OK] Headless flow diagnosis passed."
@@ -57,6 +57,80 @@ Public Sub Run_All()
     Run_Flow_Diagnosis
     Debug.Print "=== [Run_All] Starting semi-manual system diagnosis (I/O included) ==="
     Run_System_SelfDiagnosis
+End Sub
+
+'==============================================================================
+' [vbaflow test 진입점] 인자 없는 Public Sub Test_* 만 열거된다.
+' 각 TC_* 스위트를 개별 래핑하고, 판정은 LogShim A레코드(ok:false = fail).
+' 집계 래퍼는 두지 않는다 (개별 래퍼와 이중 실행되므로).
+'==============================================================================
+
+' @desc 스위트 실패 건수를 AssertEq로 기록하고 컨텍스트 정리함
+Private Sub ReportSuiteResult(ByVal suiteName As String, ByVal fails As Long)
+    LogShim.AssertEq suiteName & ".fail_count", 0, fails
+    On Error Resume Next
+    modContext.ResetContext
+    On Error GoTo 0
+End Sub
+
+' @desc RunProgram 스모크 스위트 실행해 실패 0건 단언함
+Public Sub Test_RunProgramSmoke()
+    ReportSuiteResult "flow.run_program_smoke", TC_RunProgramSmoke()
+End Sub
+
+' @desc 흐름 해피패스 스위트 실행해 실패 0건 단언함
+Public Sub Test_FlowHappyPaths()
+    ReportSuiteResult "flow.happy_paths", TC_FlowHappyPaths()
+End Sub
+
+' @desc TableSnapshot 읽기전용 스위트 실행해 실패 0건 단언함
+Public Sub Test_TableSnapshotReadOnly()
+    ReportSuiteResult "flow.table_snapshot", TC_TableSnapshotReadOnly()
+End Sub
+
+' @desc FOREACH_ROW 실행 스위트 실행해 실패 0건 단언함
+Public Sub Test_ForeachRowExecution()
+    ReportSuiteResult "flow.foreach_row", TC_ForeachRowExecution()
+End Sub
+
+' @desc 중첩 흐름 상호작용 스위트 실행해 실패 0건 단언함
+Public Sub Test_FlowNestedInteractions()
+    ReportSuiteResult "flow.nested_interactions", TC_FlowNestedInteractions()
+End Sub
+
+' @desc 흐름 부정경로 스위트 실행해 실패 0건 단언함
+Public Sub Test_FlowNegativePaths()
+    ReportSuiteResult "flow.negative_paths", TC_FlowNegativePaths()
+End Sub
+
+' @desc 메모리/토큰 해석 스위트 실행해 실패 0건 단언함
+Public Sub Test_MemoryResolverHeadless()
+    ReportSuiteResult "flow.memory_resolver", TC_MemoryResolverHeadless()
+End Sub
+
+' @desc ParamSpec 작성보조 검증 스위트 실행해 실패 0건 단언함
+Public Sub Test_ParamSpecValidation()
+    ReportSuiteResult "flow.param_spec", TC_ParamSpecValidation()
+End Sub
+
+' @desc 정적 변수 분석 스위트 실행해 실패 0건 단언함
+Public Sub Test_StaticVariableAnalysis()
+    ReportSuiteResult "flow.static_variable_analysis", TC_StaticVariableAnalysis()
+End Sub
+
+' @desc 포맷터 주석 회귀 스위트 실행해 실패 0건 단언함
+Public Sub Test_ScriptAssistFormatterRegression()
+    ReportSuiteResult "flow.formatter_regression", TC_ScriptAssistFormatterRegression()
+End Sub
+
+' @desc 레지스트리-핸들러 동기화 역검증 실행해 실패 0건 단언함
+Public Sub Test_RegistryDispatchSync()
+    ReportSuiteResult "registry.dispatch_sync", TC_RegistryDispatchSync()
+End Sub
+
+' @desc ScriptProgram 정적 모델 스위트 실행해 실패 0건 단언함
+Public Sub Test_ScriptProgramModel()
+    ReportSuiteResult "model.script_program", TC_ScriptProgramModel()
 End Sub
 
 Public Function RunProgram(ByRef arr As Variant, ByVal firstRow As Long, ByVal maxSteps As Long, _
@@ -81,6 +155,7 @@ Private Function RunProgramFromLine(ByRef arr As Variant, ByVal firstRow As Long
     outLastLine = 0
     If maxSteps <= 0 Then maxSteps = DEFAULT_MAX_STEPS
 
+    modActions.SetUnattendedMode True   ' 테스트 하니스 = 무인 모드 (팝업 억제)
     modContext.InitContext
     modEngine.LoadProgramFromArray arr, firstRow
     Set program = modEngine.ActiveProgram()
@@ -479,23 +554,8 @@ Sub Run_System_SelfDiagnosis()
         LogFail "INC {$LOOP}", "-1", CStr(incErr): failCount = failCount + 1
     End If
 
-    '==========================================================================
-    ' [Test 13] 역검증 ? 레지스트리<->핸들러 동기화 파수꾼 (설계 §7)
-    '==========================================================================
-    Debug.Print "--- [Test 13] Registry/Handler sync ---"
-    Dim syncFails As Long
-    syncFails = Test_RegistryDispatchSync()
-    If syncFails = 0 Then
-        LogPass "Registry dispatch sync (all routed)"
-    Else
-        LogFail "Registry sync", "0 fails", CStr(syncFails) & " fails": failCount = failCount + syncFails
-    End If
-
-    '==========================================================================
-    ' [Test 14] ScriptProgram 구조/SELECT/LABEL 인덱스
-    '==========================================================================
-    Debug.Print "--- [Test 14] ScriptProgram model ---"
-    failCount = failCount + Test_ScriptProgramModel()
+    ' [정리] Test 13(레지스트리 동기화)/Test 14(ScriptProgram 모델)는 헤드리스
+    ' 스위트(Run_Flow_Diagnosis)와 중복이라 제거됨. 여기는 I/O 검증 전용.
 
     '==========================================================================
     ' 종료 처리
@@ -515,7 +575,7 @@ End Sub
 ' @desc 등록 명령어 전수 순회로 레지스트리<->핸들러 라우팅 동기화 검증, 실패 개수 반환
 '   '테이블엔 있는데 핸들러 없음'(카테고리 미배선/오타)을 구조적으로 막는 파수꾼 (설계 §7).
 '   부작용 없이 라우팅 무결성만 확인 ? 실제 실행(클릭/대기)은 자가진단/시트 검증이 담당.
-Public Function Test_RegistryDispatchSync() As Long
+Public Function TC_RegistryDispatchSync() As Long
     Dim cmds As Variant: cmds = modCmdRegistry.AllCommands()
     Dim i As Long, fails As Long
     Dim cmd As String, def As CmdDef, h As ICommand
@@ -536,7 +596,7 @@ Public Function Test_RegistryDispatchSync() As Long
     Next i
 
     Debug.Print "[역검증] 총 " & (UBound(cmds) - LBound(cmds) + 1) & "개 명령어 라우팅 확인, 실패 " & fails
-    Test_RegistryDispatchSync = fails
+    TC_RegistryDispatchSync = fails
 End Function
 
 ' [Helper] 연산자 단위 검증
@@ -574,7 +634,7 @@ Private Sub AssertElseIfOperator(ByVal name As String, ByVal v1 As String, ByVal
     ExpectIfBranchDepth 0, failCount
 End Sub
 
-Private Function Test_RunProgramSmoke() As Long
+Private Function TC_RunProgramSmoke() As Long
     Dim fails As Long
     Dim arr(1 To 3, 1 To 5) As Variant
     Dim trace() As Long
@@ -595,10 +655,10 @@ Private Function Test_RunProgramSmoke() As Long
     ExpectLong "Smoke last line", 3, lastLine, fails
     ExpectLong "Smoke last code", CMD_HALT, lastCode, fails
 
-    Test_RunProgramSmoke = fails
+    TC_RunProgramSmoke = fails
 End Function
 
-Private Function Test_FlowHappyPaths() As Long
+Private Function TC_FlowHappyPaths() As Long
     Dim fails As Long
     Dim trace() As Long
     Dim lastCode As Long
@@ -797,10 +857,10 @@ Private Function Test_FlowHappyPaths() As Long
     ExpectVisits trace, 7, 1, fails
     ExpectVar "fallback", "yes", fails
 
-    Test_FlowHappyPaths = fails
+    TC_FlowHappyPaths = fails
 End Function
 
-Private Function Test_TableSnapshotReadOnly() As Long
+Private Function TC_TableSnapshotReadOnly() As Long
     On Error GoTo ErrHandler
 
     Dim fails As Long
@@ -848,16 +908,16 @@ Private Function Test_TableSnapshotReadOnly() As Long
     ExpectLong "Snapshot Clear RowCount", 0, tbl.RowCount, fails
     ExpectLong "Snapshot Clear ColCount", 0, tbl.ColCount, fails
 
-    Test_TableSnapshotReadOnly = fails
+    TC_TableSnapshotReadOnly = fails
     Exit Function
 
 ErrHandler:
     fails = fails + 1
     LogFail "TableSnapshot read-only test", "no error", Err.Description
-    Test_TableSnapshotReadOnly = fails
+    TC_TableSnapshotReadOnly = fails
 End Function
 
-Private Function Test_ForeachRowExecution() As Long
+Private Function TC_ForeachRowExecution() As Long
     On Error GoTo ErrHandler
 
     Dim fails As Long
@@ -986,7 +1046,7 @@ CleanUp:
     If Not ws Is Nothing Then ws.Delete
     Application.DisplayAlerts = True
     On Error GoTo 0
-    Test_ForeachRowExecution = fails
+    TC_ForeachRowExecution = fails
     Exit Function
 
 ErrHandler:
@@ -995,7 +1055,7 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-Private Function Test_FlowNestedInteractions() As Long
+Private Function TC_FlowNestedInteractions() As Long
     Dim fails As Long
     Dim trace() As Long
     Dim lastCode As Long
@@ -1176,10 +1236,10 @@ Private Function Test_FlowNestedInteractions() As Long
     ExpectStackDepth 0, fails
     ExpectIfBranchDepth 0, fails
 
-    Test_FlowNestedInteractions = fails
+    TC_FlowNestedInteractions = fails
 End Function
 
-Private Function Test_FlowNegativePaths() As Long
+Private Function TC_FlowNegativePaths() As Long
     Dim fails As Long
     Dim trace() As Long
     Dim lastCode As Long
@@ -1283,10 +1343,10 @@ Private Function Test_FlowNegativePaths() As Long
     ExpectTerminal rrErrored, result, fails
     ExpectBool "Undefined var suggestion", True, (InStr(1, modEngine.LastRuntimeError(), "{score}", vbTextCompare) > 0), fails
 
-    Test_FlowNegativePaths = fails
+    TC_FlowNegativePaths = fails
 End Function
 
-Private Function Test_MemoryResolverHeadless() As Long
+Private Function TC_MemoryResolverHeadless() As Long
     Dim fails As Long
     Dim arr(1 To 22, 1 To 5) As Variant
     Dim trace() As Long
@@ -1339,10 +1399,10 @@ Private Function Test_MemoryResolverHeadless() As Long
     ExpectVar "n", "2", fails
     ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22), fails
 
-    Test_MemoryResolverHeadless = fails
+    TC_MemoryResolverHeadless = fails
 End Function
 
-Private Function Test_ParamSpecValidation() As Long
+Private Function TC_ParamSpecValidation() As Long
     Dim fails As Long
 
     Debug.Print "--- [Flow 6] ParamSpec validation ---"
@@ -1369,10 +1429,10 @@ Private Function Test_ParamSpecValidation() As Long
     ExpectBool "Reject GOTO numeric target", False, modDevTools.ValidateLine("GOTO", "", "", "12"), fails
     ExpectBool "Reject CALL dynamic target", False, modDevTools.ValidateLine("CALL", "", "", "{target}"), fails
 
-    Test_ParamSpecValidation = fails
+    TC_ParamSpecValidation = fails
 End Function
 
-Private Function Test_StaticVariableAnalysis() As Long
+Private Function TC_StaticVariableAnalysis() As Long
     On Error GoTo ErrHandler
 
     Dim fails As Long
@@ -1422,7 +1482,7 @@ CleanUp:
     If Not ws Is Nothing Then ws.Delete
     Application.DisplayAlerts = True
     On Error GoTo 0
-    Test_StaticVariableAnalysis = fails
+    TC_StaticVariableAnalysis = fails
     Exit Function
 
 ErrHandler:
@@ -1431,17 +1491,15 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-Private Function Test_ScriptAssistFormatterRegression() As Long
+Private Function TC_ScriptAssistFormatterRegression() As Long
     On Error GoTo ErrHandler
 
     Dim fails As Long
     Dim ws As Worksheet
-    Dim previousSheet As Object
     Dim sheetName As String
 
     Debug.Print "--- [Flow 6B] Script Assist formatter comments ---"
 
-    Set previousSheet = ActiveSheet
     sheetName = "RPA_FORMAT_COMMENT_TEST"
 
     Application.DisplayAlerts = False
@@ -1463,11 +1521,10 @@ Private Function Test_ScriptAssistFormatterRegression() As Long
     ws.Cells(3, 5).value = "inside"
     ws.Cells(4, 2).value = "END_IF"
 
-    ws.Activate
-    modDevTools.FormatRPAScript
+    modDevTools.FormatRPAScript ws
     ExpectText "Formatter normalizes #> indent", "# > TYPE", CStr(ws.Cells(3, 2).value), fails
 
-    modDevTools.FormatRPAScript
+    modDevTools.FormatRPAScript ws
     ExpectText "Formatter keeps comment stable", "# > TYPE", CStr(ws.Cells(3, 2).value), fails
 
     Dim program As clsScriptProgram
@@ -1475,9 +1532,8 @@ Private Function Test_ScriptAssistFormatterRegression() As Long
     program.LoadFromRange ws.Range(ws.Cells(2, 1), ws.Cells(4, 6))
     ExpectBool "Formatter comment remains skippable", True, program.IsCommentLine(2), fails
 
-    ws.Cells(3, 2).Select
-    modScriptAssist.ToggleSelectedCommandComment
-    modDevTools.FormatRPAScript
+    modScriptAssist.ToggleSelectedCommandComment ws.Cells(3, 2)
+    modDevTools.FormatRPAScript ws
     ExpectText "Formatter restores uncommented indent", "> TYPE", CStr(ws.Cells(3, 2).value), fails
 
 CleanUp:
@@ -1485,10 +1541,9 @@ CleanUp:
     Application.DisplayAlerts = False
     If Not ws Is Nothing Then ws.Delete
     Application.DisplayAlerts = True
-    If Not previousSheet Is Nothing Then previousSheet.Activate
     Application.StatusBar = False
     On Error GoTo 0
-    Test_ScriptAssistFormatterRegression = fails
+    TC_ScriptAssistFormatterRegression = fails
     Exit Function
 
 ErrHandler:
@@ -1506,6 +1561,7 @@ Private Sub MakeCmd(ByRef arr As Variant, R As Long, cmd As String, p1 As Varian
 End Sub
 
 Private Function ExecuteArrayLine(ByRef arr As Variant, ByVal R As Long) As Long
+    modActions.SetUnattendedMode True   ' 단일 라인 하니스도 무인 모드
     modEngine.LoadProgramFromArray arr, 1
     ExecuteArrayLine = modEngine.ExecuteSmartAction(R)
 End Function
@@ -1515,7 +1571,7 @@ Private Sub AppendTrace(ByRef trace() As Long, ByVal traceCount As Long, ByVal l
     trace(traceCount) = lineNo
 End Sub
 
-Private Function Test_ScriptProgramModel() As Long
+Private Function TC_ScriptProgramModel() As Long
     Dim fails As Long
     Dim arr(1 To 26, 1 To 5) As Variant
 
@@ -1779,7 +1835,7 @@ Private Function Test_ScriptProgramModel() As Long
     End If
     ExpectBool "ELSE_IF missing params flow invalid", True, program.IsFlowInvalidAt(2), fails
 
-    Test_ScriptProgramModel = fails
+    TC_ScriptProgramModel = fails
 End Function
 
 Private Sub ExpectLong(ByVal testName As String, ByVal expected As Long, ByVal actual As Long, ByRef failCount As Long)
@@ -1901,4 +1957,8 @@ End Sub
 
 Private Sub LogFail(testName As String, expected As String, actual As String)
     Debug.Print "[FAIL] " & testName & " (Exp: " & expected & " / Act: " & actual & ")"
+    ' jsonl에도 ok:false A레코드 기록 (vbaflow test가 실패 상세를 인라인하도록)
+    On Error Resume Next
+    LogShim.AssertEq testName, expected, actual
+    On Error GoTo 0
 End Sub

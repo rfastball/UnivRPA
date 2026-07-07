@@ -309,4 +309,3 @@ Public Sub SendKeyboardInput(ByVal wVk As Integer, ByVal wScan As Integer, ByVal
     
     SendInput 1, buffer(0), inputSize
 End Sub
-

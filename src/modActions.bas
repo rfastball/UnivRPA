@@ -1,4 +1,6 @@
 ﻿Attribute VB_Name = "modActions"
+' @desc 클릭/입력/대기 등 구체 동작 수행 담당
+' @depends modWinAPI, modCondition, LogShim
 Option Explicit
 
 '==============================================================================
@@ -21,7 +23,21 @@ Private Const TIMEOUT_DEFAULT As Long = 30000
 ' = "호버의 정의" = 커서 진입 후 이 시간 내 전이. 늘리면 클릭반응을 호버로 오인하기 시작함.
 Private Const HOVER_SETTLE_MS As Long = 150
 
+' [무인 모드] True면 알림을 팝업 대신 LogShim jsonl로 강등 (vbaflow test 등 헤드리스 실행)
+Private m_unattended As Boolean
+
+' @desc 무인 모드 여부 설정함 (True=팝업/일시정지 억제, 로그 기록만)
+Public Sub SetUnattendedMode(ByVal enabled As Boolean)
+    m_unattended = enabled
+End Sub
+
+' @desc 현재 무인 모드 여부 반환
+Public Function IsUnattendedMode() As Boolean
+    IsUnattendedMode = m_unattended
+End Function
+
 Private Function WaitIfPaused() As Boolean
+    If m_unattended Then Exit Function
     If Not IsKeyDown(VK_PAUSE_RESUME) Then Exit Function
 
     Action_ShowNotification "일시정지됨. [Pause] 재개, [ESC] 종료", 3
@@ -465,12 +481,14 @@ Public Function IsConditionOperator(ByVal op As String) As Boolean
     IsConditionOperator = modCondition.IsConditionOperator(op)
 End Function
 
-' [알림 표시] 비차단형 메시지박스 (실행 흐름을 막지 않음)
+' [알림 표시] 비차단형 알림. Action_Notify 단일 게이트로 위임 (항상 자동 종료 보장)
+' @desc 메시지와 표시시간초 받아 비차단 알림 표시함
 Public Sub Action_ShowNotification(ByVal msg As String, Optional ByVal durationSec As Long = 2)
     On Error GoTo ErrHandler
-    Dim flags As Long
-    flags = MB_ICONINFO + MB_TOPMOST + MB_SETFOREGROUND
-    modWinAPI.MessageBoxTimeout 0, msg, "RPA Notification", flags, 0, durationSec * 1000
+    Dim ms As Long
+    ms = durationSec * 1000
+    If ms <= 0 Then ms = 2000   ' 비차단 계약 유지: 0 이하도 자동 종료로 강제
+    Action_Notify ms, MB_ICONINFO, msg
 
 CleanUp:
     Exit Sub
@@ -478,22 +496,29 @@ ErrHandler:
     Debug.Print "[ERROR] Action_ShowNotification: " & Err.Description
     Resume CleanUp
 End Sub
-' [modActions] 사용자 알림 (ms 단위 준수)
-' p1 (durationMs): 0이면 무한대기(MsgBox), 0보다 크면 자동종료(ms 단위)
+
+' [알림 단일 게이트] 모든 사용자 알림은 이 프로시저를 경유한다
+' p1 (durationMs): 0이면 확인대기(MsgBox), 0보다 크면 자동종료(ms 단위)
 ' p2 (iconType): 아이콘 번호 (16, 32, 48, 64 등)
 ' p3 (msg): 출력할 메시지
+' 무인 모드: 차단형 포함 전부 LogShim jsonl로 강등 (헤드리스 hang 차단)
+' @desc 지속ms/아이콘/메시지 받아 알림 표시함, 무인 모드 시 로그로 강등
 Public Sub Action_Notify(ByVal durationMs As Long, ByVal iconType As Long, ByVal msg As String)
     On Error GoTo ErrHandler
+    If m_unattended Then
+        LogShim.LogEvent "notify", Array("msg", "durationMs"), Array(msg, durationMs)
+        GoTo CleanUp
+    End If
+
     Dim flags As Long
     ' 기본 플래그: 항상 위 + 포커스
     flags = iconType + MB_TOPMOST + MB_SETFOREGROUND
-    
+
     If durationMs <= 0 Then
-        ' [차단형] 확인 누를 때까지 정지
+        ' [차단형] 확인 누를 때까지 정지 (대화형 전용)
         MsgBox msg, flags, "RPA Alert"
     Else
         ' [비차단형] p1(ms) 만큼 대기 후 자동 종료
-        ' 별도의 연산 없이 durationMs를 그대로 전달합니다.
         modWinAPI.MessageBoxTimeout 0, msg, "RPA Notification", flags, 0, durationMs
     End If
 

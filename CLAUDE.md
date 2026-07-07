@@ -12,9 +12,15 @@ Excel 시트를 IDE처럼 쓰는 저코드 RPA 프레임워크. 스크립트는 
 
 대상 워크북: **UnivRPA.xlsm** (xlsb에서 xlsm으로 마이그레이션됨)
 
-테스트: `Public Sub Test_*()`(인자 없음). 단언은 `LogShim.AssertEq`.
+테스트: `Public Sub Test_*()`(인자 없음)를 `vbaflow test`가 열거 실행한다.
+단언은 `LogShim.AssertEq`(self-contained, jsonl 직접 기록). 스위트 본체는
+`modTester`의 Private `TC_*` 함수이고 `Test_*`는 그 래퍼다.
 `modTester.Run_Flow_Diagnosis`(헤드리스 통합 자가진단)와 `Run_All`(I/O 포함
-반수동 진단)은 수동 실행용 스위트다.
+반수동 진단)은 수동 실행용 스위트다. 무인 실행 알림 억제는
+`modActions.SetUnattendedMode` (테스트 하니스가 자동 설정).
+
+개발 루프: `vbaflow session start` → `push` → `test` (루트 `vbaflow.toml` 참조,
+빌드는 `../_VbaFlow` 프로젝트).
 
 ## 아키텍처
 

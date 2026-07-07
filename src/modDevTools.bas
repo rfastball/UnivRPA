@@ -6,7 +6,8 @@ Option Explicit
 Private m_lastValidationMessage As String
 Private m_lastValidationWarning As String
 
-Public Sub FormatRPAScript()
+' @desc 대상 시트(기본 ActiveSheet)의 스크립트를 검증 및 서식 적용함
+Public Sub FormatRPAScript(Optional ByVal targetSheet As Worksheet = Nothing)
     Dim prevScreenUpdating As Boolean
     Dim prevEnableEvents As Boolean
     Dim prevCalculation As XlCalculation
@@ -23,7 +24,8 @@ Public Sub FormatRPAScript()
     Application.EnableEvents = False
     Application.Calculation = xlCalculationManual
 
-    Dim ws As Worksheet: Set ws = ActiveSheet
+    Dim ws As Worksheet
+    If targetSheet Is Nothing Then Set ws = ActiveSheet Else Set ws = targetSheet
 
     ' 0. 헤더 자동 생성
     Call EnsureHeaders(ws)
