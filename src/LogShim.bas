@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "LogShim"
+Attribute VB_Name = "LogShim"
 ' @desc 본 코드용 디버그 shim, 애드인 부재 시 무해 무시 동작 노출
 Option Explicit
 
@@ -110,4 +110,3 @@ Private Function EnsureEnabled() As Boolean
     dbgEnabled = False
     EnsureEnabled = False
 End Function
-

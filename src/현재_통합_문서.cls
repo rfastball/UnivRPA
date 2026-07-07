@@ -1,4 +1,4 @@
-﻿VERSION 1.0 CLASS
+VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
@@ -93,6 +93,7 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
         modScriptAssist.ValidateCommandCell ws.Cells(CLng(key), cmdCol)
     Next key
 End Sub
+
 
 
 

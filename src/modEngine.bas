@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modEngine"
+Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
 ' @depends modCmdRegistry, modContext, modActions, modWinAPI
 Option Explicit
@@ -29,7 +29,6 @@ Private Enum eControlSignal
 End Enum
 
 Sub RunRPA()
-Attribute RunRPA.VB_ProcData.VB_Invoke_Func = "W\n14"
     On Error GoTo FatalError
 
     Dim currentLine As Long
@@ -733,5 +732,4 @@ ErrHandler:
     Err.Raise Err.Number, "modEngine.ResolveSelectTarget", Err.Description
     Resume CleanUp
 End Function
-
 

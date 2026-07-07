@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modTester"
+Attribute VB_Name = "modTester"
 ' @desc 명령어셋 통합 자가진단 및 레지스트리 역검증 실행 담당
 ' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry
 Option Explicit

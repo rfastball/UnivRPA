@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modDevTools"
+Attribute VB_Name = "modDevTools"
 ' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
 ' @depends modCmdRegistry, clsScriptProgram
 Option Explicit
@@ -7,7 +7,6 @@ Private m_lastValidationMessage As String
 Private m_lastValidationWarning As String
 
 Public Sub FormatRPAScript()
-Attribute FormatRPAScript.VB_ProcData.VB_Invoke_Func = "F\n14"
     Dim prevScreenUpdating As Boolean
     Dim prevEnableEvents As Boolean
     Dim prevCalculation As XlCalculation

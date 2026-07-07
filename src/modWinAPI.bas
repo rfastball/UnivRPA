@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modWinAPI"
+Attribute VB_Name = "modWinAPI"
 Option Explicit
 
 '==============================================================================
@@ -309,5 +309,4 @@ Public Sub SendKeyboardInput(ByVal wVk As Integer, ByVal wScan As Integer, ByVal
     
     SendInput 1, buffer(0), inputSize
 End Sub
-
 

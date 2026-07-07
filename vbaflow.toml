@@ -1,0 +1,9 @@
+[project]
+name = "UnivRPA"
+
+[excel]
+workbook = "UnivRPA.xlsm"
+visible = true
+
+[src]
+root = "src"

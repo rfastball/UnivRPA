@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modScriptAssist"
+Attribute VB_Name = "modScriptAssist"
 ' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
 ' @depends modCmdRegistry, modDevTools, CmdDef, ParamSpec
 Option Explicit

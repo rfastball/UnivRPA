@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modContext"
+Attribute VB_Name = "modContext"
 Option Explicit
 
 '==============================================================================
