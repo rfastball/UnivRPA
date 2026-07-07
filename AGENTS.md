@@ -10,7 +10,7 @@ Excel 시트를 IDE처럼 쓰는 저코드 RPA 프레임워크. 스크립트는 
 
 (시그니처 스키마·src 편집 주의는 상위 `../CLAUDE.md` 참조)
 
-대상 워크북: **UnivRPA.xlsb**
+대상 워크북: **UnivRPA.xlsm** (xlsb에서 xlsm으로 마이그레이션됨)
 
 테스트: `Public Sub Test_*()`(인자 없음). 단언은 `LogShim.AssertEq`.
 `modTester.Run_Flow_Diagnosis`(헤드리스 통합 자가진단)와 `Run_All`(I/O 포함
