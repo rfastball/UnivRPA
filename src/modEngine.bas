@@ -143,12 +143,17 @@ Sub RunRPA()
                 GoTo CleanUp
 
             Case CMD_ERROR
+                ' 실패 사유는 ExecuteSmartAction이 m_lastRuntimeError에 남긴다 - 알림은 여기서 1회
+                Dim errDetail As String
+                errDetail = LastRuntimeError()
+                If Len(errDetail) = 0 Then errDetail = "명령 실행 실패"
                 LogShim.LogEvent "cmd_error", _
-                    Array("line", "sheetRow", "cmd", "code"), _
-                    Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, CLng(nextLine))
+                    Array("line", "sheetRow", "cmd", "reason"), _
+                    Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, errDetail)
                 LogForeachResumeHint "foreach.cmd_error"
                 modActions.Action_ShowNotification _
-                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ForeachHintSuffix(), 3
+                    "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & _
+                    vbCrLf & errDetail & ForeachHintSuffix(), 3
                 GoTo CleanUp
 
             Case Is > 0
@@ -279,7 +284,6 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     m_lastRuntimeError = ""
     If m_program Is Nothing Then
         m_lastRuntimeError = "실행할 ProgramImage가 없습니다."
-        modActions.Action_ShowNotification "실행할 ProgramImage가 없습니다.", 3
         ExecuteSmartAction = CMD_ERROR
         GoTo CleanUp
     End If
@@ -295,10 +299,8 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
 
     ' 2. 레지스트리 게이트 조회 (모든 디스패치의 단일 통로)
     If inst.def Is Nothing Then
-        ' 미등록 명령어 (무인 환경: 비차단 알림)
+        ' 미등록 명령어: 사유만 기록, 알림은 호출자(RunRPA)가 1회 조립
         m_lastRuntimeError = "알 수 없는 명령어: " & inst.cmd
-        modActions.Action_ShowNotification _
-            "알 수 없는 명령어: " & inst.cmd & " (라인 " & inst.RuntimeLine & ", 시트 행 " & inst.sheetRow & ")", 3
         ExecuteSmartAction = CMD_ERROR
      GoTo CleanUp
     End If
@@ -318,8 +320,6 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
         LogShim.LogEvent "param_guard", _
             Array("line", "sheetRow", "cmd", "reason"), _
             Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, guardMsg)
-        modActions.Action_ShowNotification _
-            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ": " & guardMsg, 3
         ExecuteSmartAction = CMD_ERROR
         GoTo CleanUp
     End If
@@ -333,12 +333,6 @@ CleanUp:
     Exit Function
 ErrHandler:
     m_lastRuntimeError = Err.Description
-    If inst Is Nothing Then
-        modActions.Action_ShowNotification "[에러] 라인 " & R & ": " & Err.Description, 3
-    Else
-        modActions.Action_ShowNotification _
-            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ": " & Err.Description, 3
-    End If
     ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
 End Function

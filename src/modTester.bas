@@ -1375,6 +1375,13 @@ Private Function TC_FlowNegativePaths() As Long
     ExpectTerminal rrErrored, result, fails
     ExpectBool "Undefined var suggestion", True, (InStr(1, modEngine.LastRuntimeError(), "{score}", vbTextCompare) > 0), fails
 
+    ' 미등록 명령: 실패 사유가 LastRuntimeError로 전달 (알림 단일화 회귀 가드)
+    Dim arr17(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(arr17, 1, "NOSUCHCMD", 0, 0, "")
+    result = RunProgram(arr17, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectBool "Unknown cmd reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "알 수 없는 명령어", vbTextCompare) > 0), fails
+
     TC_FlowNegativePaths = fails
 End Function
 
@@ -1477,6 +1484,7 @@ Private Function TC_ParamGuardRuntime() As Long
     Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "")
     code = ExecuteArrayLine(arrCmd, 1)
     ExpectLong "Guard: SET empty P3", CMD_ERROR, code, fails
+    ExpectBool "Guard: required reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "필수값 누락", vbTextCompare) > 0), fails
 
     ' 의도된 빈 값: {$BLANK}는 원문이 비어있지 않으므로 통과 (회귀 가드)
     Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "{$BLANK}")
@@ -1487,6 +1495,7 @@ Private Function TC_ParamGuardRuntime() As Long
     ' 필수 숫자 슬롯: SLEEP P3 비숫자 차단 / 숫자 통과
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "abc")
     ExpectLong "Guard: SLEEP non-numeric P3", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+    ExpectBool "Guard: numeric reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "숫자 아님", vbTextCompare) > 0), fails
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "10")
     ExpectLong "Guard: SLEEP numeric P3", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
 
