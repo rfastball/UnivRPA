@@ -94,9 +94,12 @@ FOREACH_ROW 데이터 순회는 `modTableSource` + `clsTableSnapshot`
 4. 실행: vbaflow test (Test_* 전체 실행 + LogShim jsonl 판독, --timeout <초>)
 5. 수정: fail이면 원인 고치고 1로, green이면 git commit
 
-- 모든 명령 --json 지원: {command, ok, exitCode, hint, errors[], payload}. 성공만 exit 0
+- 모든 명령 --json 지원: {command, ok, exitCode, hint, errors[], payload}
+- exit code: 성공 0 / 환경 오류 3 (세션/Excel/COM - session start 후 재시도) / 그 외 2
 - 테스트는 Public Sub Test_*() (인자 없음), 단언은 LogShim.AssertEq (Debug.Assert 금지)
 - src\LogShim.bas는 벤더링 사본 - 직접 수정 금지, 갱신은 vbaflow init
-- pull은 src의 미푸시 편집을 덮어쓴다 - 워크북 쪽이 진실일 때만
+- pull은 동기화 안 된 src 편집이 있으면 차단된다 - 기본은 push로 먼저 반영,
+  워크북 쪽이 진실일 때만 pull --force로 덮어쓰기
 - src 규약: UTF-8 BOM 없음 + CRLF + 끝 개행 1개. CP949 밖 문자(em dash U+2014, 이모지)는 push가 거부
+- 심화 절차/실패 플레이북: .claude\skills\vbaflow\SKILL.md (vbaflow init이 관리 - 직접 수정 금지)
 <!-- vbaflow:managed:end -->

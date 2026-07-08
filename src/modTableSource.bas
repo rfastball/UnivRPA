@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modTableSource"
+Attribute VB_Name = "modTableSource"
 Option Explicit
 
 Public Function SnapshotSource(ByVal pWorkbook As String, ByVal pSource As String, Optional ByVal pMode As String = "") As clsTableSnapshot
