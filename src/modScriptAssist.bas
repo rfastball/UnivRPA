@@ -1,6 +1,6 @@
 Attribute VB_Name = "modScriptAssist"
 ' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
-' @depends modCmdRegistry, modDevTools, CmdDef, ParamSpec
+' @depends modCmdRegistry, modDevTools, modStringDistance, CmdDef, ParamSpec
 Option Explicit
 
 Private Const ASSIST_PREFIX As String = "[ScriptAssist]"
@@ -371,41 +371,7 @@ Public Function GetClosestCommand(ByVal rawCmd As Variant) As String
     Set exactDef = modCmdRegistry.GetCmdDef(cmd)
     If Not exactDef Is Nothing Then Exit Function
 
-    Dim threshold As Long
-    If Len(cmd) <= 4 Then
-        threshold = 1
-    Else
-        threshold = 2
-    End If
-
-    Dim commands As Variant
-    commands = modCmdRegistry.AllCommands()
-
-    Dim bestDistance As Long
-    bestDistance = 32767
-
-    Dim bestCommand As String
-    Dim bestCount As Long
-    Dim item As Variant
-    For Each item In commands
-        Dim candidate As String
-        candidate = UCase$(CStr(item))
-
-        Dim distance As Long
-        distance = LevenshteinDistance(cmd, candidate)
-
-        If distance <= threshold Then
-            If distance < bestDistance Then
-                bestDistance = distance
-                bestCommand = candidate
-                bestCount = 1
-            ElseIf distance = bestDistance Then
-                bestCount = bestCount + 1
-            End If
-        End If
-    Next item
-
-    If bestCount = 1 Then GetClosestCommand = bestCommand
+    GetClosestCommand = modStringDistance.ClosestName(cmd, modCmdRegistry.AllCommands())
 End Function
 
 Public Sub ApplyErrorNote(ByVal Target As Range, ByVal rawCmd As Variant, ByVal suggestion As String)
@@ -623,66 +589,6 @@ Private Function DataTypeLabel(ByVal DataType As eDataType) As String
         Case Else
             DataTypeLabel = "str"
     End Select
-End Function
-
-Private Function LevenshteinDistance(ByVal leftText As String, ByVal rightText As String) As Long
-    Dim leftValue As String
-    Dim rightValue As String
-    leftValue = UCase$(Trim$(leftText))
-    rightValue = UCase$(Trim$(rightText))
-
-    Dim leftLen As Long
-    Dim rightLen As Long
-    leftLen = Len(leftValue)
-    rightLen = Len(rightValue)
-
-    If leftLen = 0 Then
-        LevenshteinDistance = rightLen
-        Exit Function
-    End If
-    If rightLen = 0 Then
-        LevenshteinDistance = leftLen
-        Exit Function
-    End If
-    If leftValue = rightValue Then
-        LevenshteinDistance = 0
-        Exit Function
-    End If
-
-    Dim dist() As Long
-    ReDim dist(0 To leftLen, 0 To rightLen) As Long
-
-    Dim i As Long
-    Dim j As Long
-    For i = 0 To leftLen
-        dist(i, 0) = i
-    Next i
-    For j = 0 To rightLen
-        dist(0, j) = j
-    Next j
-
-    For i = 1 To leftLen
-        For j = 1 To rightLen
-            Dim cost As Long
-            If Mid$(leftValue, i, 1) = Mid$(rightValue, j, 1) Then
-                cost = 0
-            Else
-                cost = 1
-            End If
-
-            dist(i, j) = Min3Long(dist(i - 1, j) + 1, _
-                         dist(i, j - 1) + 1, _
-                         dist(i - 1, j - 1) + cost)
-        Next j
-    Next i
-
-    LevenshteinDistance = dist(leftLen, rightLen)
-End Function
-
-Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, ByVal thirdValue As Long) As Long
-    Min3Long = firstValue
-    If secondValue < Min3Long Then Min3Long = secondValue
-    If thirdValue < Min3Long Then Min3Long = thirdValue
 End Function
 
 Private Function SafeText(ByVal value As Variant) As String

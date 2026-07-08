@@ -1,6 +1,6 @@
 Attribute VB_Name = "modTester"
 ' @desc 명령어셋 통합 자가진단 및 레지스트리 역검증 실행 담당
-' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry
+' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry, modStringDistance
 Option Explicit
 
 Private Const DEFAULT_MAX_STEPS As Long = 10000
@@ -38,6 +38,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_AbortLatch()
     failCount = failCount + TC_StaticVariableAnalysis()
     failCount = failCount + TC_ScriptAssistFormatterRegression()
+    failCount = failCount + TC_StringDistance()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + TC_RegistryDispatchSync()
@@ -133,6 +134,11 @@ End Sub
 ' @desc 포맷터 주석 회귀 스위트 실행해 실패 0건 단언함
 Public Sub Test_ScriptAssistFormatterRegression()
     ReportSuiteResult "flow.formatter_regression", TC_ScriptAssistFormatterRegression()
+End Sub
+
+' @desc 문자열 거리 유틸 스위트 실행해 실패 0건 단언함
+Public Sub Test_StringDistance()
+    ReportSuiteResult "util.string_distance", TC_StringDistance()
 End Sub
 
 ' @desc 레지스트리-핸들러 동기화 역검증 실행해 실패 0건 단언함
@@ -1674,6 +1680,26 @@ ErrHandler:
     fails = fails + 1
     LogFail "Script Assist formatter comments", "no error", Err.Description
     Resume CleanUp
+End Function
+
+Private Function TC_StringDistance() As Long
+    Dim fails As Long
+
+    Debug.Print "--- [Util 1A] String distance ---"
+
+    ExpectLong "Distance: identical", 0, modStringDistance.LevenshteinDistance("CLICK", "CLICK"), fails
+    ExpectLong "Distance: one edit", 1, modStringDistance.LevenshteinDistance("CLIK", "CLICK"), fails
+    ExpectLong "Distance: case and trim ignored", 0, modStringDistance.LevenshteinDistance("  click ", "CLICK"), fails
+
+    ExpectText "Closest: unique match", "CLICK", modStringDistance.ClosestName("CLIK", Array("CLICK", "MOVE")), fails
+    ExpectText "Closest: tie returns empty", "", modStringDistance.ClosestName("AB", Array("ABC", "ABD")), fails
+    ExpectText "Closest: out of threshold", "", modStringDistance.ClosestName("ZZZZZZ", Array("CLICK")), fails
+
+    ' GetClosestCommand 위임 회귀: 오타는 제안, 정확 일치는 빈값
+    ExpectText "Assist: typo suggestion", "CLICK", modScriptAssist.GetClosestCommand("CLIK"), fails
+    ExpectText "Assist: exact match no hint", "", modScriptAssist.GetClosestCommand("CLICK"), fails
+
+    TC_StringDistance = fails
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)

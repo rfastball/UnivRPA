@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modWinAPI
+' @depends modCmdRegistry, modContext, modActions, modWinAPI, modStringDistance
 Option Explicit
 
 '==============================================================================
@@ -558,107 +558,10 @@ Private Function UndefinedVarMessage(ByVal key As String, ByVal candidates As Va
     msg = "Undefined variable: {" & key & "}"
 
     Dim suggestion As String
-    suggestion = ClosestName(key, candidates)
+    suggestion = modStringDistance.ClosestName(key, candidates)
     If Len(suggestion) > 0 Then msg = msg & ". Did you mean {" & suggestion & "}?"
 
     UndefinedVarMessage = msg
-End Function
-
-Private Function ClosestName(ByVal Target As String, ByVal candidates As Variant) As String
-    On Error GoTo SafeExit
-
-    Dim threshold As Long
-    If Len(Trim$(Target)) <= 4 Then
-        threshold = 1
-    Else
-        threshold = 2
-    End If
-
-    Dim bestDistance As Long
-    bestDistance = 32767
-
-    Dim bestName As String
-    Dim bestCount As Long
-    Dim item As Variant
-    For Each item In candidates
-        Dim candidate As String
-        candidate = CStr(item)
-
-        Dim distance As Long
-        distance = LevenshteinDistance(Target, candidate)
-        If distance <= threshold Then
-            If distance < bestDistance Then
-                bestDistance = distance
-                bestName = candidate
-                bestCount = 1
-            ElseIf distance = bestDistance Then
-                bestCount = bestCount + 1
-            End If
-        End If
-    Next item
-
-    If bestCount = 1 Then ClosestName = bestName
-SafeExit:
-End Function
-
-Private Function LevenshteinDistance(ByVal leftText As String, ByVal rightText As String) As Long
-    Dim leftValue As String
-    Dim rightValue As String
-    leftValue = UCase$(Trim$(leftText))
-    rightValue = UCase$(Trim$(rightText))
-
-    Dim leftLen As Long
-    Dim rightLen As Long
-    leftLen = Len(leftValue)
-    rightLen = Len(rightValue)
-
-    If leftLen = 0 Then
-        LevenshteinDistance = rightLen
-        Exit Function
-    End If
-    If rightLen = 0 Then
-        LevenshteinDistance = leftLen
-        Exit Function
-    End If
-    If leftValue = rightValue Then
-        LevenshteinDistance = 0
-        Exit Function
-    End If
-
-    Dim dist() As Long
-    ReDim dist(0 To leftLen, 0 To rightLen) As Long
-
-    Dim i As Long
-    Dim j As Long
-    For i = 0 To leftLen
-        dist(i, 0) = i
-    Next i
-    For j = 0 To rightLen
-        dist(0, j) = j
-    Next j
-
-    For i = 1 To leftLen
-        For j = 1 To rightLen
-            Dim cost As Long
-            If Mid$(leftValue, i, 1) = Mid$(rightValue, j, 1) Then
-                cost = 0
-            Else
-                cost = 1
-            End If
-
-            dist(i, j) = Min3Long(dist(i - 1, j) + 1, _
-                         dist(i, j - 1) + 1, _
-                         dist(i - 1, j - 1) + cost)
-        Next j
-    Next i
-
-    LevenshteinDistance = dist(leftLen, rightLen)
-End Function
-
-Private Function Min3Long(ByVal firstValue As Long, ByVal secondValue As Long, ByVal thirdValue As Long) As Long
-    Min3Long = firstValue
-    If secondValue < Min3Long Then Min3Long = secondValue
-    If thirdValue < Min3Long Then Min3Long = thirdValue
 End Function
 
 Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As String) As String
