@@ -274,10 +274,9 @@ Public Function LastRuntimeError() As String
 End Function
 
 Public Sub LoadProgramFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheetRow As Long = 1)
+    ' LoadFromArray가 구조/라벨 인덱스와 정적 분석을 이미 전부 빌드한다 (재호출 불필요)
     Set m_program = New clsScriptProgram
     m_program.LoadFromArray sourceArray, firstSheetRow
-    m_program.BuildStructureIndex
-    m_program.BuildLabelIndex
 End Sub
 
 ' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환

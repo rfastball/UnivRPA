@@ -480,12 +480,10 @@ Public Function Action_FocusWindow(ByVal partialTitle As String) As Boolean
             
             ' 부분 일치 검사
             If InStr(1, winTitle, partialTitle, vbTextCompare) > 0 Then
-                ' 최소화 상태면 복구
-                If IsIconic(hwnd) Then
-                    ShowWindow hwnd, SW_RESTORE
-                Else
-                    SetForegroundWindow hwnd
-                End If
+                ' 최소화 상태면 먼저 복원한 뒤 반드시 전면화
+                '   (SW_RESTORE만으로는 최소화 창이 앞으로 오지 않을 수 있음)
+                If IsIconic(hwnd) Then ShowWindow hwnd, SW_RESTORE
+                SetForegroundWindow hwnd
                 Action_FocusWindow = True
                 Exit Function
             End If
