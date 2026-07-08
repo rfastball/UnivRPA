@@ -71,6 +71,10 @@
 - **AssertEq에 객체를 넘기지 말 것**: Range 등 객체는 기본 멤버 평가/91로 튀거나 의도와
   다른 비교가 된다. 스칼라로: `AssertEq "이름", 기대값, ws.Range("A1").Value2`.
   (근거: xlFlow XlflowAssert 지침, LogShim.AssertEq 동일 적용)
+- **모듈 수준 선언은 첫 프로시저보다 앞에만 올 수 있다**: 관련 프로시저 옆에 두려고
+  프로시저 사이에 `Private m_x As Boolean`을 끼우면 컴파일 오류 "End Sub 다음에는
+  주석만 나타날 수 있습니다". 변수/상수/Declare/Event 선언은 전부 모듈 선두 선언부에
+  모으고 소속은 주석으로만 표기. (근거: UnivRPA 중단 래치(B2) 작업 실측 컴파일 오류)
 
 ## 3. 다른 문서가 담당 (링크만)
 

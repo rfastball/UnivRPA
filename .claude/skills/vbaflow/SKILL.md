@@ -1,6 +1,6 @@
 ---
 name: vbaflow
-description: Excel VBA 프로젝트의 자율 개발 루프 절차. VBA 소스(.bas/.cls/.frm) 편집·주입·테스트·디버깅, .xlsm 워크북 매크로 작업, vbaflow 명령(session/push/pull/test/run/lint/doctor) 사용, 실패 복구(poisoned/stale 세션, lease 충돌, 타임아웃, 컴파일 오류 모달)가 필요할 때 사용한다.
+description: Excel VBA 프로젝트의 자율 개발 루프 절차. VBA 소스(.bas/.cls/.frm) 편집·주입·테스트·디버깅, .xlsm 워크북 매크로 작업, vbaflow 명령(session/push/pull/test/run/diff/lint/doctor) 사용, 실패 복구(poisoned/stale 세션, lease 충돌, 타임아웃, 컴파일 오류 모달)가 필요할 때 사용한다.
 ---
 
 # vbaflow 워크플로우
@@ -68,12 +68,16 @@ vbaflow는 src 텍스트 파일과 Excel 워크북 VBA를 안전하게 왕복시
 - CP949 불가 문자: errors의 파일:라인을 보고 해당 문자를 제거하거나 ChrW로 대체
 - src에 없는 워크북 모듈: 의도한 삭제면 `--prune`, 아니면 pull로 먼저 회수
 - 문서 모듈(ThisWorkbook/Sheet류)은 in-place 교체만 가능 - 신규 생성 불가
+- 워크북과 src가 어긋난 의심(고쳤는데 같은 오류 반복, push가 계속 `cached:true`):
+  `vbaflow push --force --json`으로 지문 캐시를 우회해 전량 재주입한다
+  (`_dbg\sync.json` 수동 삭제는 불필요). 실물 확인은 `vbaflow diff --json`
 
 ## pull 주의
 
 - 동기화되지 않은 src 편집(지문이 마지막 push/pull 어느 쪽과도 불일치)이 있으면 pull이 차단된다.
   기본 대응은 `vbaflow push`로 먼저 반영. 워크북 쪽이 진실이면 `vbaflow pull --force`로 덮어쓴다
 - 사람이 세션 Excel에서 직접 편집한 뒤에만 pull이 정당하다
+- 확인만 필요하면 pull이 아니라 `vbaflow diff`(읽기 전용)를 쓴다 - pull은 src를 다시 쓴다
 - 최초 pull(동기화 이력 없음)은 가드 없이 통과하며 일회성 포맷 정규화(BOM/개행) diff를 만든다 - 정상
 
 ## 폼 (.frm/.frx)
@@ -98,14 +102,32 @@ vbaflow는 src 텍스트 파일과 Excel 워크북 VBA를 안전하게 왕복시
   1. 정본은 `..\_VbaFlow\assets\vbaflow-skill\references\vba-pitfalls.md`
      (프로젝트-로컬 사본은 관리 파일 - 직접 수정 금지, init이 덮어씀)
   2. 기존 항목과 중복 확인 후, 문서 머리의 수록 기준·항목 포맷을 따라 추가
-  3. `_VbaFlow`에서 `dotnet publish -c Release -r win-x64`로 임베드 자산 갱신
-     - 이후 각 프로젝트는 다음 루프의 init --check가 드리프트를 감지해 자동 수렴
+  3. `_VbaFlow`에서 `.\rollout.ps1` 실행 - test -> publish -> 전 프로젝트 init 일괄 수렴 원샷
+     (publish만 따로 하면 각 프로젝트는 다음 루프의 init --check가 드리프트를 감지해 수렴)
   4. `..\_VbaFlow` 레포가 없는 환경이면 프로젝트 문서(관리 블록 밖)에 후보로 메모만 남긴다
+
+## vbaflow 자체 결함 리포트
+
+- vbaflow 명령의 버그/설계 위반(불변식 깨짐, 잘못된 판정, 데이터 손상)을 만나면
+  우회로 넘기지 말고 리포트를 남긴다: `vbaflow bugreport "<제목>" --json`
+- payload.path의 생성 파일을 열어 TODO/괄호 자리(심각도/요약/증거/재현)를 채운다.
+  증거는 실행한 명령과 --json 출력 원문을 코드블록으로. exe 빌드 정보는 자동 기입된다
+- 중복 확인: `vbaflow bugreport --list --json` (resolved=false가 열린 리포트 - 같은 증상이면
+  새 리포트 대신 기존 리포트에 증거를 추기)
+- `_VbaFlow` 레포가 없는 환경이면 명령이 exit 2로 안내한다 - 프로젝트 문서(관리 블록 밖)에
+  메모로 남길 것
 
 ## 보조 명령
 
 - `vbaflow doctor --json` - Excel/COM/AccessVBOM 환경 점검(세션 무관). 환경 의심 시 최우선.
   창 없는 고아 EXCEL 프로세스도 리포트한다 - 정리는 사람이 확인 후 `--kill-orphans`로만
+- `vbaflow diff --json` - 워크북 VBProject vs src 읽기 전용 비교. 모듈별 verdict
+  (same/changed/onlyInWorkbook/onlyInSrc/skipped)와 첫 차이 행(firstDiffLine)을 payload로 보고.
+  워크북에 실제로 뭐가 들어있는지 확인할 때는 항상 이것 - 세션 Excel에 PowerShell 등으로
+  직접 COM 접근은 금지(하드 불변식). `--module <이름>`이면 해당 모듈의 워크북 쪽 본문 전체를
+  payload.module.workbookBody로 덤프. 활성 세션 필요(attach 전용, 자동 기동 없음 - 없으면
+  exit 3). 폼은 코드비하인드만 비교(레이아웃/.frx 제외). 차이가 있어도 exit 0 -
+  payload.clean으로 판독
 - `vbaflow lint --json` - 규약/인코딩/헤더 전수 검사(Excel 불필요). push 전 일괄 사전 점검
 - `vbaflow run <Module.Proc> --json` - 임의 매크로 단건 실행. 반환값(원시 타입)/구간 로그 노출.
   테스트가 아닌 진입점 디버깅용 - 어서션 실패가 성패를 가르지 않는다

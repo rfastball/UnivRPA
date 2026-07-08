@@ -99,14 +99,14 @@ End Sub
 
 Private Function LogPath() As String
     ' 미저장 워크북(Path 없음)은 조용히 무시
-    If LenB(ThisWorkbook.path) = 0 Then Exit Function
-    LogPath = ThisWorkbook.path & "\" & DBG_FOLDER & "\" & baseName(ThisWorkbook.name) & ".jsonl"
+    If LenB(ThisWorkbook.Path) = 0 Then Exit Function
+    LogPath = ThisWorkbook.Path & "\" & DBG_FOLDER & "\" & BaseName(ThisWorkbook.Name) & ".jsonl"
 End Function
 
-Private Function baseName(fileName As String) As String
-    Dim P As Long
-    P = InStrRev(fileName, ".")
-    If P > 0 Then baseName = Left$(fileName, P - 1) Else baseName = fileName
+Private Function BaseName(fileName As String) As String
+    Dim p As Long
+    p = InStrRev(fileName, ".")
+    If p > 0 Then BaseName = Left$(fileName, p - 1) Else BaseName = fileName
 End Function
 
 Private Sub EnsureDbgFolder(path As String)
@@ -235,7 +235,7 @@ Private Function JsonEscape(s As String) As String
             Case 10:      result = result & "\n"
             Case 12:      result = result & "\f"
             Case 13:      result = result & "\r"
-            Case 0 To 31: result = result & "\u" & Right$("0000" & hex$(code), 4)
+            Case 0 To 31: result = result & "\u" & Right$("0000" & Hex$(code), 4)
             Case Else:    result = result & ch
         End Select
     Next i
