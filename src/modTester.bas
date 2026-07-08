@@ -952,6 +952,19 @@ Private Function TC_TableSnapshotReadOnly() As Long
     ExpectLong "Snapshot Clear RowCount", 0, tbl.RowCount, fails
     ExpectLong "Snapshot Clear ColCount", 0, tbl.ColCount, fails
 
+    ' [#6] 중복 헤더는 조용히 덮어쓰지 않고 하드 에러 (대소문자 무시)
+    Dim dupData(1 To 2, 1 To 3) As Variant
+    dupData(1, 1) = "Code": dupData(1, 2) = "Name": dupData(1, 3) = "code"
+    dupData(2, 1) = "001": dupData(2, 2) = "Alice": dupData(2, 3) = "X"
+    Dim dupTbl As clsTableSnapshot
+    Set dupTbl = New clsTableSnapshot
+    Dim dupErr As Long
+    On Error Resume Next
+    dupTbl.LoadFromArray dupData
+    dupErr = Err.Number
+    On Error GoTo ErrHandler
+    ExpectBool "Snapshot duplicate header raises", True, (dupErr <> 0), fails
+
     TC_TableSnapshotReadOnly = fails
     Exit Function
 

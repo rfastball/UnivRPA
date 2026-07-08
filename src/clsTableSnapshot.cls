@@ -311,6 +311,11 @@ Public Sub LoadFromArray(ByVal vArr As Variant, Optional ByVal bHasHeader As Boo
             ' 헤더 자체도 다시 한번 Trim (이미 위에서 처리되었지만 명시적 유지)
             sColName = CStr(m_vData(lHeadRow, j))
             If Len(sColName) > 0 Then
+                ' 중복 헤더는 조용히 덮어쓰지 않는다: 스크립트가 "어느 열을 보는지"
+                '   잃으면 자동화가 위험하므로 자동 suffix 대신 하드 에러
+                If m_dicHeaders.exists(UCase(sColName)) Then
+                    Err.Raise 5, "clsTableSnapshot.LoadFromArray", "중복 헤더: " & sColName
+                End If
                 m_dicHeaders(UCase(sColName)) = j
             End If
         Next j
