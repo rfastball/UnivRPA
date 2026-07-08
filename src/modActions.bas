@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "modActions"
+Attribute VB_Name = "modActions"
 ' @desc 클릭/입력/대기 등 구체 동작 수행 담당
 ' @depends modWinAPI, modCondition, LogShim
 Option Explicit
@@ -26,6 +26,10 @@ Private Const HOVER_SETTLE_MS As Long = 150
 ' [무인 모드] True면 알림을 팝업 대신 LogShim jsonl로 강등 (vbaflow test 등 헤드리스 실행)
 Private m_unattended As Boolean
 
+' [중단 래치 (B2)] ESC 물리키 폴링의 단일 소유자. 한 번 감지되면 래치되어
+' 실행 전체가 중단 경로로 수렴한다 (순간 키입력 유실 방지).
+Private m_abortRequested As Boolean
+
 ' @desc 무인 모드 여부 설정함 (True=팝업/일시정지 억제, 로그 기록만)
 Public Sub SetUnattendedMode(ByVal enabled As Boolean)
     m_unattended = enabled
@@ -36,6 +40,28 @@ Public Function IsUnattendedMode() As Boolean
     IsUnattendedMode = m_unattended
 End Function
 
+' @desc 중단 래치를 설정함 (ESC 감지 또는 외부 요청)
+Public Sub RequestAbort()
+    m_abortRequested = True
+End Sub
+
+' @desc 중단 래치를 해제함 (실행 시작 시 엔진/하니스가 호출)
+Public Sub ClearAbort()
+    m_abortRequested = False
+End Sub
+
+' @desc 중단 여부 반환: 래치 우선 확인, 미설정 시 ESC 1회 폴링해 래치함
+Public Function AbortPending() As Boolean
+    If m_abortRequested Then
+        AbortPending = True
+        Exit Function
+    End If
+    If IsKeyDown(VK_ESCAPE) Then
+        m_abortRequested = True
+        AbortPending = True
+    End If
+End Function
+
 Private Function WaitIfPaused() As Boolean
     If m_unattended Then Exit Function
     If Not IsKeyDown(VK_PAUSE_RESUME) Then Exit Function
@@ -44,7 +70,7 @@ Private Function WaitIfPaused() As Boolean
     Sleep 500
 
     Do
-        If IsKeyDown(VK_ESCAPE) Then
+        If AbortPending() Then
             WaitIfPaused = True
             Exit Function
         End If
@@ -69,14 +95,14 @@ Public Sub BetterWait(ByVal totalWait As Long)
     Dim i As Long, stepWait As Long: stepWait = DELAY_MICRO
     
     If totalWait < stepWait Then
-        If IsKeyDown(VK_ESCAPE) Then Exit Sub
+        If AbortPending() Then Exit Sub
         If WaitIfPaused() Then Exit Sub
         Sleep totalWait
         DoEvents
         GoTo CleanUp
     End If
     For i = 1 To totalWait \ stepWait
-        If IsKeyDown(VK_ESCAPE) Then Exit Sub
+        If AbortPending() Then Exit Sub
         If WaitIfPaused() Then Exit Sub
         Sleep stepWait
         DoEvents
@@ -100,7 +126,7 @@ Public Sub Action_InputText(ByVal txt As String, ByVal delayMs As Long)
     Dim charCode As Long
     
     For i = 1 To Len(txt)
-        If IsKeyDown(VK_ESCAPE) Then Exit Sub
+        If AbortPending() Then Exit Sub
         If WaitIfPaused() Then Exit Sub
         charCode = AscW(Mid(txt, i, 1))
         
@@ -302,7 +328,7 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
     ' 3. (x,y) 색이 기준색에서 벗어날 때까지 폴링. 동일점 가드(누른 곳=확인 곳).
     startTime = modWinAPI.GetTickCount()
     Do
-        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then Action_ClickSync = False: Exit Function
+        If AbortPending() Then Action_ClickSync = False: Exit Function
         If modWinAPI.GetColorHexAt(x, y) <> baseColor Then Action_ClickSync = True: Exit Function
         If (modWinAPI.GetTickCount() - startTime) > TIMEOUT_DEFAULT Then
             Action_ClickSync = False    ' 조용히 실패 (모달 금지)
@@ -348,8 +374,8 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
             Exit Function
         End If
         
-        ' 비상 탈출
-        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then Action_Wait = False: Exit Function
+        ' 비상 탈출 (래치: 감지 시 실행 전체가 중단 경로로 수렴)
+        If AbortPending() Then Action_Wait = False: Exit Function
         
         BetterWait DELAY_SHORT
     Loop

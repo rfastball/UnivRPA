@@ -42,6 +42,7 @@ Sub RunRPA()
 
     finalMessage = "매크로가 종료되었습니다."
     modActions.SetUnattendedMode False   ' 수동 실행 = 대화형 알림
+    modActions.ClearAbort                ' 이전 실행의 중단 래치 해제
     modContext.InitContext
 
     '==========================================================
@@ -124,6 +125,15 @@ Sub RunRPA()
         LogShim.LogD "DEBUG", "line=" & inst.RuntimeLine & " cmd=" & inst.cmd
 
         nextLine = ExecuteSmartAction(currentLine)
+
+        ' [B2] 중단 래치 우선 판정: 액션 내부에서 ESC로 탈출한 경우
+        ' cmd_error가 아니라 "사용자 중단"으로 즉시 종료한다
+        If modActions.AbortPending() Then
+            finalMessage = "매크로가 중단되었습니다."
+            LogForeachResumeHint "foreach.interrupted"
+            If Len(ForeachResumeHint()) > 0 Then finalMessage = finalMessage & vbCrLf & ForeachResumeHint()
+            GoTo CleanUp
+        End If
 
         Select Case nextLine
             Case CMD_NEXT_LINE
@@ -211,7 +221,7 @@ End Sub
 Private Function CheckControlSignals() As eControlSignal
     CheckControlSignals = ControlContinue
 
-    If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then
+    If modActions.AbortPending() Then
         CheckControlSignals = ControlAbort
         Exit Function
     End If
@@ -223,7 +233,7 @@ Private Function CheckControlSignals() As eControlSignal
     modWinAPI.Sleep 500
 
     Do
-        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then
+        If modActions.AbortPending() Then
             CheckControlSignals = ControlAbort
             Exit Function
         End If

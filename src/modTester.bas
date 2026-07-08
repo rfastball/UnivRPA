@@ -35,6 +35,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_MemoryResolverHeadless()
     failCount = failCount + TC_ParamSpecValidation()
     failCount = failCount + TC_ParamGuardRuntime()
+    failCount = failCount + TC_AbortLatch()
     failCount = failCount + TC_StaticVariableAnalysis()
     failCount = failCount + TC_ScriptAssistFormatterRegression()
 
@@ -119,6 +120,11 @@ Public Sub Test_ParamGuardRuntime()
     ReportSuiteResult "flow.param_guard_runtime", TC_ParamGuardRuntime()
 End Sub
 
+' @desc 중단 래치 스위트 실행해 실패 0건 단언함
+Public Sub Test_AbortLatch()
+    ReportSuiteResult "flow.abort_latch", TC_AbortLatch()
+End Sub
+
 ' @desc 정적 변수 분석 스위트 실행해 실패 0건 단언함
 Public Sub Test_StaticVariableAnalysis()
     ReportSuiteResult "flow.static_variable_analysis", TC_StaticVariableAnalysis()
@@ -162,6 +168,7 @@ Private Function RunProgramFromLine(ByRef arr As Variant, ByVal firstRow As Long
     If maxSteps <= 0 Then maxSteps = DEFAULT_MAX_STEPS
 
     modActions.SetUnattendedMode True   ' 테스트 하니스 = 무인 모드 (팝업 억제)
+    modActions.ClearAbort               ' 이전 실행의 중단 래치 해제
     modContext.InitContext
     modEngine.LoadProgramFromArray arr, firstRow
     Set program = modEngine.ActiveProgram()
@@ -179,6 +186,13 @@ Private Function RunProgramFromLine(ByRef arr As Variant, ByVal firstRow As Long
         code = modEngine.ExecuteSmartAction(curLine)
         outLastCode = code
         steps = steps + 1
+
+        ' [B2] 중단 래치 우선: 엔진 루프와 동일하게 중단으로 수렴
+        If modActions.AbortPending() Then
+            outLastLine = curLine
+            RunProgramFromLine = rrHalted
+            Exit Function
+        End If
 
         Select Case code
             Case CMD_NEXT_LINE
@@ -1505,6 +1519,43 @@ Private Function TC_ParamGuardRuntime() As Long
     TC_ParamGuardRuntime = fails
 End Function
 
+' [Flow 5E] 중단 래치 (B2): 물리키 없이 RequestAbort 주입으로 조기 탈출 검증
+Private Function TC_AbortLatch() As Long
+    Dim fails As Long
+    Dim t0 As Long
+    Dim ok As Boolean
+
+    Debug.Print "--- [Flow 5E] Abort latch ---"
+
+    ' 래치 기본 상태 (물리 ESC 미입력 가정)
+    modActions.ClearAbort
+    ExpectBool "Abort: clear state", False, modActions.AbortPending(), fails
+
+    ' 래치 설정 후 유지 (순간 신호 유실 방지의 핵심)
+    modActions.RequestAbort
+    ExpectBool "Abort: latched", True, modActions.AbortPending(), fails
+    ExpectBool "Abort: latch persists", True, modActions.AbortPending(), fails
+
+    ' BetterWait 조기 탈출: 1000ms 요청이 즉시 반환
+    t0 = modWinAPI.GetTickCount()
+    modActions.BetterWait 1000
+    ExpectBool "Abort: BetterWait early exit", True, _
+        (modWinAPI.GetTickCount() - t0) < 500, fails
+
+    ' Action_Wait 조기 탈출: 30초 타임아웃 대신 즉시 False
+    t0 = modWinAPI.GetTickCount()
+    ok = modActions.Action_Wait("WAIT_APPEAR", 0, 0, "#ZZZZZZ")
+    ExpectBool "Abort: Action_Wait returns False", False, ok, fails
+    ExpectBool "Abort: Action_Wait early exit", True, _
+        (modWinAPI.GetTickCount() - t0) < 1000, fails
+
+    ' 해제 확인
+    modActions.ClearAbort
+    ExpectBool "Abort: cleared", False, modActions.AbortPending(), fails
+
+    TC_AbortLatch = fails
+End Function
+
 Private Function TC_StaticVariableAnalysis() As Long
     On Error GoTo ErrHandler
 
@@ -1635,6 +1686,7 @@ End Sub
 
 Private Function ExecuteArrayLine(ByRef arr As Variant, ByVal R As Long) As Long
     modActions.SetUnattendedMode True   ' 단일 라인 하니스도 무인 모드
+    modActions.ClearAbort               ' 래치 누수 방지
     modEngine.LoadProgramFromArray arr, 1
     ExecuteArrayLine = modEngine.ExecuteSmartAction(R)
 End Function

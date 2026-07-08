@@ -15,8 +15,8 @@ Option Explicit
 Private Memory As Object            ' 변수 저장 공간 (Scripting.Dictionary, 자유 명명 {name})
 Private CallStack As Collection     ' 서브루틴 복귀 주소 저장 (LIFO 구조)
 
-' [2] 실행 상태 플래그
-Private IsRunning As Boolean        ' 현재 매크로 실행 중 여부
+' [2] 실행 상태 플래그: (제거됨) IsRunning/CheckRunningState는 호출자가 없어 폐기.
+'     중단 신호는 modActions의 abort 래치가 소유한다 (B2).
 
 ' [3] 루프 런타임: 활성 루프 스택 ({$LOOP}/BREAK/CONTINUE 통합)
 Private Type LoopFrame
@@ -52,20 +52,16 @@ Public Sub InitContext()
     ' 2. 스택 초기화
     Set CallStack = New Collection
 
-    ' 3. 상태 플래그 설정
-    IsRunning = True
-
-    ' 4. 상태바 초기화
+    ' 3. 상태바 초기화
     Application.StatusBar = "RPA Ready..."
 
-    ' 5. 런타임 스택 초기화
+    ' 4. 런타임 스택 초기화
     LoopReset
     IfBranchReset
 End Sub
 
 ' [종료] 매크로 중단/완료 시 호출
 Public Sub ResetContext()
-    IsRunning = False
     Set CallStack = Nothing
     Set Memory = Nothing
     LoopReset
@@ -173,10 +169,7 @@ Public Sub LogStatus(ByVal msg As String)
     DoEvents
 End Sub
 
-' [실행 상태 확인] 외부(Engine)에서 루프 계속 여부 확인용
-Public Function CheckRunningState() As Boolean
-    CheckRunningState = IsRunning
-End Function
+' [실행 상태 확인] (제거됨) CheckRunningState는 호출자가 없어 폐기 (B2)
 
 '--------------------------------------------------
 ' 5. [Loop Management] 활성 루프 스택
