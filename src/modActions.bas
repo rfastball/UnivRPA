@@ -208,6 +208,7 @@ End Sub
 Private Function ParseKeyCode(ByVal vKey As Variant) As Long
     If IsNumeric(vKey) Then
         ParseKeyCode = CLng(vKey)
+        If ParseKeyCode <= 0 Then Err.Raise 5, "modActions.ParseKeyCode", "잘못된 키 코드: " & CStr(vKey)
         Exit Function
     End If
     
@@ -245,6 +246,9 @@ Private Function ParseKeyCode(ByVal vKey As Variant) As Long
             ' UCase로 변환했으므로 소문자 a도 A(65)로 변환되어 정상 동작함
             If Len(sKey) = 1 Then ParseKeyCode = Asc(sKey) Else ParseKeyCode = 0
     End Select
+
+    ' 알 수 없는 키 이름은 VK 0으로 조용히 발사되지 않도록 명시 오류로 전환
+    If ParseKeyCode <= 0 Then Err.Raise 5, "modActions.ParseKeyCode", "알 수 없는 키: " & CStr(vKey)
 End Function
 
 '==============================================================================

@@ -1540,6 +1540,12 @@ Private Function TC_ParamGuardRuntime() As Long
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "{pgv}")
     ExpectLong "Guard: SLEEP {token} non-numeric", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
 
+    ' [#3] 잘못된 키 이름은 VK 0으로 조용히 발사되지 않고 명시 오류 (발사 전 raise)
+    Call MakeCmd(arrCmd, 1, "KEY", "NOT_A_KEY", 0, "")
+    ExpectLong "Guard: KEY unknown name errors", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "COMBO", "CTRL", "NOT_A_KEY", "")
+    ExpectLong "Guard: COMBO unknown key errors", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+
     ' RAW 필수 슬롯: IF 연산자(P2) 공백 -> rrErrored
     Dim arr3(1 To 3, 1 To 5) As Variant
     Dim trace() As Long
