@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modWinAPI, modStringDistance
+' @depends modCmdRegistry, modContext, modActions, modWinAPI, modStringDistance, modParse
 Option Explicit
 
 '==============================================================================
@@ -345,6 +345,7 @@ Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args()
     Dim i As Long
     Dim spec As ParamSpec
     Dim rawVal As String
+    Dim numCheck As Double
 
     For i = 1 To 3
         Set spec = inst.def.Param(i)
@@ -361,7 +362,8 @@ Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args()
             End If
 
             If spec.DataType = DT_NUM Then
-                If Len(Trim$(args(i))) > 0 And Not IsNumeric(Trim$(args(i))) Then
+                ' 판정은 핸들러가 소비할 파서(modParse)와 동일해야 한다
+                If Len(Trim$(args(i))) > 0 And Not modParse.TryParseDoubleStrict(args(i), numCheck) Then
                     ValidateDecodedSlots = "P" & i & "(" & spec.Meaning & ") 숫자 아님: '" & args(i) & "'"
                     Exit Function
                 End If
@@ -589,7 +591,7 @@ Private Function ResolvePixelToken(ByVal coordText As String) As String
     Dim coords() As String
     coords = Split(coordText, ",")
     If UBound(coords) = 1 Then
-        ResolvePixelToken = modWinAPI.GetColorHexAt(CLng(val(Trim(coords(0)))), CLng(val(Trim(coords(1)))))
+        ResolvePixelToken = modWinAPI.GetColorHexAt(modParse.ParseLongOrDefault(coords(0), 0), modParse.ParseLongOrDefault(coords(1), 0))
     Else
         ResolvePixelToken = "{$PIXEL:" & coordText & "}"  ' 형식 불일치 시 원본
     End If

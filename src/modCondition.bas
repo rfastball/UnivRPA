@@ -1,5 +1,6 @@
 Attribute VB_Name = "modCondition"
 ' @desc Condition comparison/operator SSOT for the script runtime layer.
+' @depends modParse
 Option Explicit
 
 ' [Logic] condition comparison
@@ -103,9 +104,9 @@ End Function
 
 Public Function TryCoerceNumber(ByVal s1 As String, ByVal s2 As String, _
                                 ByRef d1 As Double, ByRef d2 As Double) As Boolean
-    If IsNumeric(s1) And IsNumeric(s2) And Not (s1 Like "0#*" Or s2 Like "0#*") Then
-        d1 = val(s1)
-        d2 = val(s2)
+    ' zero-pad 가드: "007" 같은 코드 문자열은 숫자 비교로 승격하지 않는다
+    If s1 Like "0#*" Or s2 Like "0#*" Then Exit Function
+    If modParse.TryParseDoubleStrict(s1, d1) And modParse.TryParseDoubleStrict(s2, d2) Then
         TryCoerceNumber = True
     End If
 End Function

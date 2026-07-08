@@ -1,6 +1,6 @@
 Attribute VB_Name = "modDevTools"
 ' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
-' @depends modCmdRegistry, clsScriptProgram
+' @depends modCmdRegistry, modParse, clsScriptProgram
 Option Explicit
 
 Private m_lastValidationMessage As String
@@ -234,6 +234,7 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
     ValidateParamSlot = True
 
     Dim text As String
+    Dim numProbe As Double
     text = ParamText(rawValue)
 
     Dim spec As ParamSpec
@@ -256,7 +257,7 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
     If Len(text) = 0 Then Exit Function
 
     If IsJumpTargetSlot(def, idx) Then
-        If IsNumeric(text) Or ContainsTokenSyntax(text) Then
+        If modParse.TryParseDoubleStrict(text, numProbe) Or ContainsTokenSyntax(text) Then
             SetValidationError def.Canonical & " target must be a static LABEL."
             ValidateParamSlot = False
         End If
@@ -281,7 +282,8 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
 
     If spec.DataType = DT_NUM Then
         If Not ContainsTokenSyntax(text) Then
-            If Not IsNumeric(text) Then
+            ' 런타임 게이트(ValidateDecodedSlots)와 동일 파서로 판정
+            If Not modParse.TryParseDoubleStrict(text, numProbe) Then
                 SetValidationError def.Canonical & " P" & idx & " must be numeric."
                 ValidateParamSlot = False
             End If

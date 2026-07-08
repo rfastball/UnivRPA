@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 흐름제어 명령어(분기/반복/점프) 19종 디스패치 실행 담당
-' @depends modEngine, modContext, modCmdRegistry, ICommand
+' @depends modEngine, modContext, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -167,7 +167,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
                 ICommand_Execute = CMD_NEXT_LINE
             Else
-                maxCnt = CLng(val(repeatArg))
+                maxCnt = modParse.ParseLongStrict(repeatArg)
                 If maxCnt <= 0 Then
                     ' 0 이하 -> 무한 반복 (반복을 끄려면 REPEAT 블록을 주석 처리)
                     maxCnt = 0

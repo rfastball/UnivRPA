@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 비전 명령어(픽셀 대기/동기 클릭/단언) 4종 디스패치 실행 담당
-' @depends modActions, modCmdRegistry, ICommand
+' @depends modActions, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -17,9 +17,10 @@ Implements ICommand
 Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef args() As String) As Long
     On Error GoTo ErrHandler
 
+    ' 좌표 P1/P2는 전 명령 공통 DT_NUM 필수 슬롯 (게이트 통과 보장)
     Dim p1 As Long, p2 As Long
-    p1 = CLng(val(args(1)))
-    p2 = CLng(val(args(2)))
+    p1 = modParse.ParseLongStrict(args(1))
+    p2 = modParse.ParseLongStrict(args(2))
 
     ICommand_Execute = CMD_NEXT_LINE
 

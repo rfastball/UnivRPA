@@ -40,6 +40,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_ScriptAssistFormatterRegression()
     failCount = failCount + TC_StringDistance()
     failCount = failCount + TC_CommandNormalization()
+    failCount = failCount + TC_ParseStrict()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + TC_RegistryDispatchSync()
@@ -145,6 +146,11 @@ End Sub
 ' @desc 명령어 정규화 규칙 스위트 실행해 실패 0건 단언함
 Public Sub Test_CommandNormalization()
     ReportSuiteResult "registry.command_normalization", TC_CommandNormalization()
+End Sub
+
+' @desc 엄격 숫자 파서 스위트 실행해 실패 0건 단언함
+Public Sub Test_ParseStrict()
+    ReportSuiteResult "util.parse_strict", TC_ParseStrict()
 End Sub
 
 ' @desc 레지스트리-핸들러 동기화 역검증 실행해 실패 0건 단언함
@@ -1499,6 +1505,10 @@ Private Function TC_ParamGuardRuntime() As Long
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "10")
     ExpectLong "Guard: SLEEP numeric P3", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
 
+    ' 엄격 파서 회귀: "1,000"은 IsNumeric 통과+Val=1로 1ms 오동작하던 입력 -> 게이트 차단
+    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "1,000")
+    ExpectLong "Guard: SLEEP comma blocked", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+
     ' 좌표 슬롯: CLICK P1 비숫자 / P2 공백 -> 핸들러 진입 전 차단 (마우스 미동작)
     Call MakeCmd(arrCmd, 1, "CLICK", "abc", "10", "")
     ExpectLong "Guard: CLICK non-numeric P1", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
@@ -1738,6 +1748,44 @@ Private Function TC_CommandNormalization() As Long
     ExpectBool "Gate: indented command resolves", False, (modCmdRegistry.GetCmdDef(">> CLICK") Is Nothing), fails
 
     TC_CommandNormalization = fails
+End Function
+
+Private Function TC_ParseStrict() As Long
+    Dim fails As Long
+    Dim n As Long
+    Dim d As Double
+
+    Debug.Print "--- [Util 1C] Strict number parsing ---"
+
+    ' 허용: 정수/부호/소수 (소수는 CLng 반올림 - 기존 CLng(Val()) 동작 보존)
+    ExpectBool "Parse: plain int", True, modParse.TryParseLongStrict("10", n), fails
+    ExpectLong "Parse: plain int value", 10, n, fails
+    ExpectBool "Parse: negative", True, modParse.TryParseLongStrict("-5", n), fails
+    ExpectLong "Parse: negative value", -5, n, fails
+    ExpectBool "Parse: decimal rounds", True, modParse.TryParseLongStrict("1.5", n), fails
+    ExpectLong "Parse: decimal rounds value", 2, n, fails
+    ExpectBool "Parse: double", True, modParse.TryParseDoubleStrict(" 3.14 ", d), fails
+    ExpectBool "Parse: double value", True, (Abs(d - 3.14) < 0.0000001), fails
+
+    ' 거부: IsNumeric은 통과시키지만 Val이 다르게 읽던 표기들
+    ExpectBool "Parse: reject empty", False, modParse.TryParseLongStrict("", n), fails
+    ExpectBool "Parse: reject comma", False, modParse.TryParseLongStrict("1,000", n), fails
+    ExpectBool "Parse: reject currency", False, modParse.TryParseLongStrict("$5", n), fails
+    ExpectBool "Parse: reject exponent", False, modParse.TryParseLongStrict("1e3", n), fails
+    ExpectBool "Parse: reject hex", False, modParse.TryParseLongStrict("&HFF", n), fails
+    ExpectBool "Parse: reject trailing text", False, modParse.TryParseLongStrict("12abc", n), fails
+    ExpectBool "Parse: reject inner space", False, modParse.TryParseLongStrict("1 2", n), fails
+    ExpectBool "Parse: reject double dot", False, modParse.TryParseLongStrict("1.2.3", n), fails
+
+    ExpectLong "Parse: default fallback", 7, modParse.ParseLongOrDefault("abc", 7), fails
+
+    ' 조건 비교 회귀: zero-pad 가드 유지 + 비숫자 표기는 문자열 비교로 전환
+    ExpectBool "Cond: zero-pad stays string", False, modCondition.EvaluateCondition("007", "EQ", "7"), fails
+    ExpectBool "Cond: numeric compare kept", True, modCondition.EvaluateCondition("10", ">", "9"), fails
+    ExpectBool "Cond: exponent now string", False, modCondition.EvaluateCondition("1e3", "EQ", "1000"), fails
+    ExpectBool "Cond: comma now string", False, modCondition.EvaluateCondition("1,000", "EQ", "1"), fails
+
+    TC_ParseStrict = fails
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)

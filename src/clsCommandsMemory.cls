@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 이름 붙은 슬롯 쓰기(SET/INC/DEC) 실행 및 lvalue 합법성 소유 담당
-' @depends modContext, modWinAPI, modCmdRegistry, ICommand
+' @depends modContext, modWinAPI, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -36,12 +36,12 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 Err.Raise 5, "clsCommandsMemory.Execute", "Undefined variable: {" & key & "}. Initialize it with SET first."
             End If
 
-            ' [정수 read-modify-write] 기존값을 CLng(Val(...))로 강제 -> 비숫자는 0
+            ' [정수 read-modify-write] 기존값 비숫자는 0 (기존 계약 유지)
             Dim cur As Long, delta As Long
-            cur = CLng(val(ReadSlot(kind, key)))
+            cur = modParse.ParseLongOrDefault(ReadSlot(kind, key), 0)
 
-            ' 증분 P3: 생략 시 1, 변수/음수 허용
-            If Trim$(args(3)) = "" Then delta = 1 Else delta = CLng(val(args(3)))
+            ' 증분 P3: 생략 시 1, 변수/음수 허용 (비어있지 않으면 게이트 통과 보장)
+            If Trim$(args(3)) = "" Then delta = 1 Else delta = modParse.ParseLongStrict(args(3))
             If cmd = "DEC" Then delta = -delta
 
             WriteSlot kind, key, CStr(cur + delta)

@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 시스템 명령어(창포커스/대기/알림/종료) 4종 디스패치 실행 담당
-' @depends modActions, modCmdRegistry, ICommand
+' @depends modActions, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -28,7 +28,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             modActions.BetterWait 500
 
         Case "SLEEP"
-            modActions.BetterWait CLng(val(args(3)))
+            modActions.BetterWait modParse.ParseLongStrict(args(3))
 
         Case "NOTIFY"
             ' P1 = 표시시간초(빈값=2, 0=확인대기), P3 = 메시지
@@ -37,7 +37,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             If Len(Trim$(args(1))) = 0 Then
                 durMs = 2000
             Else
-                nSec = CLng(val(args(1)))
+                nSec = modParse.ParseLongStrict(args(1))
                 durMs = nSec * 1000
             End If
             modActions.Action_Notify durMs, 64, nMsg
