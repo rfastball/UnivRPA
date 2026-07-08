@@ -386,7 +386,7 @@ Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As 
     End If
 End Function
 
-' [엔진 서비스] GOTO/CALL 점프 대상 해석 (숫자=줄번호, 아니면 라벨명)
+' [엔진 서비스] GOTO/CALL 점프 대상 해석 (정적 라벨명만 허용, 숫자/토큰은 거부)
 ' @desc 점프 대상 문자열 받아 줄번호 반환, 미해석 라벨 시 CMD_ERROR 반환
 Public Function ResolveJumpTarget(ByVal Target As String) As Long
     If m_program Is Nothing Then

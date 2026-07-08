@@ -193,10 +193,12 @@ Private Sub BuildRegistry()
     Reg "END_SELECT", FLOW, ENDER, "SELECT", clrFLOW, FULLROW
     Reg "BREAK", FLOW, NOBLOCK, "", clrFLOW, FULLROW
     Reg "CONTINUE", FLOW, NOBLOCK, "", clrFLOW, FULLROW
+    ' GOTO/CALL 대상은 정적 라벨만 허용(숫자/토큰 거부) - P3를 raw로 고정해
+    '   정적 검증(정적 라벨 계약)과 런타임 디코딩을 일치시킨다
     Reg "GOTO", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨/줄번호", DT_STR, RESOLVE, True)
+        sp3:=P("라벨", DT_STR, raw, True)
     Reg "CALL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨/줄번호", DT_STR, RESOLVE, True)
+        sp3:=P("라벨", DT_STR, raw, True)
     Reg "RETURN", FLOW, NOBLOCK, "", clrFLOW, FULLROW
     Reg "LABEL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
         sp3:=P("라벨명", DT_STR, raw, True)

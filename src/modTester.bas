@@ -1407,6 +1407,24 @@ Private Function TC_FlowNegativePaths() As Long
     ExpectTerminal rrErrored, result, fails
     ExpectBool "Unknown cmd reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "알 수 없는 명령어", vbTextCompare) > 0), fails
 
+    ' [#2] GOTO/CALL P3 RAW 계약: 변수에 담긴 라벨명은 런타임에 치환되지 않음
+    ' (구 RESOLVE면 {jt}->DEST로 점프해 rrHalted, RAW면 토큰 거부로 rrErrored)
+    Dim arr18(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(arr18, 1, "SET", "{jt}", 0, "DEST")
+    Call MakeCmd(arr18, 2, "GOTO", 0, 0, "{jt}")
+    Call MakeCmd(arr18, 3, "LABEL", 0, 0, "DEST")
+    Call MakeCmd(arr18, 4, "EXIT", 0, 0, "")
+    result = RunProgram(arr18, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+
+    ' 정적 라벨 GOTO는 정상 점프 (회귀 가드)
+    Dim arr19(1 To 3, 1 To 5) As Variant
+    Call MakeCmd(arr19, 1, "GOTO", 0, 0, "DEST")
+    Call MakeCmd(arr19, 2, "LABEL", 0, 0, "DEST")
+    Call MakeCmd(arr19, 3, "EXIT", 0, 0, "")
+    result = RunProgram(arr19, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+
     TC_FlowNegativePaths = fails
 End Function
 
