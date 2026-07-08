@@ -23,6 +23,10 @@ Private m_index As clsScriptProgramIndex
 Private m_subroutineStartRows As Object
 Private m_subroutineEndRows As Object
 Private m_flowInvalidRows As Object
+' 서브루틴 흐름 갭(RETURN 누락/흐름차단 부재/고아 RETURN)만 담는 라인->메시지 사전.
+'   m_flowInvalidRows는 서식(빨간 표시)용 전수 집합, 이쪽은 실행 전 차단으로 승격할 부분집합.
+'   점프대상/IF 오류는 각각 ValidateJumpTargets/BuildIfStructureAnalysis가 이미 차단하므로 제외.
+Private m_flowBlockingErrors As Object
 Private m_variableErrors As Object
 Private m_variableWarnings As Object
 Private m_validationErrors As Collection
@@ -44,12 +48,14 @@ Private Sub ResetAnalysis()
     Set m_subroutineStartRows = CreateObject("Scripting.Dictionary")
     Set m_subroutineEndRows = CreateObject("Scripting.Dictionary")
     Set m_flowInvalidRows = CreateObject("Scripting.Dictionary")
+    Set m_flowBlockingErrors = CreateObject("Scripting.Dictionary")
     Set m_variableErrors = CreateObject("Scripting.Dictionary")
     Set m_variableWarnings = CreateObject("Scripting.Dictionary")
     Set m_validationErrors = New Collection
     m_subroutineStartRows.CompareMode = vbTextCompare
     m_subroutineEndRows.CompareMode = vbTextCompare
     m_flowInvalidRows.CompareMode = vbTextCompare
+    m_flowBlockingErrors.CompareMode = vbTextCompare
     m_variableErrors.CompareMode = vbTextCompare
     m_variableWarnings.CompareMode = vbTextCompare
 End Sub
@@ -62,11 +68,13 @@ Public Sub BuildStaticAnalysis()
     Set m_subroutineStartRows = CreateObject("Scripting.Dictionary")
     Set m_subroutineEndRows = CreateObject("Scripting.Dictionary")
     Set m_flowInvalidRows = CreateObject("Scripting.Dictionary")
+    Set m_flowBlockingErrors = CreateObject("Scripting.Dictionary")
     Set m_variableErrors = CreateObject("Scripting.Dictionary")
     Set m_variableWarnings = CreateObject("Scripting.Dictionary")
     m_subroutineStartRows.CompareMode = vbTextCompare
     m_subroutineEndRows.CompareMode = vbTextCompare
     m_flowInvalidRows.CompareMode = vbTextCompare
+    m_flowBlockingErrors.CompareMode = vbTextCompare
     m_variableErrors.CompareMode = vbTextCompare
     m_variableWarnings.CompareMode = vbTextCompare
 
@@ -149,8 +157,27 @@ Public Function ValidateLabels() As Boolean
 
     If m_index.HasDuplicateLabels Then AddValidationError "Duplicate LABEL: " & m_index.DuplicateLabels()
     ValidateJumpTargets
+    PromoteFlowBlockingErrors
     ValidateLabels = (m_validationErrors.count = 0)
 End Function
+
+' 서브루틴 흐름 갭을 실행 전 차단 오류로 승격 (BuildStaticAnalysis가 채운 뒤 호출)
+Private Sub PromoteFlowBlockingErrors()
+    Dim key As Variant
+    For Each key In m_flowBlockingErrors.keys
+        AddValidationError CStr(m_flowBlockingErrors(key))
+    Next key
+End Sub
+
+' 흐름 차단 오류를 서식용 집합과 승격용 메시지 사전에 함께 기록 (같은 라인 다중 사유는 이어붙임)
+Private Sub MarkFlowBlocking(ByVal lineNo As Long, ByVal message As String)
+    m_flowInvalidRows(CStr(lineNo)) = True
+    If m_flowBlockingErrors.exists(CStr(lineNo)) Then
+        m_flowBlockingErrors(CStr(lineNo)) = CStr(m_flowBlockingErrors(CStr(lineNo))) & vbCrLf & message
+    Else
+        m_flowBlockingErrors(CStr(lineNo)) = message
+    End If
+End Sub
 
 Public Function ValidationErrors() As String
     Dim i As Long
@@ -275,10 +302,11 @@ Private Sub BuildSubroutineFlowAnalysis()
                         inSubroutineRows(CStr(innerLine)) = True
                     Next innerLine
                 Else
-                    m_flowInvalidRows(CStr(R)) = True
+                    MarkFlowBlocking R, "CALL 대상 LABEL line " & R & " 에 RETURN이 없습니다."
                 End If
 
-                If Not HasFlowBreakBefore(R) Then m_flowInvalidRows(CStr(R)) = True
+                If Not HasFlowBreakBefore(R) Then _
+                    MarkFlowBlocking R, "CALL 대상 LABEL line " & R & " 앞에 흐름 차단(EXIT/GOTO/RETURN)이 없어 fall-through로 진입됩니다."
             End If
         End If
 NextRow:
@@ -287,7 +315,8 @@ NextRow:
     For R = 1 To m_source.totalLines
         If m_source.IsCommentLine(R) Then GoTo NextReturnRow
         If m_source.CmdAt(R) = "RETURN" Then
-            If Not inSubroutineRows.exists(CStr(R)) Then m_flowInvalidRows(CStr(R)) = True
+            If Not inSubroutineRows.exists(CStr(R)) Then _
+                MarkFlowBlocking R, "RETURN line " & R & " 이 어떤 서브루틴에도 속하지 않습니다."
         End If
 NextReturnRow:
     Next R

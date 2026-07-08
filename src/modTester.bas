@@ -2143,6 +2143,36 @@ Private Function TC_ScriptProgramModel() As Long
     End If
     ExpectBool "ELSE_IF missing params flow invalid", True, program.IsFlowInvalidAt(2), fails
 
+    ' [#1] 서브루틴 흐름 오류가 실행 전 차단(ValidateLabels)으로 승격되는지
+    ' CALL 대상 LABEL에 RETURN 없음 -> 차단 + 설명 메시지
+    Dim noReturnArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(noReturnArr, 1, "CALL", 0, 0, "SUB")
+    Call MakeCmd(noReturnArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(noReturnArr, 3, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(noReturnArr, 4, "SET", "{x}", 0, "1")
+    Set program = New clsScriptProgram
+    program.LoadFromArray noReturnArr, 1
+    ExpectBool "Subroutine no-RETURN blocks", False, program.ValidateLabels(), fails
+    ExpectBool "Subroutine no-RETURN message", True, (InStr(1, program.ValidationErrors(), "RETURN", vbTextCompare) > 0), fails
+    ExpectBool "Subroutine no-RETURN flow invalid", True, program.IsFlowInvalidAt(3), fails
+
+    ' 정상 서브루틴(앞 EXIT + RETURN 있음)은 통과 (회귀 가드)
+    Dim goodSubArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(goodSubArr, 1, "CALL", 0, 0, "SUB")
+    Call MakeCmd(goodSubArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(goodSubArr, 3, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(goodSubArr, 4, "RETURN", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray goodSubArr, 1
+    ExpectBool "Valid subroutine passes", True, program.ValidateLabels(), fails
+
+    ' 고아 RETURN(서브루틴 밖)도 차단
+    Dim orphanReturnArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(orphanReturnArr, 1, "RETURN", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray orphanReturnArr, 1
+    ExpectBool "Orphan RETURN blocks", False, program.ValidateLabels(), fails
+
     TC_ScriptProgramModel = fails
 End Function
 
