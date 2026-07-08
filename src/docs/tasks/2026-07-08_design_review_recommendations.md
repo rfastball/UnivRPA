@@ -92,7 +92,7 @@
 
 ## C. SSOT 완성: 레지스트리 지식의 런타임 강제
 
-### C1. ParamSpec 런타임 강제
+### C1. ParamSpec 런타임 강제 [완료 2026-07-08]
 
 - 문제: `Required`/`DataType`은 modDevTools 포맷터(`modDevTools.bas:249,281,304`)와
   modScriptAssist 메모(`modScriptAssist.bas:600`)만 소비.
@@ -164,7 +164,7 @@
 
 1. **A1~A4**: 헤드리스 계약. vbaflow test가 실제로 돌기 위한 전제.
    vbaflow 벤더링(self-contained LogShim 교체)과 같은 커밋 흐름에서 처리 [완료]
-2. **C1**: 디코드 게이트 검증. 파급 대비 효과 최대
+2. **C1**: 디코드 게이트 검증. 파급 대비 효과 최대 [완료]
 3. **B1, B2**: 신호 전파. 이후 모든 디버깅 품질의 토대
 4. **C2, C3**: 시맨틱 사본 회수 + 검증 공백
 5. **D**: 위 작업에 얹어 점진 정리
@@ -192,6 +192,22 @@
 
 검증 결과: doctor 전 항목 통과, push 37모듈 무결성 통과,
 **vbaflow test 13/13 pass** (modTester 12 + SmokeTest 1), 재pull 멱등성 수렴 확인.
+
+## C1 적용 결과 (2026-07-08)
+
+- `modEngine.ExecuteSmartAction` 디코드 직후 `ValidateDecodedSlots` 게이트 삽입:
+  - **Required는 원문 기준** 판정: `{$BLANK}` 등 "의도적으로 빈 값" 작성은 통과
+    (해석값 기준이면 기존 `SET x {$BLANK}` 계약이 깨짐 - 회귀 테스트로 고정)
+  - **DT_NUM은 해석값 기준** 판정: 핸들러가 소비할 실제 값 검증 (IsNumeric)
+  - 위반 시 균일 메시지("P1(x) 숫자 아님: '...'") + `param_guard` jsonl 이벤트
+    + m_lastRuntimeError 설정 + CMD_ERROR
+- 신규 스위트 `TC_ParamGuardRuntime`/`Test_ParamGuardRuntime`:
+  차단(필수 누락, 비숫자, 토큰 해석 후 비숫자, RAW 연산자 공백)과
+  통과({$BLANK}, 선택 슬롯 공백, 토큰 해석 후 숫자) 양방향 검증
+- vbaflow test 14/14 pass, 기존 스위트 회귀 없음
+
+주의: 기존 시트 스크립트 중 "빈 필수 슬롯/비숫자 좌표인데 우연히 동작하던" 줄은
+이제 실행 시점에 명시적 에러가 된다 (의도된 강화).
 
 ### vbaflow에 전달할 파일럿 피드백 (_VbaFlow 백로그 후보)
 

@@ -34,6 +34,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_FlowNegativePaths()
     failCount = failCount + TC_MemoryResolverHeadless()
     failCount = failCount + TC_ParamSpecValidation()
+    failCount = failCount + TC_ParamGuardRuntime()
     failCount = failCount + TC_StaticVariableAnalysis()
     failCount = failCount + TC_ScriptAssistFormatterRegression()
 
@@ -111,6 +112,11 @@ End Sub
 ' @desc ParamSpec 작성보조 검증 스위트 실행해 실패 0건 단언함
 Public Sub Test_ParamSpecValidation()
     ReportSuiteResult "flow.param_spec", TC_ParamSpecValidation()
+End Sub
+
+' @desc ParamSpec 런타임 게이트 스위트 실행해 실패 0건 단언함
+Public Sub Test_ParamGuardRuntime()
+    ReportSuiteResult "flow.param_guard_runtime", TC_ParamGuardRuntime()
 End Sub
 
 ' @desc 정적 변수 분석 스위트 실행해 실패 0건 단언함
@@ -1430,6 +1436,73 @@ Private Function TC_ParamSpecValidation() As Long
     ExpectBool "Reject CALL dynamic target", False, modDevTools.ValidateLine("CALL", "", "", "{target}"), fails
 
     TC_ParamSpecValidation = fails
+End Function
+
+' [Flow 5C] ParamSpec 런타임 게이트 (C1): Required=원문 기준, DT_NUM=해석값 기준
+Private Function TC_ParamGuardRuntime() As Long
+    Dim fails As Long
+    Dim arrCmd(1 To 1, 1 To 5) As Variant
+    Dim code As Long
+
+    Debug.Print "--- [Flow 5C] ParamSpec runtime guard ---"
+    modContext.InitContext
+
+    ' 필수 누락: SET P3(값) 원문 공백 -> 게이트 차단
+    Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "")
+    code = ExecuteArrayLine(arrCmd, 1)
+    ExpectLong "Guard: SET empty P3", CMD_ERROR, code, fails
+
+    ' 의도된 빈 값: {$BLANK}는 원문이 비어있지 않으므로 통과 (회귀 가드)
+    Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "{$BLANK}")
+    code = ExecuteArrayLine(arrCmd, 1)
+    ExpectLong "Guard: SET {$BLANK} passes", CMD_NEXT_LINE, code, fails
+    ExpectVar "pg", "", fails
+
+    ' 필수 숫자 슬롯: SLEEP P3 비숫자 차단 / 숫자 통과
+    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "abc")
+    ExpectLong "Guard: SLEEP non-numeric P3", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "10")
+    ExpectLong "Guard: SLEEP numeric P3", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+
+    ' 좌표 슬롯: CLICK P1 비숫자 / P2 공백 -> 핸들러 진입 전 차단 (마우스 미동작)
+    Call MakeCmd(arrCmd, 1, "CLICK", "abc", "10", "")
+    ExpectLong "Guard: CLICK non-numeric P1", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "CLICK", "10", "", "")
+    ExpectLong "Guard: CLICK empty P2", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+
+    ' 선택 숫자 슬롯: INC 빈 P3 허용(기본 1) / 비숫자 P3 차단
+    Call MakeCmd(arrCmd, 1, "SET", "{pgn}", 0, "1")
+    ExpectLong "Guard: SET pgn=1", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", 0, "")
+    ExpectLong "Guard: INC empty P3 allowed", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+    ExpectVar "pgn", "2", fails
+    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", 0, "xyz")
+    ExpectLong "Guard: INC non-numeric P3", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+
+    ' 토큰 해석 후 숫자 판정: {n}이 숫자면 통과, 비숫자면 차단
+    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", 0, "250")
+    ExpectLong "Guard: SET pgv=250", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "{pgv}")
+    ExpectLong "Guard: SLEEP {token} numeric", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", 0, "not_a_number")
+    ExpectLong "Guard: SET pgv=text", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
+    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "{pgv}")
+    ExpectLong "Guard: SLEEP {token} non-numeric", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+
+    ' RAW 필수 슬롯: IF 연산자(P2) 공백 -> rrErrored
+    Dim arr3(1 To 3, 1 To 5) As Variant
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+    Call MakeCmd(arr3, 1, "IF", "1", "", "1")
+    Call MakeCmd(arr3, 2, "END_IF", 0, 0, "")
+    Call MakeCmd(arr3, 3, "EXIT", 0, 0, "")
+    result = RunProgram(arr3, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectLong "Guard: IF empty operator line", 1, lastLine, fails
+
+    TC_ParamGuardRuntime = fails
 End Function
 
 Private Function TC_StaticVariableAnalysis() As Long

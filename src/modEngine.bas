@@ -300,6 +300,20 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     args(2) = DecodeSlot(inst.def.p2, inst.p2)
     args(3) = DecodeSlot(inst.def.p3, inst.p3)
 
+    ' 3.5 ParamSpec 게이트: 레지스트리가 선언한 Required/DataType을 실행 전 강제 (C1)
+    Dim guardMsg As String
+    guardMsg = ValidateDecodedSlots(inst, args)
+    If Len(guardMsg) > 0 Then
+        m_lastRuntimeError = guardMsg
+        LogShim.LogEvent "param_guard", _
+            Array("line", "sheetRow", "cmd", "reason"), _
+            Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, guardMsg)
+        modActions.Action_ShowNotification _
+            "[에러] 라인 " & inst.RuntimeLine & " / 시트 행 " & inst.sheetRow & " / " & inst.cmd & ": " & guardMsg, 3
+        ExecuteSmartAction = CMD_ERROR
+        GoTo CleanUp
+    End If
+
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
     Set handler = modCmdRegistry.handler(inst.def.Category)
@@ -317,6 +331,39 @@ ErrHandler:
     End If
     ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
+End Function
+
+' [Helper] ParamSpec 게이트 (C1). Required는 원문 기준으로 판정해
+'   {$BLANK} 등 "의도적으로 빈 값" 작성을 허용하고, DT_NUM은 핸들러가
+'   실제로 소비할 해석값 기준으로 판정한다.
+' @desc 명령줄과 해석된 args 받아 첫 위반 메시지 반환, 통과 시 빈 문자열 반환
+Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args() As String) As String
+    Dim i As Long
+    Dim spec As ParamSpec
+    Dim rawVal As String
+
+    For i = 1 To 3
+        Set spec = inst.def.Param(i)
+        If Not spec Is Nothing Then
+            Select Case i
+                Case 1: rawVal = inst.p1
+                Case 2: rawVal = inst.p2
+                Case 3: rawVal = inst.p3
+            End Select
+
+            If spec.Required And Len(Trim$(rawVal)) = 0 Then
+                ValidateDecodedSlots = "P" & i & "(" & spec.Meaning & ") 필수값 누락"
+                Exit Function
+            End If
+
+            If spec.DataType = DT_NUM Then
+                If Len(Trim$(args(i))) > 0 And Not IsNumeric(Trim$(args(i))) Then
+                    ValidateDecodedSlots = "P" & i & "(" & spec.Meaning & ") 숫자 아님: '" & args(i) & "'"
+                    Exit Function
+                End If
+            End If
+        End If
+    Next i
 End Function
 
 ' [Helper] 슬롯 ResolveMode에 따라 RAW(원본) / RESOLVE(토큰치환) 디코드.
