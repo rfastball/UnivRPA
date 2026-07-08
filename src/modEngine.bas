@@ -50,21 +50,13 @@ Sub RunRPA()
     ' 이후 모든 로직은 ActiveSheet가 아닌 wsSource를 바라봅니다.
     '==========================================================
     Set wsSource = ActiveSheet
-    Set rngTarget = wsSource.Range("A1").CurrentRegion
+    Set rngTarget = ResolveScriptRange(wsSource)
 
     ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우
     If rngTarget Is Nothing Then
         modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
         GoTo CleanUp
     End If
-
-    If rngTarget.rows.count < 2 Then
-        modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
-        GoTo CleanUp
-    End If
-
-    ' [수정] 헤더(1행) 제외: 실제 데이터는 2행부터 시작
-    Set rngTarget = rngTarget.offset(1, 0).Resize(rngTarget.rows.count - 1)
 
     ' [ProgramImage] 시트 스냅샷을 구조 인덱스/라벨 인덱스를 가진 Program으로 승격
     Set m_program = New clsScriptProgram
@@ -265,6 +257,16 @@ End Function
 
 Public Function ActiveProgram() As clsScriptProgram
     Set ActiveProgram = m_program
+End Function
+
+' @desc 스크립트 시트 받아 실행 범위 A2:F{lastRow} 반환, 데이터 없으면 Nothing 반환
+Public Function ResolveScriptRange(ByVal ws As Worksheet) As Range
+    ' CurrentRegion은 중간 빈 행/열에서 조용히 잘려 스크립트가 반만 실행된다.
+    ' B열(COMMAND) 기준 last row로 A~F 6열 고정 범위를 산정한다 (빈 행은 실행기가 스킵).
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
+    If lastRow < 2 Then Exit Function
+    Set ResolveScriptRange = ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 6))
 End Function
 
 Public Function LastRuntimeError() As String

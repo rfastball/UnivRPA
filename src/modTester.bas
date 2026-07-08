@@ -41,6 +41,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_StringDistance()
     failCount = failCount + TC_CommandNormalization()
     failCount = failCount + TC_ParseStrict()
+    failCount = failCount + TC_ScriptRangeResolution()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + TC_RegistryDispatchSync()
@@ -151,6 +152,11 @@ End Sub
 ' @desc 엄격 숫자 파서 스위트 실행해 실패 0건 단언함
 Public Sub Test_ParseStrict()
     ReportSuiteResult "util.parse_strict", TC_ParseStrict()
+End Sub
+
+' @desc 실행 범위 산정 스위트 실행해 실패 0건 단언함
+Public Sub Test_ScriptRangeResolution()
+    ReportSuiteResult "engine.script_range", TC_ScriptRangeResolution()
 End Sub
 
 ' @desc 레지스트리-핸들러 동기화 역검증 실행해 실패 0건 단언함
@@ -1786,6 +1792,71 @@ Private Function TC_ParseStrict() As Long
     ExpectBool "Cond: comma now string", False, modCondition.EvaluateCondition("1,000", "EQ", "1"), fails
 
     TC_ParseStrict = fails
+End Function
+
+Private Function TC_ScriptRangeResolution() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim ws As Worksheet
+    Dim sheetName As String
+
+    Debug.Print "--- [Engine 1A] Script range resolution ---"
+
+    sheetName = "RPA_RANGE_RESOLUTION_TEST"
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets(sheetName).Delete
+    On Error GoTo ErrHandler
+    Application.DisplayAlerts = True
+
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+    ws.name = sheetName
+    modDevTools.EnsureHeaders ws
+
+    ' 헤더만 있는 시트 -> Nothing
+    ExpectBool "Range: header only is Nothing", True, (modEngine.ResolveScriptRange(ws) Is Nothing), fails
+
+    ' 중간 빈 행(3행)이 있어도 B열 last row(5행)까지 A~F 전체가 잡혀야 한다
+    ' (CurrentRegion은 빈 행에서 잘려 아래 스크립트가 조용히 누락되던 지점)
+    ws.Cells(2, 2).value = "SET"
+    ws.Cells(2, 3).value = "{rr}"
+    ws.Cells(2, 5).value = "1"
+    ws.Cells(4, 2).value = "SET"
+    ws.Cells(4, 3).value = "{rr}"
+    ws.Cells(4, 5).value = "2"
+    ws.Cells(5, 2).value = "EXIT"
+
+    Dim rng As Range
+    Set rng = modEngine.ResolveScriptRange(ws)
+    ExpectBool "Range: resolved not Nothing", False, (rng Is Nothing), fails
+    ExpectText "Range: spans blank row A2:F5", "A2:F5", rng.Address(False, False), fails
+
+    ' 빈 행 스킵 실행 계약: [SET/빈 행/EXIT]가 에러 없이 EXIT까지 도달
+    Dim arr(1 To 3, 1 To 5) As Variant
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+    Call MakeCmd(arr, 1, "SET", "{rr2}", 0, "1")
+    Call MakeCmd(arr, 3, "EXIT", 0, 0, "")
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectLong "Range: blank row skipped to EXIT", 3, lastLine, fails
+
+CleanUp:
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    TC_ScriptRangeResolution = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "Script range resolution", "no error", Err.Description
+    Resume CleanUp
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)
