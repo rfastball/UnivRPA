@@ -39,6 +39,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_StaticVariableAnalysis()
     failCount = failCount + TC_ScriptAssistFormatterRegression()
     failCount = failCount + TC_StringDistance()
+    failCount = failCount + TC_CommandNormalization()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + TC_RegistryDispatchSync()
@@ -139,6 +140,11 @@ End Sub
 ' @desc 문자열 거리 유틸 스위트 실행해 실패 0건 단언함
 Public Sub Test_StringDistance()
     ReportSuiteResult "util.string_distance", TC_StringDistance()
+End Sub
+
+' @desc 명령어 정규화 규칙 스위트 실행해 실패 0건 단언함
+Public Sub Test_CommandNormalization()
+    ReportSuiteResult "registry.command_normalization", TC_CommandNormalization()
 End Sub
 
 ' @desc 레지스트리-핸들러 동기화 역검증 실행해 실패 0건 단언함
@@ -1700,6 +1706,29 @@ Private Function TC_StringDistance() As Long
     ExpectText "Assist: exact match no hint", "", modScriptAssist.GetClosestCommand("CLICK"), fails
 
     TC_StringDistance = fails
+End Function
+
+Private Function TC_CommandNormalization() As Long
+    Dim fails As Long
+
+    Debug.Print "--- [Util 1B] Command normalization ---"
+
+    ' 선행 들여쓰기 마커(공백/탭/">")는 벗긴다
+    ExpectText "Norm: leading marker", "CLICK", modCmdRegistry.NormalizeCommand(">CLICK"), fails
+    ExpectText "Norm: double marker", "CLICK", modCmdRegistry.NormalizeCommand(">> CLICK"), fails
+    ExpectText "Norm: spaced markers", "IF", modCmdRegistry.NormalizeCommand("> > if"), fails
+    ExpectText "Norm: tab mixed", "MOVE", modCmdRegistry.NormalizeCommand(vbTab & "> MOVE"), fails
+    ExpectText "Norm: marker only", "", modCmdRegistry.NormalizeCommand(">"), fails
+
+    ' 내부/후행 ">"는 명령 문자열의 일부로 보존한다
+    ExpectText "Norm: internal preserved", "A>B", modCmdRegistry.NormalizeCommand("a>b"), fails
+    ExpectText "Norm: comment preserved", "#> TYPE", modCmdRegistry.NormalizeCommand("#> type"), fails
+
+    ' GetCmdDef 게이트 회귀: 오타는 미등록, 들여쓰기 명령은 정상 조회
+    ExpectBool "Gate: corrupted name rejected", True, (modCmdRegistry.GetCmdDef("CLI>CK") Is Nothing), fails
+    ExpectBool "Gate: indented command resolves", False, (modCmdRegistry.GetCmdDef(">> CLICK") Is Nothing), fails
+
+    TC_CommandNormalization = fails
 End Function
 
 ' [Helper] 가상 명령어 배열 생성기 (B=cmd, C=P1, D=P2, E=P3)

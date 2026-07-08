@@ -68,7 +68,7 @@ Private m_handlers As Object
 Public Function GetCmdDef(ByVal rawCmd As String) As CmdDef
     EnsureRegistry
 
-    ' 정규화: Trim -> 들여쓰기(">") 제거 -> Trim -> UCase
+    ' 정규화: 선행 들여쓰기 마커 제거 -> Trim -> UCase
     Dim cmd As String
     cmd = NormalizeCommand(rawCmd)
 
@@ -79,12 +79,28 @@ Public Function GetCmdDef(ByVal rawCmd As String) As CmdDef
     If m_reg.exists(cmd) Then Set GetCmdDef = m_reg(cmd)
 End Function
 
-' @desc 명령어 문자열의 단일 정규화 규칙: Trim -> ">" 제거 -> Trim -> UCase
+' @desc 명령어 문자열의 단일 정규화 규칙: 선행 마커 제거 -> Trim -> UCase
 Public Function NormalizeCommand(ByVal rawCmd As Variant) As String
     On Error GoTo SafeExit
     If IsError(rawCmd) Or IsNull(rawCmd) Or IsEmpty(rawCmd) Then Exit Function
-    NormalizeCommand = UCase$(Trim$(Replace(Trim$(CStr(rawCmd)), ">", "")))
+    ' 선행 들여쓰기 마커만 벗긴다 - 내부/후행 ">"는 명령 문자열의 일부로 보존
+    NormalizeCommand = UCase$(StripIndentMarkers(CStr(rawCmd)))
 SafeExit:
+End Function
+
+' @desc 선행 들여쓰기 마커(공백/탭/">") 제거한 나머지 반환, 전부 마커면 빈 문자열 반환
+Public Function StripIndentMarkers(ByVal text As String) As String
+    ' 마커 문자 집합은 modScriptAssist.CommentMarkerPos와 동일해야 한다
+    Dim idx As Long
+    For idx = 1 To Len(text)
+        Select Case Mid$(text, idx, 1)
+            Case " ", vbTab, ">"
+                ' 시각적 들여쓰기 - 계속 스캔
+            Case Else
+                Exit For
+        End Select
+    Next idx
+    StripIndentMarkers = Trim$(Mid$(text, idx))
 End Function
 
 ' @desc 레지스트리가 비어있으면 1회 빌드함 (지연 초기화)

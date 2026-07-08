@@ -698,7 +698,8 @@ End Function
 Private Function FormatCommentCommandText(ByVal rawCmd As Variant, ByVal depth As Long) As String
     Dim body As String
     body = modCmdRegistry.NormalizeCommand(rawCmd)
-    If Left$(body, 1) = "#" Then body = Trim$(Mid$(body, 2))
+    ' 주석은 "#"이 마커보다 앞이라 NormalizeCommand가 못 벗긴 들여쓰기가 남는다
+    If Left$(body, 1) = "#" Then body = modCmdRegistry.StripIndentMarkers(Mid$(body, 2))
 
     If Len(body) = 0 Then
         FormatCommentCommandText = "#"
