@@ -123,7 +123,7 @@
 
 ---
 
-## D. 구조 정리: 중복 통합과 죽은 코드
+## D. 구조 정리: 중복 통합과 죽은 코드 [완료 2026-07-10]
 
 - Levenshtein 3벌: `modEngine.bas:547`, `clsScriptProgramAnalysis.cls:567`,
   `modScriptAssist.bas:622` -> modHelper로 1벌 통합
@@ -150,7 +150,7 @@
 
 ---
 
-## E. 성능 (선택적, 실측 후 판단)
+## E. 성능 (선택적, 실측 후 판단) [완료 2026-07-10]
 
 - `clsTableSnapshot.SnapshotVisibleText`(113-148): 셀 단위 .Text/.Value/.NumberFormat
   COM 호출. FOREACH 소스가 수천 행이면 지배 비용.
@@ -224,8 +224,28 @@
   TC_RegistryDispatchSync가 레지스트리-소비처 정합을 전수 감시 (비고의
   "아무도 검증하지 않는다" 해소)
 
-각 단계 vbaflow test 19/19 green 후 커밋. 남은 티어는 D(구조 정리 잔여)와
-E(성능, 실측 후 판단).
+각 단계 vbaflow test 19/19 green 후 커밋.
+
+## D/E 적용 결과 (2026-07-10)
+
+- **D1** (d70993c): 죽은 코드 삭제(Action_WaitForColor, 조건 shim 2개,
+  CMD_ERROR 별칭 상수 4개), 폼 배치 함수를 modWinAPI->modHelper로 이동
+  (L4 폼 침투 해소), FormatColorHex 단일화, 반복 RGB 상수화,
+  ValidateLineRange 클래스명 오기 수정, TableSnapshot 표면 주석
+- **D2** (4ddbfc2): 빌드 완료 플래그로 검증 시 인덱스/분석 재빌드 제거,
+  BuildLoopCoordinates 단일 패스화 (FindBlockPair 재스캔 O(N^2) 제거)
+- **D3** (de37647): IF 짝 인덱스+구조 검증을 BuildBlockPairIndex 단일
+  패스에 흡수 (BuildIfEndIndex/BuildIfStructureAnalysis 소멸), 서브루틴
+  종료행 스캔을 Index.FindSubroutineEndAtDepth 하나로 통합 (깊이 배열
+  파라미터화). 깊이 모델 2종(루프/표시)은 의미가 달라 의도적 분리 유지,
+  점프타깃 검사는 이미 Index 프리미티브 소비 구조로 수렴 확인
+- **D4** (3edafe3): 토큰 해석기 5함수를 modTokenResolver로 추출,
+  modEngine @depends 드리프트 정비
+- **E** (6548c7a): TableSnapshot 값 일괄 읽기(.Value 1회, 타입 보존으로
+  폴백 의미 유지 - .Value2 전면 전환은 서식 열 출력이 바뀌어 기각) +
+  RunRPA UI 갱신 100ms 스로틀 (ESC/Pause는 GetAsyncKeyState라 무관)
+
+전 티어(A~E) 종결. 이 문서는 이력 보존용으로만 유지한다.
 
 ### vbaflow에 전달할 파일럿 피드백 (_VbaFlow 백로그 후보)
 
