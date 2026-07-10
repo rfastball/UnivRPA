@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modWinAPI, modStringDistance, modParse
+' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modCondition, modParse, LogShim
 Option Explicit
 
 '==============================================================================
@@ -383,11 +383,11 @@ End Function
 '   슬롯 미정의(Nothing)는 RESOLVE 기본.
 Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As String
     If spec Is Nothing Then
-        DecodeSlot = ResolveParam(rawVal)
+        DecodeSlot = modTokenResolver.ResolveParam(rawVal)
     ElseIf spec.IsRaw Then
         DecodeSlot = rawVal
     Else
-        DecodeSlot = ResolveParam(rawVal)
+        DecodeSlot = modTokenResolver.ResolveParam(rawVal)
     End If
 End Function
 
@@ -463,176 +463,7 @@ ErrHandler:
     ResolveCallTarget = CMD_ERROR
 End Function
 
-' [Internal] 파라미터 해석기 (v2 토크나이저)
-'   {...} 스팬을 깊이 인식으로 스캔 -> 내용으로 분기 ($시스템/$PIXEL/리터럴/{name})
-'   중첩 중괄호 지원: {$PIXEL:{cx},{cy}}. 값 치환만 수행하며 *? 와일드카드는 건드리지 않음.
-Private Function ResolveParam(ByVal rawVal As String) As String
-    On Error GoTo ErrHandler
-    Dim src As String: src = rawVal
-    Dim out As String
-    Dim i As Long, n As Long
-    Dim ch As String
-
-    n = Len(src)
-    i = 1
-    Do While i <= n
-        ch = Mid$(src, i, 1)
-        If ch = "{" Then
-            ' 짝이 되는 '}' 를 깊이 카운팅으로 탐색 (중첩 허용)
-            Dim depth As Long, j As Long, found As Long
-            depth = 1: found = 0
-            For j = i + 1 To n
-                Select Case Mid$(src, j, 1)
-                    Case "{": depth = depth + 1
-                    Case "}"
-                        depth = depth - 1
-                        If depth = 0 Then found = j: Exit For
-                End Select
-            Next j
-
-            If found = 0 Then
-                ' 짝 없음 -> 남은 문자열을 리터럴로 그대로 출력 (graceful fallback)
-                out = out & Mid$(src, i)
-                Exit Do
-            End If
-
-            Dim inner As String
-            inner = Mid$(src, i + 1, found - i - 1)
-            ' 내부의 자식 토큰을 먼저 해석한 뒤 분류
-            out = out & ResolveToken(ResolveParam(inner))
-            i = found + 1
-        Else
-            out = out & ch
-            i = i + 1
-        End If
-    Loop
-
-    ResolveParam = out
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.ResolveParam", Err.Description
-    Resume CleanUp
-End Function
-
-' [Helper] 단일 토큰(중괄호 내부 문자열)을 값으로 분류/치환
-Private Function ResolveToken(ByVal inner As String) As String
-    On Error GoTo ErrHandler
-    Dim key As String: key = Trim(inner)
-    Dim up As String: up = UCase$(key)
-
-    ' [리터럴/시스템 고정 토큰]
-    Select Case up
-        Case "$BLANK": ResolveToken = "": Exit Function
-        Case "$TAB":   ResolveToken = vbTab: Exit Function
-        Case "$CR":    ResolveToken = vbCr: Exit Function
-        Case "$LF":    ResolveToken = vbLf: Exit Function
-        Case "$SPACE": ResolveToken = " ": Exit Function
-        Case "$CLIP":  ResolveToken = modWinAPI.GetClipboardText(): Exit Function
-        Case "$LOOP":  ResolveToken = CStr(modContext.GetActiveLoopIteration()): Exit Function
-        Case "$RTOTAL"
-            If modContext.GetActiveForeachTotalRows() > 0 Then
-                ResolveToken = CStr(modContext.GetActiveForeachTotalRows())
-            Else
-                ResolveToken = "{" & inner & "}"
-            End If
-            Exit Function
-        Case "$RIDX"
-            If modContext.GetActiveForeachOrdinal() > 0 Then
-                ResolveToken = CStr(modContext.GetActiveForeachOrdinal())
-            Else
-                ResolveToken = "{" & inner & "}"
-            End If
-            Exit Function
-    End Select
-
-    If Left$(up, 5) = "$ROW." Then
-        ResolveToken = ResolveRowToken(Mid$(key, 6), inner)
-        Exit Function
-    End If
-
-    ' [시스템 동적 토큰] {$PIXEL:x,y} (좌표는 이미 해석됨)
-    If Left$(up, 7) = "$PIXEL:" Then
-        ResolveToken = ResolvePixelToken(Mid$(key, 8))
-        Exit Function
-    End If
-
-    ' [미지의 시스템 토큰] -> 오타 노출 위해 리터럴 그대로 반환
-    If Left$(key, 1) = "$" Then
-        ResolveToken = "{" & inner & "}"
-        Exit Function
-    End If
-
-    ' [사용자 메모리] {name}
-    Dim value As String
-    If modContext.TryGetVar(key, value) Then
-        ResolveToken = value
-    Else
-        Err.Raise 5, "modEngine.ResolveToken", UndefinedVarMessage(key, modContext.DefinedVarNames())
-    End If
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.ResolveToken", Err.Description
-    Resume CleanUp
-End Function
-
-Private Function UndefinedVarMessage(ByVal key As String, ByVal candidates As Variant) As String
-    Dim msg As String
-    msg = "Undefined variable: {" & key & "}"
-
-    Dim suggestion As String
-    suggestion = modStringDistance.ClosestName(key, candidates)
-    If Len(suggestion) > 0 Then msg = msg & ". Did you mean {" & suggestion & "}?"
-
-    UndefinedVarMessage = msg
-End Function
-
-Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As String) As String
-    On Error GoTo ErrHandler
-
-    Dim tbl As Object
-    Set tbl = modContext.ActiveForeachTable()
-    If tbl Is Nothing Or modContext.ActiveForeachRow() <= 0 Then
-        ResolveRowToken = "{" & originalInner & "}"
-        Exit Function
-    End If
-
-    Dim value As Variant
-    value = tbl.GetValue(modContext.ActiveForeachRow(), colName)
-    If IsError(value) Or IsNull(value) Or IsEmpty(value) Then
-        ResolveRowToken = ""
-    Else
-        ResolveRowToken = CStr(value)
-    End If
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.ResolveRowToken", Err.Description
-    Resume CleanUp
-End Function
-
-' [Helper] $PIXEL 좌표 -> 색상 헥스 (coordText 는 이미 해석된 "x,y")
-Private Function ResolvePixelToken(ByVal coordText As String) As String
-    On Error GoTo ErrHandler
-    Dim coords() As String
-    coords = Split(coordText, ",")
-    If UBound(coords) = 1 Then
-        ResolvePixelToken = modWinAPI.GetColorHexAt(modParse.ParseLongOrDefault(coords(0), 0), modParse.ParseLongOrDefault(coords(1), 0))
-    Else
-        ResolvePixelToken = "{$PIXEL:" & coordText & "}"  ' 형식 불일치 시 원본
-    End If
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.ResolvePixelToken", Err.Description
-    Resume CleanUp
-End Function
-
+' [이관됨 - D4] ResolveParam/ResolveToken 계열 토큰 해석기는 modTokenResolver로 추출됨
 ' [이관됨] ParseLValue는 clsCommandsMemory로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
 
 ' [호환 엔진 서비스] 블록의 짝 탐색은 ActiveProgram으로 위임
@@ -699,7 +530,7 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
     For i = 1 To block.CaseCount
         Dim caseLine As Long
         caseLine = block.CaseLineAt(i)
-        caseVal = ResolveParam(m_program.InstructionAt(caseLine).p1)
+        caseVal = modTokenResolver.ResolveParam(m_program.InstructionAt(caseLine).p1)
 
         ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
         If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then
