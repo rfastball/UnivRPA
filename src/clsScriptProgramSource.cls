@@ -90,7 +90,7 @@ Public Function InstructionAt(ByVal lineNo As Long) As clsInstruction
 End Function
 
 Public Function ValidateLineRange(ByVal lineNo As Long) As Boolean
-    If lineNo < 1 Or lineNo > m_TotalLines Then Err.Raise 9, "clsScriptProgram.ValidateLineRange", "Runtime line out of range: " & lineNo
+    If lineNo < 1 Or lineNo > m_TotalLines Then Err.Raise 9, "clsScriptProgramSource.ValidateLineRange", "Runtime line out of range: " & lineNo
     ValidateLineRange = True
 End Function
 

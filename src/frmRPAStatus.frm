@@ -50,7 +50,7 @@ End Sub
 Public Sub Prepare(ByVal total As Long)
     m_TotalLines = total
     Me.Show vbModeless
-    modWinAPI.MoveFormToWorkAreaTopLeftTopMost Me
+    modHelper.MoveFormToWorkAreaTopLeftTopMost Me
     lblProgress.Caption = "Ready (Total: " & total & ")"
 End Sub
 

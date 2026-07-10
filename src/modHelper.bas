@@ -1,5 +1,10 @@
 Attribute VB_Name = "modHelper"
+' @desc 폼 컨트롤러(캡처 HUD/상태 폼) 구동 및 화면 배치 담당
+' @depends modWinAPI
 Option Explicit
+
+' 캡처 자동입력 채움색 (RGB 220,255,220 연녹)
+Private Const CLR_CAPTURE_FILL As Long = &HDCFFDC
 
 '==============================================================================
 ' Form controllers
@@ -7,6 +12,31 @@ Option Explicit
 
 Public Sub StartHUD()
     RunCaptureHud frmCapture
+End Sub
+
+' [폼 배치] 작업영역 좌상단으로 이동 + 최상위 고정 (폼 개념 조합은 여기가 소유,
+'   modWinAPI는 선언/프리미티브만 제공)
+Public Sub MoveFormToWorkAreaTopLeftTopMost(ByVal formView As Object)
+    Dim workArea As modWinAPI.RECT
+    Dim hdc As LongPtr
+    Dim dpiX As Long
+    Dim dpiY As Long
+    Dim hWndForm As LongPtr
+
+    modWinAPI.SystemParametersInfo modWinAPI.SPI_GETWORKAREA, 0, workArea, 0
+    hdc = modWinAPI.GetDC(0)
+    dpiX = modWinAPI.GetDeviceCaps(hdc, modWinAPI.LOGPIXELSX)
+    dpiY = modWinAPI.GetDeviceCaps(hdc, modWinAPI.LOGPIXELSY)
+    modWinAPI.ReleaseDC 0, hdc
+
+    If dpiX > 0 Then formView.Left = (workArea.Left * 72 / dpiX)
+    If dpiY > 0 Then formView.Top = (workArea.Top * 72 / dpiY)
+
+    hWndForm = modWinAPI.FindWindow("ThunderDFrame", formView.Caption)
+    If hWndForm <> 0 Then
+        modWinAPI.SetWindowPos hWndForm, modWinAPI.HWND_TOPMOST, 0, 0, 0, 0, _
+            modWinAPI.SWP_NOMOVE Or modWinAPI.SWP_NOSIZE Or modWinAPI.SWP_NOACTIVATE
+    End If
 End Sub
 
 Public Sub RunCaptureHud(ByVal view As frmCapture)
@@ -27,7 +57,7 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
             If Not isRecorded Then
                 modWinAPI.GetCursorPos pt
                 colorValue = modWinAPI.GetColorAt(pt.x, pt.y)
-                hexColor = Right("000000" & hex(colorValue), 6)
+                hexColor = modWinAPI.FormatColorHex(colorValue)
                 strInfo = CaptureSnippet(view, pt.x, pt.y, hexColor)
 
                 If view.IsAutoMode Then
@@ -44,7 +74,7 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
             isRecorded = False
             modWinAPI.GetCursorPos pt
             colorValue = modWinAPI.GetColorAt(pt.x, pt.y)
-            hexColor = Right("000000" & hex(colorValue), 6)
+            hexColor = modWinAPI.FormatColorHex(colorValue)
             view.RenderScanning pt.x, pt.y, colorValue, hexColor
         End If
 
@@ -84,9 +114,9 @@ Private Sub FillActiveCell(ByVal view As frmCapture, ByVal x As Long, ByVal y As
             .offset(0, 1).value = y
             .offset(0, 2).value = hexColor
         End If
-        .Interior.color = RGB(220, 255, 220)
-        .offset(0, 1).Interior.color = RGB(220, 255, 220)
-        .offset(0, 2).Interior.color = RGB(220, 255, 220)
+        .Interior.color = CLR_CAPTURE_FILL
+        .offset(0, 1).Interior.color = CLR_CAPTURE_FILL
+        .offset(0, 2).Interior.color = CLR_CAPTURE_FILL
         .offset(1, 0).Select
     End With
 End Sub

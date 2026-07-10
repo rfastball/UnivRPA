@@ -13,10 +13,6 @@ Attribute VB_Exposed = False
 ' @depends modCmdRegistry, CmdDef, clsSelectBlock, clsScriptProgramSource
 Option Explicit
 
-Private Const LINE_NOT_FOUND As Long = CMD_ERROR
-Private Const END_SELECT_NOT_FOUND As Long = CMD_ERROR
-Private Const END_IF_NOT_FOUND As Long = CMD_ERROR
-Private Const LABEL_NOT_FOUND As Long = CMD_ERROR
 
 Private m_source As clsScriptProgramSource
 Private m_selectBlocks As Object
@@ -80,11 +76,11 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
 
     group = UCase$(Trim$(group))
     If group <> "IF" And group <> "WHILE" And group <> "REPEAT" And group <> "FOREACH" Then
-        FindBlockPair = LINE_NOT_FOUND
+        FindBlockPair = CMD_ERROR
         Exit Function
     End If
     If Direction <> 1 And Direction <> -1 Then
-        FindBlockPair = LINE_NOT_FOUND
+        FindBlockPair = CMD_ERROR
         Exit Function
     End If
 
@@ -133,10 +129,10 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
 NextRow:
     Next R
 
-    FindBlockPair = LINE_NOT_FOUND
+    FindBlockPair = CMD_ERROR
     Exit Function
 ErrHandler:
-    FindBlockPair = LINE_NOT_FOUND
+    FindBlockPair = CMD_ERROR
 End Function
 
 Public Sub BuildStructureIndex()
@@ -164,7 +160,7 @@ Public Function EndSelectOfCase(ByVal caseLine As Long) As Long
     If m_caseEndSelectLines.exists(CStr(caseLine)) Then
         EndSelectOfCase = CLng(m_caseEndSelectLines(CStr(caseLine)))
     Else
-        EndSelectOfCase = END_SELECT_NOT_FOUND
+        EndSelectOfCase = CMD_ERROR
     End If
 End Function
 
@@ -173,7 +169,7 @@ Public Function EndIfOf(ByVal lineNo As Long) As Long
     If m_ifEndLines.exists(CStr(lineNo)) Then
         EndIfOf = CLng(m_ifEndLines(CStr(lineNo)))
     Else
-        EndIfOf = END_IF_NOT_FOUND
+        EndIfOf = CMD_ERROR
     End If
 End Function
 
@@ -235,7 +231,7 @@ End Function
 Public Function LabelLine(ByVal name As String) As Long
     Dim key As String
     key = NormalizeLabelName(name)
-    If m_labels.exists(key) Then LabelLine = CLng(m_labels(key)) Else LabelLine = LABEL_NOT_FOUND
+    If m_labels.exists(key) Then LabelLine = CLng(m_labels(key)) Else LabelLine = CMD_ERROR
 End Function
 
 Public Function ResolveJumpTarget(ByVal Target As String) As Long
@@ -243,7 +239,7 @@ Public Function ResolveJumpTarget(ByVal Target As String) As Long
     trimmedTarget = Trim$(Target)
 
     If Len(trimmedTarget) = 0 Or IsNumeric(trimmedTarget) Or ContainsTokenSyntax(trimmedTarget) Then
-        ResolveJumpTarget = LABEL_NOT_FOUND
+        ResolveJumpTarget = CMD_ERROR
     Else
         ResolveJumpTarget = LabelLine(trimmedTarget)
     End If

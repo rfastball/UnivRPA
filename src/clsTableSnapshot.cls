@@ -320,6 +320,8 @@ Public Function GetValue(ByVal lRow As Long, ByVal sColName As String) As Varian
 End Function
 
 ' 2-2. 특정 행의 전체 레코드 가져오기 (배열 반환)
+'   [테스트 지원] 런타임 경로는 GetValue만 소비 - GetRecord와 [3] 인덱싱 표면
+'   (GetIndex/SelectRows/GetUniqueKeys 계열)은 테스트/향후 확장용으로 유지한다.
 Public Function GetRecord(ByVal lRow As Long) As Variant
     Dim vRow() As Variant
     Dim j As Long, lStartCol As Long, lEndCol As Long

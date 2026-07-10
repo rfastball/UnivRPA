@@ -1,7 +1,7 @@
 # 02. 명령어 레퍼런스
 
 > 기준 소스 버전: `8438ce0`
-> 단일 출처(SSOT): 파라미터 정의는 `modCmdRegistry.bas`, 조건 연산자는 `modActions.bas`(`IsConditionOperator`), 키 이름은 `modActions.bas`(`ParseKeyCode`) 등록값을 그대로 따릅니다.
+> 단일 출처(SSOT): 파라미터 정의는 `modCmdRegistry.bas`, 조건 연산자는 `modCondition.bas`(`IsConditionOperator`), 키 이름은 `modActions.bas`(`ParseKeyCode`) 등록값을 그대로 따릅니다.
 > 관련 문서: [시작하기](01-getting-started.md) · [작성 보조 도구](03-authoring-tools.md)
 
 총 **5개 카테고리, 36개 명령어**. 각 표의 `P1/P2/P3`은 시트의 `PARAM1(C) / PARAM2(D) / PARAM3(E)` 열에 대응합니다.

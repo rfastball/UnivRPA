@@ -3,6 +3,11 @@ Attribute VB_Name = "modDevTools"
 ' @depends modCmdRegistry, modParse, clsScriptProgram
 Option Explicit
 
+' 반복 사용 색상 (VBA Const는 RGB() 호출 불가 - BGR hex 리터럴로 고정)
+Private Const CLR_GRID_GRAY As Long = &HD2D2D2      ' RGB(210,210,210) 격자/가이드 회색
+Private Const CLR_NEST_BG As Long = &HF5FFF5        ' RGB(245,255,245) 중첩 배경 연녹
+Private Const CLR_COMMENT_BROWN As Long = &H659C    ' RGB(156,101,0) 주석 갈색
+
 Private m_lastValidationMessage As String
 Private m_lastValidationWarning As String
 
@@ -62,12 +67,12 @@ Public Sub FormatRPAScript(Optional ByVal targetSheet As Worksheet = Nothing)
         ' --- [격자 설정] ---
         With .Borders(xlInsideHorizontal)
             .LineStyle = xlContinuous
-            .color = RGB(210, 210, 210)
+            .color = CLR_GRID_GRAY
             .Weight = xlThin
         End With
         With .Borders(xlInsideVertical)
             .LineStyle = xlContinuous
-            .color = RGB(210, 210, 210)
+            .color = CLR_GRID_GRAY
             .Weight = xlThin
         End With
 
@@ -481,18 +486,18 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Long, Optiona
         With .Borders(xlEdgeTop)
             .LineStyle = xlContinuous
             .Weight = xlThin
-            .color = RGB(210, 210, 210)
+            .color = CLR_GRID_GRAY
         End With
         With .Borders(xlEdgeBottom)
             .LineStyle = xlContinuous
             .Weight = xlThin
-            .color = RGB(210, 210, 210)
+            .color = CLR_GRID_GRAY
         End With
         ' 세로 격자선 복구 (셀 사이 줄)
         With .Borders(xlInsideVertical)
             .LineStyle = xlContinuous
             .Weight = xlThin
-            .color = RGB(210, 210, 210)
+            .color = CLR_GRID_GRAY
         End With
         ' 왼쪽/오른쪽 테두리 일단 제거
         .Borders(xlEdgeLeft).LineStyle = xlNone
@@ -536,7 +541,7 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Long, Optiona
     Set def = modCmdRegistry.GetCmdDef(cmd)
     If def Is Nothing Then
         ' 미등록 명령어: 블록 내부면 연녹 배경만 유지 (구 Case Else)
-        If depth > 0 Then rng.Interior.color = RGB(245, 255, 245)
+        If depth > 0 Then rng.Interior.color = CLR_NEST_BG
         Exit Sub
     End If
 
@@ -547,11 +552,11 @@ Public Sub ApplyUnifiedStyle(rng As Range, cmd As String, depth As Long, Optiona
     Else
         ' [Action/Vision/Memory] B열 강조 + 중첩 시 C-E 연녹 배경
         cmdCell.Interior.color = clr
-        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = RGB(245, 255, 245)
+        If depth > 0 Then rng.offset(0, 1).Resize(1, 3).Interior.color = CLR_NEST_BG
     End If
 
     If isValid And hasWarning Then
-        cmdCell.Font.color = RGB(156, 101, 0)
+        cmdCell.Font.color = CLR_COMMENT_BROWN
     End If
 End Sub
 
@@ -562,7 +567,7 @@ Private Function ColorOf(ByVal cg As eColorGroup) As Long
         Case clrACTION: ColorOf = RGB(221, 235, 247)  ' 연청
         Case clrVISION: ColorOf = RGB(255, 242, 204)  ' 연황
         Case clrSYSTEM: ColorOf = RGB(242, 242, 242)  ' 연회
-        Case Else:      ColorOf = RGB(245, 255, 245)
+        Case Else:      ColorOf = CLR_NEST_BG
     End Select
 End Function
 
@@ -641,7 +646,7 @@ Private Sub ApplyLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, B
 
     roleCell.Font.Italic = (roleName = "DeadLabel")
     If roleName = "MixedLabel" Then
-        roleCell.Font.color = RGB(156, 101, 0)
+        roleCell.Font.color = CLR_COMMENT_BROWN
     ElseIf roleName = "DeadLabel" Then
         roleCell.Font.color = RGB(128, 128, 128)
     End If

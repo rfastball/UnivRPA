@@ -69,7 +69,7 @@ Public Type POINTAPI
     y As Long
 End Type
 
-Private Type RECT
+Public Type RECT
     Left As Long
     Top As Long
     Right As Long
@@ -125,13 +125,14 @@ Public Const MOUSEEVENTF_ABSOLUTE = &H8000
 Public Const GW_HWNDNEXT = 2
 Public Const SW_RESTORE = 9
 
-Private Const SPI_GETWORKAREA As Long = 48
-Private Const LOGPIXELSX As Long = 88
-Private Const LOGPIXELSY As Long = 90
-Private Const HWND_TOPMOST As Long = -1
-Private Const SWP_NOSIZE As Long = &H1
-Private Const SWP_NOMOVE As Long = &H2
-Private Const SWP_NOACTIVATE As Long = &H10
+' 작업영역/DPI/창 배치 상수 (폼 배치 조합은 modHelper가 소유 - L4는 선언만)
+Public Const SPI_GETWORKAREA As Long = 48
+Public Const LOGPIXELSX As Long = 88
+Public Const LOGPIXELSY As Long = 90
+Public Const HWND_TOPMOST As Long = -1
+Public Const SWP_NOSIZE As Long = &H1
+Public Const SWP_NOMOVE As Long = &H2
+Public Const SWP_NOACTIVATE As Long = &H10
 
 ' 메시지박스 옵션
 Public Const MB_ICONINFO = &H40
@@ -153,9 +154,14 @@ Public Const SM_CYVIRTUALSCREEN = 79 ' 전체 모니터(가상) 세로 해상도
 ' 3. Technical Wrappers (기술적 복잡성 은닉)
 '==============================================================================
 
+' [Vision] 색상 Long 값을 6자리 Hex String으로 포맷 (관용구의 단일 소유)
+Public Function FormatColorHex(ByVal colorValue As Long) As String
+    FormatColorHex = Right("000000" & hex(colorValue), 6)
+End Function
+
 ' [Vision] 화면의 특정 좌표 색상을 Hex String으로 반환 (DC 관리 포함)
 Public Function GetColorHexAt(x As Long, y As Long) As String
-    GetColorHexAt = Right("000000" & hex(GetColorAt(x, y)), 6)
+    GetColorHexAt = FormatColorHex(GetColorAt(x, y))
 End Function
 
 Public Function GetColorAt(ByVal x As Long, ByVal y As Long) As Long
@@ -175,28 +181,6 @@ End Function
 Public Function IsToggleKeyOn(ByVal vKey As Long) As Boolean
     IsToggleKeyOn = (GetKeyState(vKey) And 1) = 1
 End Function
-
-Public Sub MoveFormToWorkAreaTopLeftTopMost(ByVal formView As Object)
-    Dim workArea As RECT
-    Dim hdc As LongPtr
-    Dim dpiX As Long
-    Dim dpiY As Long
-    Dim hWndForm As LongPtr
-
-    SystemParametersInfo SPI_GETWORKAREA, 0, workArea, 0
-    hdc = GetDC(0)
-    dpiX = GetDeviceCaps(hdc, LOGPIXELSX)
-    dpiY = GetDeviceCaps(hdc, LOGPIXELSY)
-    ReleaseDC 0, hdc
-
-    If dpiX > 0 Then formView.Left = (workArea.Left * 72 / dpiX)
-    If dpiY > 0 Then formView.Top = (workArea.Top * 72 / dpiY)
-
-    hWndForm = FindWindow("ThunderDFrame", formView.Caption)
-    If hWndForm <> 0 Then
-        SetWindowPos hWndForm, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE Or SWP_NOACTIVATE
-    End If
-End Sub
 
 ' [Clipboard] 텍스트 가져오기 (API 방식 - 안정적)
 Public Function GetClipboardText() As String

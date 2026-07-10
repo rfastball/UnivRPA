@@ -1,6 +1,6 @@
 Attribute VB_Name = "modActions"
 ' @desc 클릭/입력/대기 등 구체 동작 수행 담당
-' @depends modWinAPI, modCondition, LogShim
+' @depends modWinAPI, LogShim
 Option Explicit
 
 '==============================================================================
@@ -391,43 +391,6 @@ ErrHandler:
     Resume CleanUp
 End Function
 
-' [단순 대기] 특정 좌표가 특정 색상이 될 때까지 대기 (Timeout 적용 - 구버전 호환용)
-Public Function Action_WaitForColor(ByVal x As Long, ByVal y As Long, ByVal hexColor As String, ByVal TimeoutSec As Long) As Boolean
-    On Error GoTo ErrHandler
-    Dim startTime As Long
-    Dim currColor As String
-    
-    startTime = modWinAPI.GetTickCount()
-    
-    Do
-        ' 1. 현재 색상 추출
-        currColor = modWinAPI.GetColorHexAt(x, y)
-        
-        ' 2. 일치 여부 확인
-        If currColor = hexColor Then
-            BetterWait DELAY_MEDIUM ' 깜빡임 방지용 2차 확인 대기
-            If modWinAPI.GetColorHexAt(x, y) = hexColor Then
-                Action_WaitForColor = True
-                Exit Function
-            End If
-        End If
-        
-        ' 3. 타임아웃 체크
-        If (modWinAPI.GetTickCount() - startTime) > (TimeoutSec * 1000) Then
-            Action_WaitForColor = False
-            Exit Function
-        End If
-        
-        BetterWait DELAY_SHORT ' 루프 주기
-    Loop
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modActions.Action_WaitForColor", Err.Description
-    Resume CleanUp
-End Function
-
 ' [화면 검증] Assert (기대값과 다르면 실패 처리)
 Public Function Action_Assert(x As Long, y As Long, condition As String) As Boolean
     On Error GoTo ErrHandler
@@ -498,15 +461,6 @@ CleanUp:
 ErrHandler:
     Err.Raise Err.Number, "modActions.Action_FocusWindow", Err.Description
     Resume CleanUp
-End Function
-
-' [Compatibility] 조건 비교는 modCondition으로 이관됨.
-Public Function Action_CheckCondition(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
-    Action_CheckCondition = modCondition.EvaluateCondition(v1, op, v2)
-End Function
-
-Public Function IsConditionOperator(ByVal op As String) As Boolean
-    IsConditionOperator = modCondition.IsConditionOperator(op)
 End Function
 
 ' [알림 표시] 비차단형 알림. Action_Notify 단일 게이트로 위임 (항상 자동 종료 보장)
