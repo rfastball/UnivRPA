@@ -13,11 +13,6 @@ Attribute VB_Exposed = False
 ' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex, modStringDistance
 Option Explicit
 
-Private Type IfValidationFrame
-    headerLine As Long
-    sawElse As Boolean
-End Type
-
 Private m_source As clsScriptProgramSource
 Private m_index As clsScriptProgramIndex
 Private m_subroutineStartRows As Object
@@ -25,7 +20,7 @@ Private m_subroutineEndRows As Object
 Private m_flowInvalidRows As Object
 ' 서브루틴 흐름 갭(RETURN 누락/흐름차단 부재/고아 RETURN)만 담는 라인->메시지 사전.
 '   m_flowInvalidRows는 서식(빨간 표시)용 전수 집합, 이쪽은 실행 전 차단으로 승격할 부분집합.
-'   점프대상/IF 오류는 각각 ValidateJumpTargets/BuildIfStructureAnalysis가 이미 차단하므로 제외.
+'   점프대상/IF 오류는 각각 ValidateJumpTargets/Index.IfStructureErrors가 이미 차단하므로 제외.
 Private m_flowBlockingErrors As Object
 Private m_variableErrors As Object
 Private m_variableWarnings As Object
@@ -85,10 +80,29 @@ Public Sub BuildStaticAnalysis()
     m_variableWarnings.CompareMode = vbTextCompare
 
     BuildDisplayDepths
-    BuildIfStructureAnalysis False
+    MarkIfStructureRows
+    ScanElseIfParams False
     BuildSubroutineFlowAnalysis
     BuildVariableAnalysis
     m_staticBuilt = True
+End Sub
+
+' [D3] Index 통합 스캔이 기록한 IF 구조 오류를 서식용 행 집합에 반영 (Analysis는 소비만)
+Private Sub MarkIfStructureRows()
+    Dim key As Variant
+    For Each key In m_index.IfStructureErrors.keys
+        m_flowInvalidRows(CStr(key)) = True
+    Next key
+End Sub
+
+' [D3] ELSE_IF 파라미터 검사 (라인 로컬 - 스택 불필요, IF 구조 스캔에서 분리)
+Private Sub ScanElseIfParams(ByVal reportValidation As Boolean)
+    Dim R As Long
+    For R = 1 To m_source.totalLines
+        If m_source.IsSkippable(R) Then GoTo NextRow
+        If m_source.CmdAt(R) = "ELSE_IF" Then ValidateElseIfParams R, reportValidation
+NextRow:
+    Next R
 End Sub
 
 Public Function DisplayDepthAt(ByVal lineNo As Long) As Long
@@ -129,7 +143,13 @@ End Function
 Public Function ValidateStructure() As Boolean
     ClearValidationErrors
     m_index.BuildStructureIndex
-    BuildIfStructureAnalysis True
+
+    ' [D3] IF 구조 오류는 Index 통합 스캔이 소유 - 여기서는 승격만
+    Dim ifKey As Variant
+    For Each ifKey In m_index.IfStructureErrors.keys
+        AddValidationError CStr(m_index.IfStructureErrors(ifKey))
+    Next ifKey
+    ScanElseIfParams True
 
     Dim blocks As Object
     Set blocks = m_index.SelectBlocks
@@ -200,55 +220,6 @@ Public Function ValidationErrors() As String
     Next i
 End Function
 
-Private Sub BuildIfStructureAnalysis(ByVal reportValidation As Boolean)
-    Dim stack() As IfValidationFrame
-    Dim Top As Long
-    Dim R As Long
-
-    For R = 1 To m_source.totalLines
-        If m_source.IsSkippable(R) Then GoTo NextRow
-
-        Select Case m_source.CmdAt(R)
-            Case "IF"
-                Top = Top + 1
-                ReDim Preserve stack(1 To Top)
-                stack(Top).headerLine = R
-                stack(Top).sawElse = False
-
-            Case "ELSE_IF"
-                If Top = 0 Then
-                    MarkIfStructureIssue R, "ELSE_IF line " & R & " has no matching IF.", reportValidation
-                ElseIf stack(Top).sawElse Then
-                    MarkIfStructureIssue R, "ELSE_IF line " & R & " cannot appear after ELSE.", reportValidation
-                End If
-                ValidateElseIfParams R, reportValidation
-
-            Case "ELSE"
-                If Top = 0 Then
-                    MarkIfStructureIssue R, "ELSE line " & R & " has no matching IF.", reportValidation
-                ElseIf stack(Top).sawElse Then
-                    MarkIfStructureIssue R, "ELSE line " & R & " duplicates an ELSE in the same IF block.", reportValidation
-                Else
-                    stack(Top).sawElse = True
-                End If
-
-            Case "END_IF"
-                If Top = 0 Then
-                    MarkIfStructureIssue R, "END_IF line " & R & " has no matching IF.", reportValidation
-                Else
-                    Top = Top - 1
-                End If
-        End Select
-
-NextRow:
-    Next R
-
-    Do While Top > 0
-        MarkIfStructureIssue stack(Top).headerLine, "IF line " & stack(Top).headerLine & " has no END_IF.", reportValidation
-        Top = Top - 1
-    Loop
-End Sub
-
 Private Sub ValidateElseIfParams(ByVal lineNo As Long, ByVal reportValidation As Boolean)
     If Len(Trim$(m_source.P1At(lineNo))) = 0 Then
         MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P1.", reportValidation
@@ -302,7 +273,8 @@ Private Sub BuildSubroutineFlowAnalysis()
                 m_subroutineStartRows(CStr(R)) = True
 
                 Dim endLine As Long
-                endLine = FindSubroutineReturnLineForFlow(R)
+                ' [D3] 스캔은 Index 소유 - 서식/검증 경계는 표시 깊이 모델로 판정
+                endLine = m_index.FindSubroutineEndAtDepth(R, m_displayDepths)
 
                 If endLine > 0 Then
                     m_subroutineEndRows(CStr(endLine)) = True
@@ -346,33 +318,6 @@ Private Sub MarkMissingJumpTargets()
         If m_index.IsJumpTargetMissingAt(R) Then m_flowInvalidRows(CStr(R)) = True
     Next R
 End Sub
-
-Private Function FindSubroutineReturnLineForFlow(ByVal startLine As Long) As Long
-    Dim labelDepth As Long
-    labelDepth = m_displayDepths(startLine)
-
-    Dim R As Long
-    For R = startLine + 1 To m_source.totalLines
-        If m_source.IsCommentLine(R) Then GoTo NextRow
-
-        Dim cmd As String
-        cmd = m_source.CmdAt(R)
-        If Len(cmd) = 0 Then GoTo NextRow
-        If m_displayDepths(R) < labelDepth Then Exit Function
-
-        If m_displayDepths(R) = labelDepth Then
-            Select Case cmd
-                Case "RETURN"
-                    FindSubroutineReturnLineForFlow = R
-                    Exit Function
-                Case "LABEL"
-                    Exit Function
-            End Select
-        End If
-
-NextRow:
-    Next R
-End Function
 
 Private Function HasFlowBreakBefore(ByVal lineNo As Long) As Boolean
     Dim R As Long

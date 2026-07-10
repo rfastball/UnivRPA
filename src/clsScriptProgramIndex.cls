@@ -32,6 +32,9 @@ Private m_loopRanges As Collection
 ' [C3] 루프 짝/고아 CASE 구조 오류 (라인 -> 메시지). BuildStructureIndex의
 '   통합 스택 스캔이 채우고 Analysis.ValidateStructure가 차단 오류로 승격한다.
 Private m_blockPairErrors As Object
+' [D3] IF 구조 오류 (라인 -> 메시지). 같은 통합 스캔이 채우고 Analysis가
+'   서식(m_flowInvalidRows)과 차단 오류 양쪽으로 소비한다 (스캔 단일 소유).
+Private m_ifStructureErrors As Object
 
 ' [D2] 빌드 완료 플래그: 소스는 로드 후 불변이라 재빌드는 항상 동일 결과.
 '   로드가 만든 인덱스를 검증(ValidateStructure/ValidateLabels)이 재구축하지 않게 한다.
@@ -62,6 +65,7 @@ Private Sub ResetIndexes()
     Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
     Set m_loopRanges = New Collection
     Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
+    Set m_ifStructureErrors = CreateObject("Scripting.Dictionary")
     m_labels.CompareMode = vbTextCompare
     m_labelRows.CompareMode = vbTextCompare
     m_duplicateLabels.CompareMode = vbTextCompare
@@ -155,13 +159,16 @@ Public Sub BuildStructureIndex()
     For R = 1 To m_source.totalLines
         If m_source.CmdAt(R) = "SELECT" Then BuildSelectBlock R
     Next R
-    BuildIfEndIndex
     BuildBlockPairIndex
     m_structureBuilt = True
 End Sub
 
 Public Property Get BlockPairErrors() As Object
     Set BlockPairErrors = m_blockPairErrors
+End Property
+
+Public Property Get IfStructureErrors() As Object
+    Set IfStructureErrors = m_ifStructureErrors
 End Property
 
 Public Function SelectBlock(ByVal SelectLine As Long) As clsSelectBlock
@@ -459,16 +466,20 @@ Private Sub BuildSubAreaCoordinates()
             Dim startLine As Long
             Dim endLine As Long
             startLine = CLng(m_labels(CStr(key)))
-            endLine = FindSubroutineReturnLine(startLine)
+            endLine = FindSubroutineEndAtDepth(startLine, m_loopDepths)
             If endLine <= 0 Then endLine = startLine
             MarkSubArea startLine, endLine, areaId
         End If
     Next key
 End Sub
 
-Private Function FindSubroutineReturnLine(ByVal startLine As Long) As Long
+' [D3] 서브루틴 종료행 스캔의 단일 소유: 라벨과 같은 깊이의 첫 RETURN을 찾고
+'   같은 깊이의 다른 LABEL 또는 더 얕은 깊이를 만나면 중단(0 반환).
+'   깊이 모델은 호출자가 선택 - Index(sub-area)는 루프 깊이, Analysis(서식/검증)는
+'   표시 깊이를 넘긴다 (두 모델은 의미가 달라 의도적으로 분리 유지).
+Public Function FindSubroutineEndAtDepth(ByVal startLine As Long, ByRef depths() As Long) As Long
     Dim labelDepth As Long
-    labelDepth = LoopDepthAt(startLine)
+    labelDepth = depths(startLine)
 
     Dim R As Long
     For R = startLine + 1 To m_source.totalLines
@@ -477,12 +488,12 @@ Private Function FindSubroutineReturnLine(ByVal startLine As Long) As Long
         Dim cmd As String
         cmd = m_source.CmdAt(R)
         If Len(cmd) = 0 Then GoTo NextRow
-        If LoopDepthAt(R) < labelDepth Then Exit Function
+        If depths(R) < labelDepth Then Exit Function
 
-        If LoopDepthAt(R) = labelDepth Then
+        If depths(R) = labelDepth Then
             Select Case cmd
                 Case "RETURN"
-                    FindSubroutineReturnLine = R
+                    FindSubroutineEndAtDepth = R
                     Exit Function
                 Case "LABEL"
                     Exit Function
@@ -497,46 +508,6 @@ Private Sub MarkSubArea(ByVal startLine As Long, ByVal endLine As Long, ByVal ar
     Dim R As Long
     For R = startLine To endLine
         If m_subAreaIds(R) = 0 Then m_subAreaIds(R) = areaId
-    Next R
-End Sub
-
-Private Sub BuildIfEndIndex()
-    Dim memberStacks() As Collection
-    Dim Top As Long
-    Dim R As Long
-
-    For R = 1 To m_source.totalLines
-        If m_source.IsSkippable(R) Then GoTo NextRow
-
-        Dim def As CmdDef
-        Set def = modCmdRegistry.GetCmdDef(m_source.CmdAt(R))
-        If def Is Nothing Then GoTo NextRow
-        If UCase$(def.BlockGroup) <> "IF" Then GoTo NextRow
-
-        Select Case def.BlockRole
-            Case STARTER
-                Top = Top + 1
-                ReDim Preserve memberStacks(1 To Top)
-                Set memberStacks(Top) = New Collection
-                memberStacks(Top).Add R
-
-            Case MIDBLOCK
-                If Top > 0 Then memberStacks(Top).Add R
-
-            Case ENDER
-                If Top > 0 Then
-                    memberStacks(Top).Add R
-
-                    Dim memberLine As Variant
-                    For Each memberLine In memberStacks(Top)
-                        m_ifEndLines(CStr(memberLine)) = R
-                    Next memberLine
-
-                    Top = Top - 1
-                End If
-        End Select
-
-NextRow:
     Next R
 End Sub
 
@@ -582,16 +553,25 @@ NextRow:
     End If
 End Sub
 
-' [C3] 루프 3그룹(WHILE/REPEAT/FOREACH) 통합 스택 스캔 + SELECT 깊이 추적.
-'   고아 ENDER / 미폐쇄 STARTER / 루프 그룹 교차 / 고아 CASE·END_SELECT를 기록한다.
-'   IF 짝은 BuildIfStructureAnalysis, SELECT 미폐쇄는 SelectBlocks 검증이 담당하므로 제외.
+' [C3+D3] 블록 구조 통합 스택 스캔 (단일 패스, Index가 스캔의 단일 소유자):
+'   - 루프 3그룹(WHILE/REPEAT/FOREACH): 고아 ENDER / 미폐쇄 STARTER / 그룹 교차
+'   - SELECT 깊이: 고아 CASE / END_SELECT
+'   - IF 그룹: 멤버->END_IF 짝 인덱스(m_ifEndLines) + 구조 오류(고아 분기,
+'     ELSE 순서/중복, 미폐쇄 IF)를 m_ifStructureErrors에 기록
+'   SELECT 미폐쇄는 SelectBlocks 검증, ELSE_IF 파라미터는 Analysis가 담당.
 Private Sub BuildBlockPairIndex()
     Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
+    Set m_ifStructureErrors = CreateObject("Scripting.Dictionary")
 
     Dim stackGroups() As String
     Dim stackLines() As Long
     Dim Top As Long
     Dim selectDepth As Long
+
+    Dim ifMembers() As Collection
+    Dim ifSawElse() As Boolean
+    Dim ifLines() As Long
+    Dim ifTop As Long
 
     Dim R As Long
     For R = 1 To m_source.totalLines
@@ -600,33 +580,80 @@ Private Sub BuildBlockPairIndex()
         Dim cmd As String
         cmd = m_source.CmdAt(R)
 
-        If cmd = "SELECT" Then
-            selectDepth = selectDepth + 1
-        ElseIf cmd = "CASE" Then
-            If selectDepth = 0 Then AddBlockPairError R, "CASE line " & R & " has no enclosing SELECT."
-        ElseIf cmd = "END_SELECT" Then
-            If selectDepth = 0 Then
-                AddBlockPairError R, "END_SELECT line " & R & " has no matching SELECT."
-            Else
-                selectDepth = selectDepth - 1
-            End If
-        ElseIf IsLoopStarter(cmd) Then
-            Top = Top + 1
-            ReDim Preserve stackGroups(1 To Top)
-            ReDim Preserve stackLines(1 To Top)
-            stackGroups(Top) = LoopGroupOf(cmd)
-            stackLines(Top) = R
-        ElseIf IsLoopEnder(cmd) Then
-            If Top = 0 Then
-                AddBlockPairError R, cmd & " line " & R & " has no matching loop starter."
-            Else
-                If stackGroups(Top) <> LoopEnderGroupOf(cmd) Then
-                    AddBlockPairError R, cmd & " line " & R & " crosses loop nesting: innermost open loop is " _
-                        & stackGroups(Top) & " (line " & stackLines(Top) & ")."
+        Select Case cmd
+            Case "SELECT"
+                selectDepth = selectDepth + 1
+            Case "CASE"
+                If selectDepth = 0 Then AddBlockPairError R, "CASE line " & R & " has no enclosing SELECT."
+            Case "END_SELECT"
+                If selectDepth = 0 Then
+                    AddBlockPairError R, "END_SELECT line " & R & " has no matching SELECT."
+                Else
+                    selectDepth = selectDepth - 1
                 End If
-                Top = Top - 1
-            End If
-        End If
+
+            Case "IF"
+                ifTop = ifTop + 1
+                ReDim Preserve ifMembers(1 To ifTop)
+                ReDim Preserve ifSawElse(1 To ifTop)
+                ReDim Preserve ifLines(1 To ifTop)
+                Set ifMembers(ifTop) = New Collection
+                ifMembers(ifTop).Add R
+                ifSawElse(ifTop) = False
+                ifLines(ifTop) = R
+
+            Case "ELSE_IF"
+                If ifTop = 0 Then
+                    AddIfStructureError R, "ELSE_IF line " & R & " has no matching IF."
+                ElseIf ifSawElse(ifTop) Then
+                    AddIfStructureError R, "ELSE_IF line " & R & " cannot appear after ELSE."
+                    ifMembers(ifTop).Add R
+                Else
+                    ifMembers(ifTop).Add R
+                End If
+
+            Case "ELSE"
+                If ifTop = 0 Then
+                    AddIfStructureError R, "ELSE line " & R & " has no matching IF."
+                ElseIf ifSawElse(ifTop) Then
+                    AddIfStructureError R, "ELSE line " & R & " duplicates an ELSE in the same IF block."
+                    ifMembers(ifTop).Add R
+                Else
+                    ifSawElse(ifTop) = True
+                    ifMembers(ifTop).Add R
+                End If
+
+            Case "END_IF"
+                If ifTop = 0 Then
+                    AddIfStructureError R, "END_IF line " & R & " has no matching IF."
+                Else
+                    ifMembers(ifTop).Add R
+                    Dim memberLine As Variant
+                    For Each memberLine In ifMembers(ifTop)
+                        m_ifEndLines(CStr(memberLine)) = R
+                    Next memberLine
+                    ifTop = ifTop - 1
+                End If
+
+            Case Else
+                If IsLoopStarter(cmd) Then
+                    Top = Top + 1
+                    ReDim Preserve stackGroups(1 To Top)
+                    ReDim Preserve stackLines(1 To Top)
+                    stackGroups(Top) = LoopGroupOf(cmd)
+                    stackLines(Top) = R
+                ElseIf IsLoopEnder(cmd) Then
+                    If Top = 0 Then
+                        AddBlockPairError R, cmd & " line " & R & " has no matching loop starter."
+                    Else
+                        If stackGroups(Top) <> LoopEnderGroupOf(cmd) Then
+                            AddBlockPairError R, cmd & " line " & R & " crosses loop nesting: innermost open loop is " _
+                                & stackGroups(Top) & " (line " & stackLines(Top) & ")."
+                        End If
+                        Top = Top - 1
+                    End If
+                End If
+        End Select
 
 NextRow:
     Next R
@@ -635,6 +662,21 @@ NextRow:
         AddBlockPairError stackLines(Top), stackGroups(Top) & " line " & stackLines(Top) & " has no matching loop ender."
         Top = Top - 1
     Loop
+
+    Do While ifTop > 0
+        AddIfStructureError ifLines(ifTop), "IF line " & ifLines(ifTop) & " has no END_IF."
+        ifTop = ifTop - 1
+    Loop
+End Sub
+
+Private Sub AddIfStructureError(ByVal lineNo As Long, ByVal message As String)
+    Dim key As String
+    key = CStr(lineNo)
+    If m_ifStructureErrors.exists(key) Then
+        m_ifStructureErrors(key) = m_ifStructureErrors(key) & " / " & message
+    Else
+        m_ifStructureErrors(key) = message
+    End If
 End Sub
 
 Private Sub AddBlockPairError(ByVal lineNo As Long, ByVal message As String)
