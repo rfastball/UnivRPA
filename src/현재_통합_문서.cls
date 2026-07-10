@@ -93,10 +93,3 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
         modScriptAssist.ValidateCommandCell ws.Cells(CLng(key), cmdCol)
     Next key
 End Sub
-
-
-
-
-
-
-

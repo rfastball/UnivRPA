@@ -7,3 +7,7 @@ visible = true
 
 [src]
 root = "src"
+
+[dist]
+version = "1.0.0"
+exclude = ["modTester", "SmokeTest"]
