@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 입력 액션 명령어(마우스/키보드) 6종 디스패치 실행 담당
-' @depends modActions, modCmdRegistry, modParse, ICommand
+' @depends modActions, modContext, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -31,6 +31,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             ' P1 = 딜레이ms(선택, 빈값=0), P3 = 텍스트
             modActions.Action_SmartType modParse.ParseLongOrDefault(args(1), 0), args(3)
         Case Else
+            modContext.SetLastError "ACTION 핸들러에 구현되지 않은 명령어: " & cmd
             ICommand_Execute = CMD_ERROR
             GoTo CleanUp
     End Select
@@ -48,7 +49,8 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 CleanUp:
     Exit Function
 ErrHandler:
-    modActions.Action_ShowNotification "[에러] ACTION " & cmd & ": " & Err.Description, 3
+    ' 사유만 기록 - 알림은 RunRPA가 LastRuntimeError로 1회 조립 (B1)
+    modContext.SetLastError "ACTION " & cmd & " 라인 " & R & ": " & Err.Description
     ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function

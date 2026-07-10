@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 시스템 명령어(창포커스/대기/알림/종료) 4종 디스패치 실행 담당
-' @depends modActions, modCmdRegistry, modParse, ICommand
+' @depends modActions, modContext, modCmdRegistry, modParse, ICommand
 Option Explicit
 
 Implements ICommand
@@ -22,6 +22,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
     Select Case cmd
         Case "FOCUS"
             If Not modActions.Action_FocusWindow(args(3)) Then
+                modContext.SetLastError "FOCUS 라인 " & R & ": 창을 찾지 못했습니다: '" & args(3) & "'"
                 ICommand_Execute = CMD_ERROR
                 GoTo CleanUp
             End If
@@ -46,13 +47,15 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             ICommand_Execute = CMD_HALT
 
         Case Else
+            modContext.SetLastError "SYSTEM 핸들러에 구현되지 않은 명령어: " & cmd
             ICommand_Execute = CMD_ERROR
     End Select
 
 CleanUp:
     Exit Function
 ErrHandler:
-    modActions.Action_ShowNotification "[에러] SYSTEM " & cmd & ": " & Err.Description, 3
+    ' 사유만 기록 - 알림은 RunRPA가 LastRuntimeError로 1회 조립 (B1)
+    modContext.SetLastError "SYSTEM " & cmd & " 라인 " & R & ": " & Err.Description
     ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function

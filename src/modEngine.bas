@@ -283,6 +283,7 @@ End Sub
 Public Function ExecuteSmartAction(ByVal R As Long) As Long
     On Error GoTo ErrHandler
     m_lastRuntimeError = ""
+    modContext.ClearLastError
     If m_program Is Nothing Then
         m_lastRuntimeError = "실행할 ProgramImage가 없습니다."
         ExecuteSmartAction = CMD_ERROR
@@ -329,6 +330,11 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     Dim handler As ICommand
     Set handler = modCmdRegistry.handler(inst.def.Category)
     ExecuteSmartAction = handler.Execute(inst.cmd, inst.RuntimeLine, args)
+
+    ' 핸들러 실패 사유 합류 (B1): 핸들러는 modContext.SetLastError로 기록하고 -1만 반환한다
+    If ExecuteSmartAction = CMD_ERROR And Len(m_lastRuntimeError) = 0 Then
+        m_lastRuntimeError = modContext.LastError()
+    End If
 
 CleanUp:
     Exit Function
@@ -400,17 +406,29 @@ Public Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As Stri
     ResolveGotoTarget = CMD_ERROR
     framesPopped = 0
 
-    If m_program Is Nothing Then Exit Function
+    If m_program Is Nothing Then
+        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 실행할 ProgramImage가 없습니다."
+        Exit Function
+    End If
 
     Dim targetLine As Long
     targetLine = m_program.ResolveJumpTarget(Target)
-    If targetLine <= 0 Then Exit Function
+    If targetLine <= 0 Then
+        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 대상 라벨 해석 실패: '" & Target & "' (정적 라벨명만 허용)"
+        Exit Function
+    End If
 
-    If Not m_program.IsGotoAllowed(sourceLine, targetLine) Then Exit Function
+    If Not m_program.IsGotoAllowed(sourceLine, targetLine) Then
+        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 라인 " & targetLine & "으로의 점프가 흐름 경계(루프/영역)를 침범합니다."
+        Exit Function
+    End If
 
     Dim popped As Long
     popped = modContext.ReconcileLoopStackForJump(targetLine, m_program.LoopDepthAt(targetLine))
-    If popped < 0 Then Exit Function
+    If popped < 0 Then
+        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 대상 라인 " & targetLine & "의 루프 깊이와 활성 루프 스택이 불일치합니다."
+        Exit Function
+    End If
     modContext.ReconcileIfBranchStackForJump targetLine
 
     framesPopped = popped
@@ -418,19 +436,25 @@ Public Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As Stri
     Exit Function
 
 ErrHandler:
+    m_lastRuntimeError = "GOTO 라인 " & sourceLine & " 해석 오류: " & Err.Description
     ResolveGotoTarget = CMD_ERROR
 End Function
 
 Public Function ResolveCallTarget(ByVal sourceLine As Long, ByVal Target As String) As Long
     On Error GoTo ErrHandler
     If m_program Is Nothing Then
+        m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 실행할 ProgramImage가 없습니다."
         ResolveCallTarget = CMD_ERROR
     Else
         ResolveCallTarget = m_program.ResolveJumpTarget(Target)
+        If ResolveCallTarget <= 0 Then
+            m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 대상 라벨 해석 실패: '" & Target & "' (정적 라벨명만 허용)"
+        End If
     End If
     Exit Function
 
 ErrHandler:
+    m_lastRuntimeError = "CALL 라인 " & sourceLine & " 해석 오류: " & Err.Description
     ResolveCallTarget = CMD_ERROR
 End Function
 
@@ -644,6 +668,7 @@ End Function
 Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As Long
     On Error GoTo ErrHandler
     If m_program Is Nothing Then
+        m_lastRuntimeError = "SELECT 라인 " & R & ": 실행할 ProgramImage가 없습니다."
         ResolveSelectTarget = CMD_ERROR
         GoTo CleanUp
     End If
@@ -651,10 +676,12 @@ Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As 
     Dim block As clsSelectBlock
     Set block = m_program.SelectBlock(R)
     If block Is Nothing Then
+        m_lastRuntimeError = "SELECT 라인 " & R & ": SELECT 블록 인덱스를 찾지 못했습니다."
         ResolveSelectTarget = CMD_ERROR
         GoTo CleanUp
     End If
     If block.EndSelectLine <= 0 Then
+        m_lastRuntimeError = "SELECT 라인 " & R & ": END_SELECT 짝이 없습니다."
         ResolveSelectTarget = CMD_ERROR
         GoTo CleanUp
     End If

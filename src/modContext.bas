@@ -15,6 +15,11 @@ Option Explicit
 Private Memory As Object            ' 변수 저장 공간 (Scripting.Dictionary, 자유 명명 {name})
 Private CallStack As Collection     ' 서브루틴 복귀 주소 저장 (LIFO 구조)
 
+' [1.5] 실행 오류 사유: 핸들러/컨텍스트가 CMD_ERROR 반환 전에 기록.
+'   엔진(ExecuteSmartAction)이 디스패치 결과가 CMD_ERROR인데 자체 사유가 없으면
+'   이 값을 채택해 RunRPA 알림과 cmd_error 로그로 합류한다 (B1)
+Private m_lastError As String
+
 ' [2] 실행 상태 플래그: (제거됨) IsRunning/CheckRunningState는 호출자가 없어 폐기.
 '     중단 신호는 modActions의 abort 래치가 소유한다 (B2).
 
@@ -58,6 +63,7 @@ Public Sub InitContext()
     ' 4. 런타임 스택 초기화
     LoopReset
     IfBranchReset
+    ClearLastError
 End Sub
 
 ' [종료] 매크로 중단/완료 시 호출
@@ -133,6 +139,7 @@ Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
         expectedLoopDepth = CLng(frame(1))
 
         If LoopDepth() < expectedLoopDepth Then
+            SetLastError "RETURN 루프 깊이 불일치: 호출 시점보다 루프 스택이 얕습니다."
             LogStatus "RETURN 루프 깊이 불일치: 호출 시점보다 루프 스택이 얕습니다."
             PopStack = 0
             Exit Function
@@ -145,6 +152,7 @@ Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
         loopDepthRestored = LoopDepth()
         PopStack = returnRow
     Else
+        SetLastError "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
         LogStatus "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
         PopStack = 0
     End If
@@ -167,6 +175,21 @@ End Function
 Public Sub LogStatus(ByVal msg As String)
     Application.StatusBar = "[RPA] " & msg
     DoEvents
+End Sub
+
+' [오류 사유 기록] 핸들러가 CMD_ERROR 반환 직전에 호출. 알림 발화는 RunRPA가 1회 담당
+Public Sub SetLastError(ByVal reason As String)
+    m_lastError = reason
+End Sub
+
+' @desc 마지막 실행 오류 사유 반환, 미기록 시 빈 문자열 반환
+Public Function LastError() As String
+    LastError = m_lastError
+End Function
+
+' [오류 사유 초기화] 엔진이 매 줄 실행 시작 시 호출
+Public Sub ClearLastError()
+    m_lastError = ""
 End Sub
 
 ' [실행 상태 확인] (제거됨) CheckRunningState는 호출자가 없어 폐기 (B2)

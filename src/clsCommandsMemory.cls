@@ -23,6 +23,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
     Dim kind As String, key As String
     If Not ParseLValue(args(1), kind, key) Then
         ' 좌변이 쓰기 가능한 토큰이 아님 (읽기전용/형식오류)
+        modContext.SetLastError cmd & " 라인 " & R & ": P1이 쓰기 가능한 대상이 아닙니다: '" & args(1) & "'"
         ICommand_Execute = CMD_ERROR
         GoTo CleanUp
     End If
@@ -47,13 +48,15 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             WriteSlot kind, key, CStr(cur + delta)
 
         Case Else
+            modContext.SetLastError "MEMORY 핸들러에 구현되지 않은 명령어: " & cmd
             ICommand_Execute = CMD_ERROR
     End Select
 
 CleanUp:
     Exit Function
 ErrHandler:
-    modActions.Action_ShowNotification "[에러] MEMORY " & cmd & ": " & Err.Description, 3
+    ' 사유만 기록 - 알림은 RunRPA가 LastRuntimeError로 1회 조립 (B1)
+    modContext.SetLastError "MEMORY " & cmd & " 라인 " & R & ": " & Err.Description
     ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function

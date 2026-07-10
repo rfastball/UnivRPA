@@ -1315,6 +1315,8 @@ Private Function TC_FlowNegativePaths() As Long
     Call MakeCmd(arr2, 1, "CALL", 0, 0, "MISSING")
     result = RunProgram(arr2, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
+    ' [B1] 엔진 헬퍼(ResolveCallTarget) 실패 사유가 LastRuntimeError로 전달
+    ExpectBool "CALL missing label reason", True, (InStr(1, modEngine.LastRuntimeError(), "CALL", vbTextCompare) > 0), fails
 
     Dim arr3(1 To 1, 1 To 5) As Variant
     Call MakeCmd(arr3, 1, "RETURN", 0, 0, "")
@@ -1325,6 +1327,8 @@ Private Function TC_FlowNegativePaths() As Long
     Call MakeCmd(arr4, 1, "BREAK", 0, 0, "")
     result = RunProgram(arr4, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
+    ' [B1] 핸들러 논리 실패 사유가 modContext.SetLastError 경유로 합류
+    ExpectBool "BREAK no-loop reason", True, (InStr(1, modEngine.LastRuntimeError(), "활성 루프", vbTextCompare) > 0), fails
 
     Dim arr5(1 To 1, 1 To 5) As Variant
     Call MakeCmd(arr5, 1, "CONTINUE", 0, 0, "")
@@ -1347,6 +1351,8 @@ Private Function TC_FlowNegativePaths() As Long
     Call MakeCmd(arr8, 1, "SET", "{$LOOP}", 0, "bad")
     result = RunProgram(arr8, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
+    ' [B1] MEMORY 핸들러 lvalue 거부 사유 전달
+    ExpectBool "SET readonly lvalue reason", True, (InStr(1, modEngine.LastRuntimeError(), "쓰기 가능", vbTextCompare) > 0), fails
 
     Dim arr9(1 To 1, 1 To 5) As Variant
     Call MakeCmd(arr9, 1, "SET", "LOOP", 0, "bad")
@@ -1393,6 +1399,8 @@ Private Function TC_FlowNegativePaths() As Long
     Call MakeCmd(arr15, 1, "INC", "{n}", 0, "")
     result = RunProgram(arr15, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
+    ' [B1] 핸들러 예외(ErrHandler) 경로의 사유 전달 (구 이중 알림 제거 회귀 가드)
+    ExpectBool "INC undefined var reason", True, (InStr(1, modEngine.LastRuntimeError(), "Undefined variable", vbTextCompare) > 0), fails
 
     Dim arr16(1 To 2, 1 To 5) As Variant
     Call MakeCmd(arr16, 1, "SET", "{score}", 0, "1")

@@ -17,6 +17,7 @@ Private Function ExecuteIfBranch(ByVal R As Long, ByRef args() As String) As Lon
     Dim endIfLine As Long
     endIfLine = modEngine.ActiveProgram().EndIfOf(R)
     If endIfLine <= 0 Then
+        modContext.SetLastError "IF 라인 " & R & ": END_IF 짝을 찾지 못했습니다."
         ExecuteIfBranch = CMD_ERROR
         Exit Function
     End If
@@ -33,6 +34,7 @@ Private Function NextIfBranchTarget(ByVal R As Long) As Long
     Dim targetLine As Long
     targetLine = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
     If targetLine <= 0 Then
+        modContext.SetLastError "IF 라인 " & R & ": 다음 분기(ELSE_IF/ELSE/END_IF)를 찾지 못했습니다."
         NextIfBranchTarget = CMD_ERROR
         Exit Function
     End If
@@ -106,6 +108,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim elseIfEnd As Long
             elseIfEnd = modEngine.ActiveProgram().EndIfOf(R)
             If elseIfEnd <= 0 Then
+                modContext.SetLastError "ELSE_IF 라인 " & R & ": END_IF 짝을 찾지 못했습니다."
                 ICommand_Execute = CMD_ERROR
             ElseIf modContext.IfBranchPeekEnd() = elseIfEnd Then
                 ICommand_Execute = elseIfEnd
@@ -114,7 +117,14 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "ELSE"
-            ICommand_Execute = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
+            Dim elseTarget As Long
+            elseTarget = modEngine.ActiveProgram().FindBlockPair(R, "IF", 1)
+            If elseTarget > 0 Then
+                ICommand_Execute = elseTarget
+            Else
+                modContext.SetLastError "ELSE 라인 " & R & ": END_IF 짝을 찾지 못했습니다."
+                ICommand_Execute = CMD_ERROR
+            End If
 
          Case "END_IF"
             If modContext.IfBranchPeekEnd() = R Then modContext.IfBranchPop
@@ -129,6 +139,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
                 whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
                 If whileEnd <= 0 Then
+                    modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
                     ICommand_Execute = CMD_ERROR
                     GoTo CleanUp
                 End If
@@ -143,13 +154,23 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
                 If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop "end"
                 whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
-                If whileEnd > 0 Then ICommand_Execute = whileEnd + 1 Else ICommand_Execute = CMD_ERROR
+                If whileEnd > 0 Then
+                    ICommand_Execute = whileEnd + 1
+                Else
+                    modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
+                    ICommand_Execute = CMD_ERROR
+                End If
             End If
 
          Case "END_WHILE"
             ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
             Dim wHead As Long: wHead = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", -1)
-            If wHead > 0 Then ICommand_Execute = wHead Else ICommand_Execute = CMD_ERROR
+            If wHead > 0 Then
+                ICommand_Execute = wHead
+            Else
+                modContext.SetLastError "END_WHILE 라인 " & R & ": WHILE 짝을 찾지 못했습니다."
+                ICommand_Execute = CMD_ERROR
+            End If
 
          '--- [Loop] REPEAT / END_REPEAT (N회 또는 무한 반복) ---
          Case "REPEAT"
@@ -157,6 +178,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim maxCnt As Long
             Dim rEndRepeat As Long: rEndRepeat = modEngine.ActiveProgram().FindBlockPair(R, "REPEAT", 1)
             If rEndRepeat <= 0 Then
+                modContext.SetLastError "REPEAT 라인 " & R & ": END_REPEAT 짝을 찾지 못했습니다."
                 ICommand_Execute = CMD_ERROR
                 GoTo CleanUp
             End If
@@ -194,6 +216,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
+                modContext.SetLastError "END_REPEAT 라인 " & R & ": REPEAT 짝이 없거나 활성 REPEAT 프레임과 불일치합니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -202,6 +225,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim fEnd As Long
             fEnd = modEngine.ActiveProgram().FindBlockPair(R, "FOREACH", 1)
             If fEnd <= 0 Then
+                modContext.SetLastError "FOREACH_ROW 라인 " & R & ": END_FOREACH 짝을 찾지 못했습니다."
                 ICommand_Execute = CMD_ERROR
                 GoTo CleanUp
             End If
@@ -236,6 +260,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
+                modContext.SetLastError "END_FOREACH 라인 " & R & ": FOREACH_ROW 짝이 없거나 활성 FOREACH 프레임과 불일치합니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -248,6 +273,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 modContext.ReconcileIfBranchStackForJump brkTarget
                 ICommand_Execute = brkTarget
             Else
+                modContext.SetLastError "BREAK 라인 " & R & ": 활성 루프가 없습니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -258,6 +284,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 modContext.ReconcileIfBranchStackForJump continueTarget
                 ICommand_Execute = continueTarget
             Else
+                modContext.SetLastError "CONTINUE 라인 " & R & ": 활성 루프가 없습니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -270,16 +297,23 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             ' 실행 중 CASE 도달 = 폴스루 -> END_SELECT 로 점프
             Dim endSelLine As Long
             endSelLine = modEngine.ActiveProgram().EndSelectOfCase(R)
-            If endSelLine > 0 Then ICommand_Execute = endSelLine Else ICommand_Execute = CMD_ERROR
+            If endSelLine > 0 Then
+                ICommand_Execute = endSelLine
+            Else
+                modContext.SetLastError "CASE 라인 " & R & ": END_SELECT 짝을 찾지 못했습니다."
+                ICommand_Execute = CMD_ERROR
+            End If
 
          Case Else
+            modContext.SetLastError "FLOW 핸들러에 구현되지 않은 명령어: " & cmd
             ICommand_Execute = CMD_ERROR
     End Select
 
 CleanUp:
     Exit Function
 ErrHandler:
-    modActions.Action_ShowNotification "[에러] FLOW " & cmd & ": " & Err.Description, 3
+    ' 사유만 기록 - 알림은 RunRPA가 LastRuntimeError로 1회 조립 (B1)
+    modContext.SetLastError "FLOW " & cmd & " 라인 " & R & ": " & Err.Description
     ICommand_Execute = CMD_ERROR
     Resume CleanUp
 End Function
