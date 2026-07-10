@@ -47,6 +47,7 @@ Sub RunRPA()
     modActions.SetUnattendedMode False   ' 수동 실행 = 대화형 알림
     modActions.ClearAbort                ' 이전 실행의 중단 래치 해제
     modContext.InitContext
+    modHelper.SetStatusBar "RPA Ready..."
 
     '==========================================================
     ' [핵심: 스냅샷] 버튼을 누른 "바로 그 시트"를 고정합니다.
@@ -82,7 +83,7 @@ Sub RunRPA()
     LogShim.LogEvent "run_start", _
         Array("sheet", "total"), Array(wsSource.name, totalLines)
 
-    modContext.LogStatus "매크로 실행 중..."
+    modHelper.SetStatusBar "매크로 실행 중..."
     currentLine = 1
 
     ' [E] UI 갱신 스로틀 기준 시각 (0이면 첫 줄에서 즉시 갱신)
@@ -176,6 +177,7 @@ CleanUp:
     LogShim.LogEvent "run_end", Array("status"), Array(finalMessage)
     modHelper.CloseRpaStatus frmRPAStatus
     modContext.ResetContext
+    modHelper.ClearStatusBar
     Set m_program = Nothing
     modActions.Action_ShowNotification finalMessage, 1
     On Error GoTo 0
@@ -198,7 +200,7 @@ Private Sub UpdateStatusBarProgress(ByVal curLine As Long, ByVal totalLines As L
     Dim msg As String
     msg = "Line " & curLine & "/" & totalLines
     If ridx > 0 Then msg = msg & " | FOREACH_ROW RIDX " & ridx & "/" & rtotal
-    modContext.LogStatus msg
+    modHelper.SetStatusBar msg
 End Sub
 
 Private Function ForeachResumeHint() As String
@@ -248,7 +250,7 @@ Private Function CheckControlSignals() As eControlSignal
 
         If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then
             modWinAPI.Sleep 200
-            modContext.LogStatus "일시정지를 해제하고 현재 줄에서 재개합니다."
+            modHelper.SetStatusBar "일시정지를 해제하고 현재 줄에서 재개합니다."
             CheckControlSignals = ControlContinue
             Exit Function
         End If

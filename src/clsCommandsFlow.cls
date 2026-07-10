@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 흐름제어 명령어(분기/반복/점프) 19종 디스패치 실행 담당
-' @depends modEngine, modContext, modCmdRegistry, modParse, ICommand
+' @depends modEngine, modContext, modCmdRegistry, modParse, modHelper, ICommand
 Option Explicit
 
 Implements ICommand
@@ -248,7 +248,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             If totalRows < 0 Then totalRows = 0
 
             If tbl.RowCount < tbl.FirstDataRow Then
-                modContext.LogStatus "FOREACH_ROW: 0행"
+                modHelper.SetStatusBar "FOREACH_ROW: 0행"
                 LogShim.LogEvent "foreach.empty", _
                     Array("headerLine", "rtotal"), _
                     Array(R, totalRows)

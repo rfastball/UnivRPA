@@ -1,10 +1,25 @@
 Attribute VB_Name = "modHelper"
-' @desc 폼 컨트롤러(캡처 HUD/상태 폼) 구동 및 화면 배치 담당
+' @desc 폼 컨트롤러(캡처 HUD/상태 폼) 구동 및 상태바/화면 배치 담당
 ' @depends modWinAPI
 Option Explicit
 
 ' 캡처 자동입력 채움색 (RGB 220,255,220 연녹)
 Private Const CLR_CAPTURE_FILL As Long = &HDCFFDC
+
+'==============================================================================
+' StatusBar gate (UI 쓰기의 단일 통로 - 상태 모듈(modContext)은 UI 무접촉)
+'==============================================================================
+
+' @desc 상태바에 RPA 접두 메시지를 표시함
+'   DoEvents 없음 - 메시지 펌핑은 엔진 스로틀 블록/일시정지 루프가 소유
+Public Sub SetStatusBar(ByVal msg As String)
+    Application.StatusBar = "[RPA] " & msg
+End Sub
+
+' @desc 상태바를 엑셀 기본 상태로 복원함
+Public Sub ClearStatusBar()
+    Application.StatusBar = False
+End Sub
 
 '==============================================================================
 ' Form controllers

@@ -1,4 +1,6 @@
 Attribute VB_Name = "modContext"
+' @desc 변수 메모리/콜스택/루프·분기 스택 실행 상태 보관 담당
+' @depends modCmdRegistry, LogShim
 Option Explicit
 
 '==============================================================================
@@ -8,7 +10,7 @@ Option Explicit
 ' 원칙:
 ' 1. 모든 변수는 Private으로 숨기고, 함수(Get/Set)를 통해서만 접근
 ' 2. 스택 오버플로우/언더플로우 방지 로직 포함
-' 3. 로그 및 상태바 업데이트 중앙화
+' 3. UI 무접촉 - 상태바 표시는 modHelper.SetStatusBar 게이트가 소유 (P3)
 '==============================================================================
 
 ' [1] 핵심 저장소
@@ -57,10 +59,7 @@ Public Sub InitContext()
     ' 2. 스택 초기화
     Set CallStack = New Collection
 
-    ' 3. 상태바 초기화
-    Application.StatusBar = "RPA Ready..."
-
-    ' 4. 런타임 스택 초기화
+    ' 3. 런타임 스택 초기화
     LoopReset
     IfBranchReset
     ClearLastError
@@ -72,7 +71,6 @@ Public Sub ResetContext()
     Set Memory = Nothing
     LoopReset
     IfBranchReset
-    Application.StatusBar = False ' 엑셀 기본 상태로 복귀
 End Sub
 
 '==============================================================================
@@ -139,8 +137,8 @@ Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
         expectedLoopDepth = CLng(frame(1))
 
         If LoopDepth() < expectedLoopDepth Then
+            ' 사유는 SetLastError만 - 표면화는 엔진이 1회 조립 (B1)
             SetLastError "RETURN 루프 깊이 불일치: 호출 시점보다 루프 스택이 얕습니다."
-            LogStatus "RETURN 루프 깊이 불일치: 호출 시점보다 루프 스택이 얕습니다."
             PopStack = 0
             Exit Function
         End If
@@ -153,7 +151,6 @@ Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
         PopStack = returnRow
     Else
         SetLastError "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
-        LogStatus "빈 콜스택 RETURN: 복귀할 CALL이 없습니다."
         PopStack = 0
     End If
 End Function
@@ -170,12 +167,8 @@ End Function
 '==============================================================================
 ' 4. Logging & Status (로그 및 알림)
 '==============================================================================
-
-' [상태 표시] 엑셀 하단 상태바에 메시지 표시
-Public Sub LogStatus(ByVal msg As String)
-    Application.StatusBar = "[RPA] " & msg
-    DoEvents
-End Sub
+' [이관됨 - P3] LogStatus(상태바 쓰기 + DoEvents)는 modHelper.SetStatusBar로 이관.
+'   상태 변이 중 메시지 펌핑(DoEvents) 위험 제거 - 펌핑은 엔진 스로틀 블록이 소유.
 
 ' [오류 사유 기록] 핸들러가 CMD_ERROR 반환 직전에 호출. 알림 발화는 RunRPA가 1회 담당
 Public Sub SetLastError(ByVal reason As String)
@@ -353,7 +346,7 @@ Private Sub LogForeachProgress(ByVal eventName As String, ByVal stackIndex As Lo
     Dim totalRows As Long
     totalRows = ForeachTotalRowsAt(stackIndex)
 
-    LogStatus "FOREACH_ROW RIDX " & LoopStack(stackIndex).iteration & "/" & totalRows & " 처리 중"
+    ' 상태바 표시는 엔진 스로틀 블록(UpdateStatusBarProgress)이 이미 그린다 - 여기는 로그만
     LogShim.LogEvent eventName, _
         Array("headerLine", "ridx", "rtotal"), _
         Array(LoopStack(stackIndex).headerLine, LoopStack(stackIndex).iteration, totalRows)
