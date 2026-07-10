@@ -2144,8 +2144,12 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectBool "Program unused warning", True, (InStr(1, program.VariableWarningAt(3), "{unused}", vbTextCompare) > 0), fails
 
     modEngine.LoadProgramFromArray arr, 5
-    ExpectLong "ResolveSelectTarget first match", 12, modEngine.ResolveSelectTarget(10, "A"), fails
-    ExpectLong "ResolveSelectTarget last fallback", 17, modEngine.ResolveSelectTarget(10, "Z"), fails
+    ' [P2] SELECT 해석은 clsCommandsFlow Private으로 이관 - 공개 디스패치 경유로 검증
+    Dim selArgs(1 To 3) As String
+    selArgs(1) = "A"
+    ExpectLong "SELECT dispatch first match", 12, modCmdRegistry.handler(FLOW).Execute("SELECT", 10, selArgs), fails
+    selArgs(1) = "Z"
+    ExpectLong "SELECT dispatch last fallback", 17, modCmdRegistry.handler(FLOW).Execute("SELECT", 10, selArgs), fails
     ExpectLong "CASE execute fallthrough", 18, modEngine.ExecuteSmartAction(11), fails
 
     Dim dupArr(1 To 2, 1 To 5) As Variant

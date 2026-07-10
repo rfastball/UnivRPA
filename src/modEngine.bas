@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modCondition, modParse, LogShim
+' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, LogShim
 Option Explicit
 
 '==============================================================================
@@ -404,166 +404,12 @@ Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As 
     End If
 End Function
 
-' [엔진 서비스] GOTO/CALL 점프 대상 해석 (정적 라벨명만 허용, 숫자/토큰은 거부)
-' @desc 점프 대상 문자열 받아 줄번호 반환, 미해석 라벨 시 CMD_ERROR 반환
-Public Function ResolveJumpTarget(ByVal Target As String) As Long
-    If m_program Is Nothing Then
-        ResolveJumpTarget = CMD_ERROR
-    Else
-        ResolveJumpTarget = m_program.ResolveJumpTarget(Target)
-    End If
-End Function
-
-Public Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As String, ByRef framesPopped As Long) As Long
-    On Error GoTo ErrHandler
-    ResolveGotoTarget = CMD_ERROR
-    framesPopped = 0
-
-    If m_program Is Nothing Then
-        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 실행할 ProgramImage가 없습니다."
-        Exit Function
-    End If
-
-    Dim targetLine As Long
-    targetLine = m_program.ResolveJumpTarget(Target)
-    If targetLine <= 0 Then
-        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 대상 라벨 해석 실패: '" & Target & "' (정적 라벨명만 허용)"
-        Exit Function
-    End If
-
-    If Not m_program.IsGotoAllowed(sourceLine, targetLine) Then
-        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 라인 " & targetLine & "으로의 점프가 흐름 경계(루프/영역)를 침범합니다."
-        Exit Function
-    End If
-
-    Dim popped As Long
-    popped = modContext.ReconcileLoopStackForJump(targetLine, m_program.LoopDepthAt(targetLine))
-    If popped < 0 Then
-        m_lastRuntimeError = "GOTO 라인 " & sourceLine & ": 대상 라인 " & targetLine & "의 루프 깊이와 활성 루프 스택이 불일치합니다."
-        Exit Function
-    End If
-    modContext.ReconcileIfBranchStackForJump targetLine
-
-    framesPopped = popped
-    ResolveGotoTarget = targetLine
-    Exit Function
-
-ErrHandler:
-    m_lastRuntimeError = "GOTO 라인 " & sourceLine & " 해석 오류: " & Err.Description
-    ResolveGotoTarget = CMD_ERROR
-End Function
-
-Public Function ResolveCallTarget(ByVal sourceLine As Long, ByVal Target As String) As Long
-    On Error GoTo ErrHandler
-    If m_program Is Nothing Then
-        m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 실행할 ProgramImage가 없습니다."
-        ResolveCallTarget = CMD_ERROR
-    Else
-        ResolveCallTarget = m_program.ResolveJumpTarget(Target)
-        If ResolveCallTarget <= 0 Then
-            m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 대상 라벨 해석 실패: '" & Target & "' (정적 라벨명만 허용)"
-        ElseIf Not m_program.IsCallAllowed(sourceLine, ResolveCallTarget) Then
-            ' [CALL 경계] 루프 헤더를 거치지 않은 본문 진입은 LoopStack 프레임 부재로
-            '   END_* 백점프/RETURN 깊이 복원이 원인에서 먼 곳에서 깨진다 - 여기서 차단
-            m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 라인 " & ResolveCallTarget & "은 루프 본문 내부라 밖에서 진입할 수 없습니다."
-            ResolveCallTarget = CMD_ERROR
-        End If
-    End If
-    Exit Function
-
-ErrHandler:
-    m_lastRuntimeError = "CALL 라인 " & sourceLine & " 해석 오류: " & Err.Description
-    ResolveCallTarget = CMD_ERROR
-End Function
-
 ' [이관됨 - D4] ResolveParam/ResolveToken 계열 토큰 해석기는 modTokenResolver로 추출됨
 ' [이관됨] ParseLValue는 clsCommandsMemory로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
+' [이관됨 - P2] ResolveGotoTarget/ResolveCallTarget/ResolveSelectTarget/CheckIfSyntax는
+'   clsCommandsFlow로 이관됨 (흐름 정책 일원화). 에러 사유는 modContext.SetLastError 경유,
+'   ExecuteSmartAction 합류점이 LastRuntimeError로 1회 표면화 (B1)
 
-' [호환 엔진 서비스] 블록의 짝 탐색은 ActiveProgram으로 위임
-' StartLine: 탐색 시작 위치 (현재 줄)
-' SearchType: 찾으려는 블록 종류 ("IF"/"WHILE"/"REPEAT"/"SELECT")
-' Direction: 1 (아래로 탐색 - 시작점에서 끝 찾기), -1 (위로 탐색 - 끝점에서 시작 찾기)
-' @desc 시작줄/블록종류/방향 받아 짝 줄번호 반환, 못 찾으면 -1 반환
-Public Function FindBlockPair(ByVal startLine As Long, ByVal SearchType As String, Optional ByVal Direction As Long = 1) As Long
-    If m_program Is Nothing Then
-        FindBlockPair = CMD_ERROR
-    Else
-        FindBlockPair = m_program.FindBlockPair(startLine, SearchType, Direction)
-    End If
-End Function
-
-' [엔진 서비스] IF/WHILE 조건절 판단 (v2: 좌변 P1 | 연산자 P2 | 우변 P3)
-'   v1: 해석된 P1, op: P2(연산자, RAW), v2: 해석된 P3
-' @desc 좌변/연산자/우변 받아 조건 참거짓 반환
-Public Function CheckIfSyntax(ByVal v1 As String, ByVal op As String, ByVal v2 As String) As Boolean
-    On Error GoTo ErrHandler
-    CheckIfSyntax = modCondition.EvaluateCondition(v1, UCase(Trim(op)), v2)
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.CheckIfSyntax", Err.Description
-    Resume CleanUp
-End Function
-
-' [호환 엔진 서비스] ActiveProgram 한 줄의 정규화된 명령어 반환
-' @desc 줄번호 받아 들여쓰기 제거된 대문자 명령어 반환
-Public Function CmdAt(ByVal R As Long) As String
-    If Not m_program Is Nothing Then CmdAt = m_program.CmdAt(R)
-End Function
-
-' [엔진 서비스] SELECT 인덱스 조회 -> 일치 CASE 다음 줄 / 폴백 / END_SELECT 반환
-' @desc 현재 SELECT 줄과 대상값 받아 점프 줄번호 반환, 일치/폴백 없으면 END_SELECT 또는 CMD_ERROR
-Public Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As Long
-    On Error GoTo ErrHandler
-    If m_program Is Nothing Then
-        m_lastRuntimeError = "SELECT 라인 " & R & ": 실행할 ProgramImage가 없습니다."
-        ResolveSelectTarget = CMD_ERROR
-        GoTo CleanUp
-    End If
-
-    Dim block As clsSelectBlock
-    Set block = m_program.SelectBlock(R)
-    If block Is Nothing Then
-        m_lastRuntimeError = "SELECT 라인 " & R & ": SELECT 블록 인덱스를 찾지 못했습니다."
-        ResolveSelectTarget = CMD_ERROR
-        GoTo CleanUp
-    End If
-    If block.EndSelectLine <= 0 Then
-        m_lastRuntimeError = "SELECT 라인 " & R & ": END_SELECT 짝이 없습니다."
-        ResolveSelectTarget = CMD_ERROR
-        GoTo CleanUp
-    End If
-
-    Dim caseVal As String
-    Dim fallbackLine As Long
-    fallbackLine = 0
-
-    Dim i As Long
-    For i = 1 To block.CaseCount
-        Dim caseLine As Long
-        caseLine = block.CaseLineAt(i)
-        caseVal = modTokenResolver.ResolveParam(m_program.InstructionAt(caseLine).p1)
-
-        ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
-        If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then
-            fallbackLine = caseLine
-        ElseIf modCondition.EvaluateCondition(selVal, "EQ", caseVal) Then
-            ResolveSelectTarget = caseLine + 1
-            GoTo CleanUp
-        End If
-    Next i
-
-    If fallbackLine > 0 Then
-        ResolveSelectTarget = fallbackLine + 1
-    Else
-        ResolveSelectTarget = block.EndSelectLine
-    End If
-
-CleanUp:
-    Exit Function
-ErrHandler:
-    Err.Raise Err.Number, "modEngine.ResolveSelectTarget", Err.Description
-    Resume CleanUp
-End Function
+' [삭제됨 - P2] FindBlockPair/CmdAt 호환 래퍼는 호출자 0으로 폐기.
+'   구조 질의는 ActiveProgram() 경유로 clsScriptProgram에 직접 질의한다.
 
