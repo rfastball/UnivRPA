@@ -33,6 +33,12 @@ Private m_loopRanges As Collection
 '   통합 스택 스캔이 채우고 Analysis.ValidateStructure가 차단 오류로 승격한다.
 Private m_blockPairErrors As Object
 
+' [D2] 빌드 완료 플래그: 소스는 로드 후 불변이라 재빌드는 항상 동일 결과.
+'   로드가 만든 인덱스를 검증(ValidateStructure/ValidateLabels)이 재구축하지 않게 한다.
+Private m_structureBuilt As Boolean
+Private m_labelIndexBuilt As Boolean
+Private m_coordinatesBuilt As Boolean
+
 Private Sub Class_Initialize()
     ResetIndexes
 End Sub
@@ -64,6 +70,9 @@ Private Sub ResetIndexes()
     m_callSourceRows.CompareMode = vbTextCompare
     m_labelRoles.CompareMode = vbTextCompare
     m_labelRoleWarnings.CompareMode = vbTextCompare
+    m_structureBuilt = False
+    m_labelIndexBuilt = False
+    m_coordinatesBuilt = False
 End Sub
 
 Public Property Get SelectBlocks() As Object
@@ -136,6 +145,8 @@ ErrHandler:
 End Function
 
 Public Sub BuildStructureIndex()
+    If m_structureBuilt Then Exit Sub
+
     Set m_selectBlocks = CreateObject("Scripting.Dictionary")
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
     Set m_ifEndLines = CreateObject("Scripting.Dictionary")
@@ -146,6 +157,7 @@ Public Sub BuildStructureIndex()
     Next R
     BuildIfEndIndex
     BuildBlockPairIndex
+    m_structureBuilt = True
 End Sub
 
 Public Property Get BlockPairErrors() As Object
@@ -174,16 +186,21 @@ Public Function EndIfOf(ByVal lineNo As Long) As Long
 End Function
 
 Public Sub BuildLabelIndex()
+    If m_labelIndexBuilt Then Exit Sub
     BuildLabelReferenceIndex
+    m_labelIndexBuilt = True
 End Sub
 
 Public Sub BuildStateCoordinates()
+    If m_coordinatesBuilt Then Exit Sub
+
     ReDim m_loopDepths(1 To m_source.totalLines)
     ReDim m_subAreaIds(1 To m_source.totalLines)
     Set m_loopRanges = New Collection
 
     BuildLoopCoordinates
     BuildSubAreaCoordinates
+    m_coordinatesBuilt = True
 End Sub
 
 Public Function LabelRoleAt(ByVal lineNo As Long) As String
@@ -402,21 +419,32 @@ Private Sub BuildLabelRoles()
     Next labelName
 End Sub
 
+' [D2] 단일 패스 스택 스캔: 라인마다 FindBlockPair 재스캔(O(N^2) 잠재)을 제거.
+'   교차 중첩 등 비정합 짝은 BuildBlockPairIndex가 실행 전 차단하므로 여기서는
+'   가장 가까운 STARTER와 짝짓는 것으로 충분하다.
 Private Sub BuildLoopCoordinates()
     Dim depth As Long
     Dim R As Long
+    Dim starterLines() As Long
+    Dim Top As Long
 
     For R = 1 To m_source.totalLines
         Dim cmd As String
         cmd = m_source.CmdAt(R)
 
-        If IsLoopEnder(cmd) Then depth = IIf(depth > 0, depth - 1, 0)
+        If IsLoopEnder(cmd) Then
+            depth = IIf(depth > 0, depth - 1, 0)
+            If Top > 0 Then
+                m_loopRanges.Add Array(starterLines(Top), R)
+                Top = Top - 1
+            End If
+        End If
         m_loopDepths(R) = depth
 
         If IsLoopStarter(cmd) Then
-            Dim endLine As Long
-            endLine = FindBlockPair(R, LoopGroupOf(cmd), 1)
-            If endLine > 0 Then m_loopRanges.Add Array(R, endLine)
+            Top = Top + 1
+            ReDim Preserve starterLines(1 To Top)
+            starterLines(Top) = R
             depth = depth + 1
         End If
     Next R

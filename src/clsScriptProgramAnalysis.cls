@@ -33,6 +33,8 @@ Private m_validationErrors As Collection
 Private m_displayDepths() As Long
 Private m_styleDepths() As Long
 Private m_subDepths() As Long
+' [D2] 정적 분석 빌드 완료 플래그 (소스 불변 - 재빌드 스킵)
+Private m_staticBuilt As Boolean
 
 Private Sub Class_Initialize()
     ResetAnalysis
@@ -45,6 +47,7 @@ Public Sub Init(ByVal Source As clsScriptProgramSource, ByVal index As clsScript
 End Sub
 
 Private Sub ResetAnalysis()
+    m_staticBuilt = False
     Set m_subroutineStartRows = CreateObject("Scripting.Dictionary")
     Set m_subroutineEndRows = CreateObject("Scripting.Dictionary")
     Set m_flowInvalidRows = CreateObject("Scripting.Dictionary")
@@ -61,6 +64,9 @@ Private Sub ResetAnalysis()
 End Sub
 
 Public Sub BuildStaticAnalysis()
+    ' [D2] 소스는 로드 후 불변 - 로드가 만든 분석을 ValidateLabels가 재구축하지 않는다
+    If m_staticBuilt Then Exit Sub
+
     ReDim m_displayDepths(1 To m_source.totalLines)
     ReDim m_styleDepths(1 To m_source.totalLines)
     ReDim m_subDepths(1 To m_source.totalLines)
@@ -82,6 +88,7 @@ Public Sub BuildStaticAnalysis()
     BuildIfStructureAnalysis False
     BuildSubroutineFlowAnalysis
     BuildVariableAnalysis
+    m_staticBuilt = True
 End Sub
 
 Public Function DisplayDepthAt(ByVal lineNo As Long) As Long
