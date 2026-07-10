@@ -110,6 +110,9 @@ Private Function ClampToUsedRange(ByVal rngSource As Range) As Range
     End If
 End Function
 
+' [E] 셀 단위 COM 왕복 축소: 값은 .Value 일괄 스냅샷(1회)에서 읽고, 셀 단위 COM은
+'   표시 텍스트(.Text)와 드문 오버플로 보정(.NumberFormat)만 남긴다. 표시 텍스트가
+'   진실이라는 계약(날짜/서식 열)은 유지 - .Value2 전면 전환은 서식 열 출력이 바뀜.
 Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly As Boolean) As Variant
     Dim result() As Variant
     Dim R As Long, c As Long
@@ -118,25 +121,47 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly
     Dim cell As Range
     Dim textValue As String
 
+    Dim rowCount As Long, colCount As Long
+    rowCount = rngTarget.rows.count
+    colCount = rngTarget.Columns.count
+
+    ' 값 일괄 스냅샷 (.Value는 Date/Currency 타입 보존 - 폴백 포맷 의미 유지)
+    Dim vValues As Variant
+    If rngTarget.Cells.count = 1 Then
+        ReDim vValues(1 To 1, 1 To 1)
+        vValues(1, 1) = rngTarget.value
+    Else
+        vValues = rngTarget.value
+    End If
+
+    ' 포함 행 판정 1회 캐시 (visibleOnly의 Hidden/Height COM 조회가 2패스 중복되지 않게)
+    Dim rowIncluded() As Boolean
+    ReDim rowIncluded(1 To rowCount)
+    rowIncluded(1) = True
     includedRows = 1
-    For R = 2 To rngTarget.rows.count
-        If IsSnapshotRowIncluded(R, rngTarget.rows(R), visibleOnly) Then includedRows = includedRows + 1
+    For R = 2 To rowCount
+        If visibleOnly Then
+            rowIncluded(R) = IsWorksheetRowVisible(rngTarget.rows(R))
+        Else
+            rowIncluded(R) = True
+        End If
+        If rowIncluded(R) Then includedRows = includedRows + 1
     Next R
 
-    ReDim result(1 To includedRows, 1 To rngTarget.Columns.count)
+    ReDim result(1 To includedRows, 1 To colCount)
 
-    For R = 1 To rngTarget.rows.count
-        If Not IsSnapshotRowIncluded(R, rngTarget.rows(R), visibleOnly) Then GoTo NextSourceRow
+    For R = 1 To rowCount
+        If Not rowIncluded(R) Then GoTo NextSourceRow
 
         targetRow = targetRow + 1
-        For c = 1 To rngTarget.Columns.count
-            Set cell = rngTarget.Cells(R, c)
+        For c = 1 To colCount
             If R = 1 Then
-                textValue = HeaderText(cell)
+                textValue = HeaderText(vValues(1, c))
             Else
+                Set cell = rngTarget.Cells(R, c)
                 textValue = cell.text
-                If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(cell)) Then
-                    textValue = modFilterUtils.GetSafeFormattedText(cell.value, cell.NumberFormat)
+                If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(vValues(R, c))) Then
+                    textValue = modFilterUtils.GetSafeFormattedText(vValues(R, c), cell.NumberFormat)
                 End If
             End If
             result(targetRow, c) = textValue
@@ -145,19 +170,6 @@ NextSourceRow:
     Next R
 
     SnapshotVisibleText = result
-End Function
-
-Private Function IsSnapshotRowIncluded(ByVal sourceRowIndex As Long, ByVal rngRow As Range, ByVal visibleOnly As Boolean) As Boolean
-    If sourceRowIndex = 1 Then
-        IsSnapshotRowIncluded = True
-        Exit Function
-    End If
-
-    If Not visibleOnly Then
-        IsSnapshotRowIncluded = True
-    Else
-        IsSnapshotRowIncluded = IsWorksheetRowVisible(rngRow)
-    End If
 End Function
 
 Private Function IsWorksheetRowVisible(ByVal rngRow As Range) As Boolean
@@ -170,14 +182,14 @@ Private Function IsWorksheetRowVisible(ByVal rngRow As Range) As Boolean
 SafeExit:
 End Function
 
-Private Function HeaderText(ByVal cell As Range) As String
-    If IsError(cell.value) Or IsNull(cell.value) Or IsEmpty(cell.value) Then Exit Function
-    HeaderText = CStr(cell.value)
+Private Function HeaderText(ByVal vVal As Variant) As String
+    If IsError(vVal) Or IsNull(vVal) Or IsEmpty(vVal) Then Exit Function
+    HeaderText = CStr(vVal)
 End Function
 
-Private Function CellHasValue(ByVal cell As Range) As Boolean
-    If IsError(cell.value) Or IsNull(cell.value) Or IsEmpty(cell.value) Then Exit Function
-    CellHasValue = (Len(CStr(cell.value)) > 0)
+Private Function CellHasValue(ByVal vVal As Variant) As Boolean
+    If IsError(vVal) Or IsNull(vVal) Or IsEmpty(vVal) Then Exit Function
+    CellHasValue = (Len(CStr(vVal)) > 0)
 End Function
 
 Private Function IsOverflowText(ByVal textValue As String) As Boolean

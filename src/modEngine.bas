@@ -19,6 +19,9 @@ Private m_lastRuntimeError As String
 ' [상수] 디스패치 반환 코드는 modCmdRegistry에 공개 정의 (CMD_NEXT_LINE / CMD_ERROR).
 '   CMD_NOT_HANDLED 폴백은 레지스트리 도입으로 폐기됨.
 
+' [E] RunRPA UI 갱신(폼/상태바/DoEvents) 최소 간격 ms
+Private Const UI_THROTTLE_MS As Long = 100
+
 '==============================================================================
 ' 1. Main Entry Point (RunRPA)
 '==============================================================================
@@ -82,6 +85,9 @@ Sub RunRPA()
     modContext.LogStatus "매크로 실행 중..."
     currentLine = 1
 
+    ' [E] UI 갱신 스로틀 기준 시각 (0이면 첫 줄에서 즉시 갱신)
+    Dim lastUiTick As Long
+
     Do While currentLine >= 1 And currentLine <= totalLines
         If CheckControlSignals() = ControlAbort Then
             finalMessage = "매크로가 중단되었습니다."
@@ -97,18 +103,24 @@ Sub RunRPA()
         Set inst = m_program.InstructionAt(currentLine)
         pureCmd = inst.cmd
 
-        ' [UI] 표시할 상세 정보 조합 (명령어 + 파라미터)
-        Dim stepInfo As String
-        stepInfo = inst.cmd & " " & inst.p1 & " " & inst.p2 & " " & inst.p3
+        ' [UI - E 스로틀] 폼/상태바/DoEvents는 100ms당 1회로 제한.
+        '   SET/IF 위주 데이터 루프에서 매 줄 UI 갱신이 지배 비용이 되는 것을 방지.
+        '   ESC/Pause 감지는 CheckControlSignals가 매 줄 GetAsyncKeyState로 수행하므로
+        '   DoEvents 펌핑과 무관하다 (B2 래치).
+        If modWinAPI.GetTickCount() - lastUiTick >= UI_THROTTLE_MS Then
+            lastUiTick = modWinAPI.GetTickCount()
 
-        ' [UI] 폼 업데이트
-        Dim activeRidx As Long
-        Dim activeRtotal As Long
-        activeRidx = modContext.GetActiveForeachOrdinal()
-        activeRtotal = modContext.GetActiveForeachTotalRows()
-        modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
-        UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
-        DoEvents
+            Dim stepInfo As String
+            stepInfo = inst.cmd & " " & inst.p1 & " " & inst.p2 & " " & inst.p3
+
+            Dim activeRidx As Long
+            Dim activeRtotal As Long
+            activeRidx = modContext.GetActiveForeachOrdinal()
+            activeRtotal = modContext.GetActiveForeachTotalRows()
+            modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
+            UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
+            DoEvents
+        End If
 
         '----------------------------------------------------------
         ' [액션 실행 및 반환 계약 해석]
@@ -155,8 +167,7 @@ Sub RunRPA()
                 modActions.Action_ShowNotification "[에러] 알 수 없는 반환 코드: " & nextLine, 3
                 GoTo CleanUp
         End Select
-
-        DoEvents
+        ' [E] 루프 말미 DoEvents는 위 스로틀 블록으로 통합됨 (매 줄 2회 펌핑 제거)
     Loop
 
 CleanUp:
