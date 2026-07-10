@@ -308,7 +308,7 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
     End If
 
     ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
-    '    RAW = lvalue 주소(SET/INC/DEC P1) · 연산자(IF/WHILE P2). 그 외 = RESOLVE.
+    '    RAW 슬롯 4종은 레지스트리가 RawKind로 선언 (연산자/lvalue/점프대상/라벨명)
     Dim args(1 To 3) As String
     args(1) = DecodeSlot(inst.def.p1, inst.p1)
     args(2) = DecodeSlot(inst.def.p2, inst.p2)

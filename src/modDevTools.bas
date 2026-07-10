@@ -256,29 +256,29 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
 
     If Len(text) = 0 Then Exit Function
 
-    If IsJumpTargetSlot(def, idx) Then
-        If modParse.TryParseDoubleStrict(text, numProbe) Or ContainsTokenSyntax(text) Then
-            SetValidationError def.Canonical & " target must be a static LABEL."
-            ValidateParamSlot = False
-        End If
-    End If
-
-    If spec.IsRaw Then
-        If IsConditionOperatorSlot(def, idx) Then
+    ' [C2] RAW 슬롯 시맨틱은 레지스트리(ParamSpec.RawKind)가 선언 - 명령어명 하드코딩 금지
+    Select Case spec.RawKind
+        Case RK_JUMP_TARGET
+            If modParse.TryParseDoubleStrict(text, numProbe) Or ContainsTokenSyntax(text) Then
+                SetValidationError def.Canonical & " target must be a static LABEL."
+                ValidateParamSlot = False
+            End If
+        Case RK_CONDITION
             If Not modCondition.IsConditionOperator(text) Then
                 SetValidationError "Invalid condition operator: " & text
                 ValidateParamSlot = False
             End If
-        ElseIf IsMemoryLValueSlot(def, idx) Then
+        Case RK_LVALUE
             If Not IsWritableLValue(text) Then
                 SetValidationError "Invalid writable target: " & text
                 ValidateParamSlot = False
             End If
-        ElseIf ContainsTokenSyntax(text) Then
-            SetValidationError def.Canonical & " P" & idx & " must be raw text, not a token."
-            ValidateParamSlot = False
-        End If
-    End If
+        Case RK_TEXT
+            If ContainsTokenSyntax(text) Then
+                SetValidationError def.Canonical & " P" & idx & " must be raw text, not a token."
+                ValidateParamSlot = False
+            End If
+    End Select
 
     If spec.DataType = DT_NUM Then
         If Not ContainsTokenSyntax(text) Then
@@ -326,18 +326,6 @@ End Function
 
 Private Function ContainsTokenSyntax(ByVal text As String) As Boolean
     ContainsTokenSyntax = (InStr(1, text, "{", vbTextCompare) > 0 Or InStr(1, text, "}", vbTextCompare) > 0)
-End Function
-
-Private Function IsConditionOperatorSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
-    IsConditionOperatorSlot = ((def.Canonical = "IF" Or def.Canonical = "ELSE_IF" Or def.Canonical = "WHILE") And idx = 2)
-End Function
-
-Private Function IsMemoryLValueSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
-    IsMemoryLValueSlot = ((def.Canonical = "SET" Or def.Canonical = "INC" Or def.Canonical = "DEC") And idx = 1)
-End Function
-
-Private Function IsJumpTargetSlot(ByVal def As CmdDef, ByVal idx As Long) As Boolean
-    IsJumpTargetSlot = ((def.Canonical = "GOTO" Or def.Canonical = "CALL") And idx = 3)
 End Function
 
 Private Function IsWritableLValue(ByVal rawP1 As String) As Boolean

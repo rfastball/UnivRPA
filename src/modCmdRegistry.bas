@@ -49,6 +49,16 @@ Public Enum eDataType
     DT_NUM = 1
 End Enum
 
+' [RAW 슬롯 시맨틱] 같은 RAW라도 검증 로직이 다르다 - 어떤 종류인지 레지스트리가 선언 (C2).
+'   소비처(modDevTools 포맷터, Analysis 점프 검증)는 명령어명 하드코딩 대신 이 태그를 질의한다.
+Public Enum eRawKind
+    RK_NONE = 0         ' RESOLVE 슬롯 (시맨틱 태그 없음)
+    RK_TEXT = 1         ' 일반 RAW 텍스트 (LABEL명 등 - 토큰만 거부)
+    RK_CONDITION = 2    ' 조건 연산자 (modCondition이 합법성 소유)
+    RK_LVALUE = 3       ' 쓰기 주소 (lvalue 합법성 검증)
+    RK_JUMP_TARGET = 4  ' 점프 대상 (정적 라벨 계약: 숫자/토큰 거부)
+End Enum
+
 ' [디스패치 반환 코드] 모든 모듈/핸들러 클래스가 공유 (CMD_NOT_HANDLED는 폐기됨)
 Public Const CMD_NEXT_LINE As Long = 0   ' 성공 -> 다음 줄
 Public Const CMD_ERROR As Long = -1      ' 실패 -> 중단
@@ -156,29 +166,32 @@ Private Sub Reg(ByVal canon As String, ByVal cat As eCategory, ByVal role As eBl
 End Sub
 
 ' [P] New ParamSpec + Init 후 반환 (decode 슬롯 정의)
+'   kind 생략 시 RAW 슬롯은 RK_TEXT, RESOLVE 슬롯은 RK_NONE (Init이 불변식 강제)
 Private Function P(ByVal Meaning As String, ByVal dtype As eDataType, _
-                   ByVal rmode As eResolveMode, ByVal Required As Boolean) As ParamSpec
+                   ByVal rmode As eResolveMode, ByVal Required As Boolean, _
+                   Optional ByVal kind As eRawKind = RK_NONE) As ParamSpec
     Dim s As ParamSpec
     Set s = New ParamSpec
-    Set P = s.Init(Meaning, dtype, rmode, Required)
+    Set P = s.Init(Meaning, dtype, rmode, Required, kind)
 End Function
 
 '==============================================================================
 ' 3. 레지스트리 적재 (현행 30개 + INC/DEC/MOVE + FOREACH_ROW + ELSE_IF = 36개)
 '   초기값: 설계문서 부록 A / A.1 / A.3
-'   RAW 슬롯은 둘뿐: lvalue(SET/INC/DEC P1), 연산자(IF/ELSE_IF/WHILE P2). 그 외 RESOLVE.
+'   RAW 슬롯 4종 (RawKind로 선언): 연산자(IF/ELSE_IF/WHILE P2), lvalue(SET/INC/DEC P1),
+'   점프대상(GOTO/CALL P3), 일반 텍스트(LABEL P3). 그 외 RESOLVE.
 '==============================================================================
 Private Sub BuildRegistry()
 
     '--- [FLOW] 19개 ------------------------------------------------------------
     Reg "IF", FLOW, STARTER, "IF", clrFLOW, FULLROW, _
-        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True, RK_CONDITION), P("우변", DT_STR, RESOLVE, True)
     Reg "ELSE_IF", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW, _
-        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True, RK_CONDITION), P("우변", DT_STR, RESOLVE, True)
     Reg "ELSE", FLOW, MIDBLOCK, "IF", clrFLOW, FULLROW
     Reg "END_IF", FLOW, ENDER, "IF", clrFLOW, FULLROW
     Reg "WHILE", FLOW, STARTER, "WHILE", clrFLOW, FULLROW, _
-        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True), P("우변", DT_STR, RESOLVE, True)
+        P("좌변", DT_STR, RESOLVE, True), P("연산자", DT_STR, raw, True, RK_CONDITION), P("우변", DT_STR, RESOLVE, True)
     Reg "END_WHILE", FLOW, ENDER, "WHILE", clrFLOW, FULLROW
     Reg "REPEAT", FLOW, STARTER, "REPEAT", clrFLOW, FULLROW, _
         P("반복횟수(0/빈값=무한)", DT_NUM, RESOLVE, False)
@@ -196,9 +209,9 @@ Private Sub BuildRegistry()
     ' GOTO/CALL 대상은 정적 라벨만 허용(숫자/토큰 거부) - P3를 raw로 고정해
     '   정적 검증(정적 라벨 계약)과 런타임 디코딩을 일치시킨다
     Reg "GOTO", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨", DT_STR, raw, True)
+        sp3:=P("라벨", DT_STR, raw, True, RK_JUMP_TARGET)
     Reg "CALL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
-        sp3:=P("라벨", DT_STR, raw, True)
+        sp3:=P("라벨", DT_STR, raw, True, RK_JUMP_TARGET)
     Reg "RETURN", FLOW, NOBLOCK, "", clrFLOW, FULLROW
     Reg "LABEL", FLOW, NOBLOCK, "", clrFLOW, FULLROW, _
         sp3:=P("라벨명", DT_STR, raw, True)
@@ -220,11 +233,11 @@ Private Sub BuildRegistry()
     '--- [MEMORY] lvalue-writer 3개 (SET 현행 + INC/DEC 신규) --------------------
     '   P1은 RAW(좌변=주소). ColorGroup은 현행 SET을 따라 clrACTION(연청).
     Reg "SET", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, raw, True), Nothing, P("값", DT_STR, RESOLVE, True)
+        P("좌변/주소", DT_STR, raw, True, RK_LVALUE), Nothing, P("값", DT_STR, RESOLVE, True)
     Reg "INC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, raw, True), Nothing, P("증분(기본1)", DT_NUM, RESOLVE, False)
+        P("좌변/주소", DT_STR, raw, True, RK_LVALUE), Nothing, P("증분(기본1)", DT_NUM, RESOLVE, False)
     Reg "DEC", Memory, NOBLOCK, "", clrACTION, cmdCell, _
-        P("좌변/주소", DT_STR, raw, True), Nothing, P("감분(기본1)", DT_NUM, RESOLVE, False)
+        P("좌변/주소", DT_STR, raw, True, RK_LVALUE), Nothing, P("감분(기본1)", DT_NUM, RESOLVE, False)
 
     '--- [SYSTEM] 4개 (FOCUS/SLEEP는 clrACTION, NOTIFY/EXIT는 clrSYSTEM) ---------
     Reg "FOCUS", SYSTEM, NOBLOCK, "", clrACTION, cmdCell, _

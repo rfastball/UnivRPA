@@ -27,7 +27,8 @@ Excel 시트를 IDE처럼 쓰는 저코드 RPA 프레임워크. 스크립트는 
 3. 줄 루프: `ExecuteSmartAction(줄번호)` →
    - `modCmdRegistry.GetCmdDef` 로 명령어 정규화·조회 (미등록이면 CMD_ERROR)
    - decode: `ParamSpec.ResolveMode` 에 따라 슬롯별 RAW(원본 유지) / RESOLVE(토큰 치환)
-     - RAW 슬롯은 단 둘: lvalue 주소(SET/INC/DEC P1), 조건 연산자(IF/ELSE_IF/WHILE P2)
+     - RAW 슬롯 4종은 레지스트리가 ParamSpec.RawKind로 선언: 조건 연산자(IF/ELSE_IF/WHILE P2),
+       lvalue 주소(SET/INC/DEC P1), 점프대상(GOTO/CALL P3), 일반 텍스트(LABEL P3)
    - 2단 디스패치: Category → `ICommand` 핸들러 클래스 → 클래스 내부 명령어 분기
 4. 핸들러 반환값이 다음 줄번호: `CMD_NEXT_LINE`(0)=다음 줄, 양수=점프,
    `CMD_ERROR`(-1)=중단, `CMD_HALT`(-2)=의도된 종료

@@ -625,6 +625,9 @@ Public Function TC_RegistryDispatchSync() As Long
     Dim i As Long, fails As Long
     Dim cmd As String, def As CmdDef, h As ICommand
 
+    ' [C2] RawKind 시맨틱 태그의 전수 동기 검증용 집계
+    Dim conditionSlots As String, lvalueSlots As String, jumpSlots As String
+
     For i = LBound(cmds) To UBound(cmds)
         cmd = CStr(cmds(i))
         Set def = modCmdRegistry.GetCmdDef(cmd)
@@ -637,8 +640,31 @@ Public Function TC_RegistryDispatchSync() As Long
                 Debug.Print "[FAIL] 핸들러 없음 (category=" & def.Category & "): " & cmd
                 fails = fails + 1
             End If
+
+            ' [C2] 불변식: RawKind <> RK_NONE 인 슬롯 == IsRaw 슬롯 (전수)
+            Dim slotIdx As Long
+            For slotIdx = 1 To 3
+                Dim spec As ParamSpec
+                Set spec = def.Param(slotIdx)
+                If Not spec Is Nothing Then
+                    If (spec.RawKind <> RK_NONE) <> spec.IsRaw Then
+                        Debug.Print "[FAIL] RawKind-IsRaw 불일치: " & cmd & " P" & slotIdx
+                        fails = fails + 1
+                    End If
+                    Select Case spec.RawKind
+                        Case RK_CONDITION: conditionSlots = conditionSlots & cmd & ".P" & slotIdx & ";"
+                        Case RK_LVALUE: lvalueSlots = lvalueSlots & cmd & ".P" & slotIdx & ";"
+                        Case RK_JUMP_TARGET: jumpSlots = jumpSlots & cmd & ".P" & slotIdx & ";"
+                    End Select
+                End If
+            Next slotIdx
         End If
     Next i
+
+    ' [C2] 알려진 시맨틱 슬롯 집합 카나리 (Reg 수정 실수 방지. AllCommands는 등록 순서 보존)
+    ExpectText "RawKind condition slots", "IF.P2;ELSE_IF.P2;WHILE.P2;", conditionSlots, fails
+    ExpectText "RawKind lvalue slots", "SET.P1;INC.P1;DEC.P1;", lvalueSlots, fails
+    ExpectText "RawKind jump slots", "GOTO.P3;CALL.P3;", jumpSlots, fails
 
     Debug.Print "[역검증] 총 " & (UBound(cmds) - LBound(cmds) + 1) & "개 명령어 라우팅 확인, 실패 " & fails
     TC_RegistryDispatchSync = fails

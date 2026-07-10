@@ -463,7 +463,13 @@ Private Sub ValidateJumpTargets()
     For R = 1 To m_source.totalLines
         Dim cmd As String
         cmd = m_source.CmdAt(R)
-        If cmd <> "GOTO" And cmd <> "CALL" Then GoTo NextRow
+
+        ' [C2] 점프 명령 판별은 레지스트리 RawKind 태그 질의 (GOTO/CALL 이름 하드코딩 제거)
+        Dim jumpDef As CmdDef
+        Set jumpDef = modCmdRegistry.GetCmdDef(cmd)
+        If jumpDef Is Nothing Then GoTo NextRow
+        If jumpDef.p3 Is Nothing Then GoTo NextRow
+        If jumpDef.p3.RawKind <> RK_JUMP_TARGET Then GoTo NextRow
 
         Dim rawTarget As String
         rawTarget = Trim$(m_source.P3At(R))
