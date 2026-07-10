@@ -62,9 +62,9 @@
 
 ---
 
-## B. 신호 전파: 오류와 취소
+## B. 신호 전파: 오류와 취소 [완료]
 
-### B1. CMD_ERROR에 사유 채널 부여
+### B1. CMD_ERROR에 사유 채널 부여 [완료 2026-07-10]
 
 - 문제: CMD_ERROR(-1)는 사유를 나르지 못한다.
   - `m_lastRuntimeError`는 엔진 경로만 설정
@@ -75,7 +75,7 @@
 - 조치: 핸들러 실패 시 사유 기록 단일 함수(예: `modContext.SetLastError`)를
   계약에 추가하고 RunRPA가 알림/로그에 합류. vbaflow test 실패 판독 품질도 상승.
 
-### B2. 취소 신호의 중앙화
+### B2. 취소 신호의 중앙화 [완료 2026-07-08]
 
 - 문제:
   - ESC 폴링이 6곳 이상 분산 복제 (`BetterWait`, `WaitIfPaused`,
@@ -101,7 +101,7 @@
 - 조치: 디코드 게이트에서 Required/DT_NUM 검사 후 균일한 에러
   ("라인 X: P1(x)은 숫자여야 합니다") 반환. 핸들러별 방어 코드 제거 가능.
 
-### C2. modDevTools의 시맨틱 하드코딩 회수
+### C2. modDevTools의 시맨틱 하드코딩 회수 [완료 2026-07-10]
 
 - 문제: `modDevTools.bas:328-338`의 `IsConditionOperatorSlot` /
   `IsMemoryLValueSlot` / `IsJumpTargetSlot`이 IF·WHILE P2, SET·INC·DEC P1,
@@ -111,7 +111,7 @@
 - 비고: Test_RegistryDispatchSync는 레지스트리-핸들러만 역검증하며
   레지스트리-DevTools 정합은 아무도 검증하지 않는다.
 
-### C3. 정적 검증 공백 메우기
+### C3. 정적 검증 공백 메우기 [완료 2026-07-10]
 
 - 문제 (clsScriptProgramAnalysis):
   - ValidateStructure는 IF 계열과 SELECT 짝만 검증.
@@ -208,6 +208,24 @@
 
 주의: 기존 시트 스크립트 중 "빈 필수 슬롯/비숫자 좌표인데 우연히 동작하던" 줄은
 이제 실행 시점에 명시적 에러가 된다 (의도된 강화).
+
+## B1/C3/C2 적용 결과 (2026-07-10)
+
+- **B1 완결** (c47d104): modContext.SetLastError/LastError 사유 채널 도입.
+  ExecuteSmartAction이 CMD_ERROR 합류 시 채택, 핸들러 5클래스의 조용한 -1과
+  ErrHandler 알림 발화를 전부 사유 기록으로 교체 (이중 알림 종결).
+  modEngine 헬퍼(ResolveGoto/Call/SelectTarget)와 PopStack도 사유 부여
+- **C3 완결** (1f70dc1): Index.BuildBlockPairIndex 통합 스택 스캔으로 루프 짝
+  불균형(고아 ENDER/미폐쇄 STARTER/그룹 교차)과 고아 CASE/END_SELECT를
+  ValidateStructure에서 차단. CALL 루프 경계는 IsCallAllowed로 정적+런타임
+  양쪽 차단 (상세: 2026-07-10_call_boundary_validation_gap.md)
+- **C2 완결** (3d69164): ParamSpec.RawKind 시맨틱 태그 도입으로 modDevTools
+  하드코딩 3함수 삭제, Analysis 점프 필터도 태그 질의로 교체.
+  TC_RegistryDispatchSync가 레지스트리-소비처 정합을 전수 감시 (비고의
+  "아무도 검증하지 않는다" 해소)
+
+각 단계 vbaflow test 19/19 green 후 커밋. 남은 티어는 D(구조 정리 잔여)와
+E(성능, 실측 후 판단).
 
 ### vbaflow에 전달할 파일럿 피드백 (_VbaFlow 백로그 후보)
 
