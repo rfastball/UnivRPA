@@ -449,6 +449,11 @@ Public Function ResolveCallTarget(ByVal sourceLine As Long, ByVal Target As Stri
         ResolveCallTarget = m_program.ResolveJumpTarget(Target)
         If ResolveCallTarget <= 0 Then
             m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 대상 라벨 해석 실패: '" & Target & "' (정적 라벨명만 허용)"
+        ElseIf Not m_program.IsCallAllowed(sourceLine, ResolveCallTarget) Then
+            ' [CALL 경계] 루프 헤더를 거치지 않은 본문 진입은 LoopStack 프레임 부재로
+            '   END_* 백점프/RETURN 깊이 복원이 원인에서 먼 곳에서 깨진다 - 여기서 차단
+            m_lastRuntimeError = "CALL 라인 " & sourceLine & ": 라인 " & ResolveCallTarget & "은 루프 본문 내부라 밖에서 진입할 수 없습니다."
+            ResolveCallTarget = CMD_ERROR
         End If
     End If
     Exit Function

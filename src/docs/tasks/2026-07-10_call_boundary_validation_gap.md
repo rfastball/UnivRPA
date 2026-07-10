@@ -1,8 +1,19 @@
-# CALL 흐름 경계 검사 누락 (2026-07-10)
+# CALL 흐름 경계 검사 누락 (2026-07-10) [해결 2026-07-10]
 
 2026-07-10 core 엔진 워크플로 코드리뷰에서 발견, 수동 재검증으로 CONFIRMED 확정.
 당시 리뷰 10건 중 유일한 신규 correctness 버그. 코드 수정 없이 백로그로만 기록한다
 (수정 여부/방식은 설계 검토 후 결정).
+
+## 해결 (2026-07-10, C3 패스와 함께 적용)
+
+설계 검토 결과 조치안의 분리 정의 방향을 채택: CALL 전용 규칙 `IsCallAllowed`는
+sub-area 교차를 허용하고(존재 이유) 루프 본문 중간 진입만 금지한다
+(`IsLoopTransferAllowed`만 적용, `IsGotoAllowed`의 동일 영역 강제는 미적용).
+
+- 정적: `ValidateJumpTargets`의 CALL 분기에 `IsCallAllowed` 검사 (실행 전 차단)
+- 런타임: `ResolveCallTarget`이 동일 검사 + B1 사유 채널로 원인 지점에서 즉시 보고
+- 회귀 가드: TC_ScriptProgramModel(정적 차단/sub-area 교차 허용),
+  TC_FlowNegativePaths(런타임 차단 - CALL 지점 즉시, 본문 진입 없음)
 
 ## 문제
 

@@ -1434,6 +1434,31 @@ Private Function TC_FlowNegativePaths() As Long
     result = RunProgram(arr19, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
 
+    ' [CALL 경계] 루프 본문 내부 LABEL을 밖에서 CALL -> 런타임 차단 (2026-07-10 버그)
+    ' (구현 전에는 END_WHILE 무조건 백점프로 원인에서 먼 곳에서 터지거나 무한루프)
+    Dim arr20(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(arr20, 1, "CALL", 0, 0, "INSIDE")
+    Call MakeCmd(arr20, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(arr20, 3, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(arr20, 4, "LABEL", 0, 0, "INSIDE")
+    Call MakeCmd(arr20, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(arr20, 6, "END_WHILE", 0, 0, "")
+    result = RunProgram(arr20, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectVisits trace, 1, 1, fails   ' CALL 지점에서 즉시 차단 (본문 진입 없음)
+    ExpectBool "CALL loop-entry reason", True, (InStr(1, modEngine.LastRuntimeError(), "루프 본문", vbTextCompare) > 0), fails
+
+    ' CALL의 sub-area 교차는 런타임에서도 허용 유지 (루프 안 -> 밖 서브루틴)
+    Dim arr21(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(arr21, 1, "REPEAT", "1", 0, "")
+    Call MakeCmd(arr21, 2, "CALL", 0, 0, "SUB")
+    Call MakeCmd(arr21, 3, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr21, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(arr21, 5, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(arr21, 6, "RETURN", 0, 0, "")
+    result = RunProgram(arr21, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+
     TC_FlowNegativePaths = fails
 End Function
 
@@ -2218,6 +2243,74 @@ Private Function TC_ScriptProgramModel() As Long
     Set program = New clsScriptProgram
     program.LoadFromArray orphanReturnArr, 1
     ExpectBool "Orphan RETURN blocks", False, program.ValidateLabels(), fails
+
+    ' [C3] 루프 짝 불균형이 실행 전 검증(ValidateStructure)에서 차단되는지
+    ' 고아 END_WHILE
+    Dim orphanEnderArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(orphanEnderArr, 1, "END_WHILE", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray orphanEnderArr, 1
+    ExpectBool "Orphan END_WHILE blocks", False, program.ValidateStructure(), fails
+
+    ' 닫히지 않은 REPEAT
+    Dim unclosedLoopArr(1 To 2, 1 To 5) As Variant
+    Call MakeCmd(unclosedLoopArr, 1, "REPEAT", "2", 0, "")
+    Call MakeCmd(unclosedLoopArr, 2, "TYPE", 0, 0, "body")
+    Set program = New clsScriptProgram
+    program.LoadFromArray unclosedLoopArr, 1
+    ExpectBool "Unclosed REPEAT blocks", False, program.ValidateStructure(), fails
+
+    ' 루프 교차 중첩 (WHILE을 END_REPEAT가 먼저 닫음)
+    Dim crossLoopArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(crossLoopArr, 1, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(crossLoopArr, 2, "REPEAT", "2", 0, "")
+    Call MakeCmd(crossLoopArr, 3, "END_WHILE", 0, 0, "")
+    Call MakeCmd(crossLoopArr, 4, "END_REPEAT", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray crossLoopArr, 1
+    ExpectBool "Cross-nested loops block", False, program.ValidateStructure(), fails
+
+    ' 고아 CASE (감싸는 SELECT 없음)
+    Dim orphanCaseArr(1 To 1, 1 To 5) As Variant
+    Call MakeCmd(orphanCaseArr, 1, "CASE", "A", 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray orphanCaseArr, 1
+    ExpectBool "Orphan CASE blocks", False, program.ValidateStructure(), fails
+
+    ' 정상 중첩 루프는 통과 (회귀 가드)
+    Dim nestedLoopArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(nestedLoopArr, 1, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(nestedLoopArr, 2, "REPEAT", "2", 0, "")
+    Call MakeCmd(nestedLoopArr, 3, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(nestedLoopArr, 4, "END_WHILE", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray nestedLoopArr, 1
+    ExpectBool "Nested loops pass", True, program.ValidateStructure(), fails
+
+    ' [CALL 경계] 루프 본문 내부 LABEL을 밖에서 CALL -> 실행 전 차단 (2026-07-10 버그)
+    Dim callIntoLoopArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(callIntoLoopArr, 1, "CALL", 0, 0, "INSIDE")
+    Call MakeCmd(callIntoLoopArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(callIntoLoopArr, 3, "WHILE", "1", "EQ", "1")
+    Call MakeCmd(callIntoLoopArr, 4, "LABEL", 0, 0, "INSIDE")
+    Call MakeCmd(callIntoLoopArr, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(callIntoLoopArr, 6, "END_WHILE", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray callIntoLoopArr, 1
+    ExpectBool "CALL into loop body blocks", False, program.ValidateLabels(), fails
+    ExpectBool "CALL into loop body message", True, (InStr(1, program.ValidationErrors(), "enters a loop body", vbTextCompare) > 0), fails
+
+    ' CALL의 sub-area 교차는 허용 유지 (루프 안 -> 밖 서브루틴, 회귀 가드)
+    Dim callAcrossAreaArr(1 To 6, 1 To 5) As Variant
+    Call MakeCmd(callAcrossAreaArr, 1, "REPEAT", "1", 0, "")
+    Call MakeCmd(callAcrossAreaArr, 2, "CALL", 0, 0, "SUB")
+    Call MakeCmd(callAcrossAreaArr, 3, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(callAcrossAreaArr, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(callAcrossAreaArr, 5, "LABEL", 0, 0, "SUB")
+    Call MakeCmd(callAcrossAreaArr, 6, "RETURN", 0, 0, "")
+    Set program = New clsScriptProgram
+    program.LoadFromArray callAcrossAreaArr, 1
+    ExpectBool "CALL across sub-area passes", True, program.ValidateLabels(), fails
 
     TC_ScriptProgramModel = fails
 End Function

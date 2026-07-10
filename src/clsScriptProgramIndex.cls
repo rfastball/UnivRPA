@@ -33,6 +33,9 @@ Private m_labelRoleWarnings As Object
 Private m_loopDepths() As Long
 Private m_subAreaIds() As Long
 Private m_loopRanges As Collection
+' [C3] 루프 짝/고아 CASE 구조 오류 (라인 -> 메시지). BuildStructureIndex의
+'   통합 스택 스캔이 채우고 Analysis.ValidateStructure가 차단 오류로 승격한다.
+Private m_blockPairErrors As Object
 
 Private Sub Class_Initialize()
     ResetIndexes
@@ -56,6 +59,7 @@ Private Sub ResetIndexes()
     Set m_labelRoles = CreateObject("Scripting.Dictionary")
     Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
     Set m_loopRanges = New Collection
+    Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
     m_labels.CompareMode = vbTextCompare
     m_labelRows.CompareMode = vbTextCompare
     m_duplicateLabels.CompareMode = vbTextCompare
@@ -145,7 +149,12 @@ Public Sub BuildStructureIndex()
         If m_source.CmdAt(R) = "SELECT" Then BuildSelectBlock R
     Next R
     BuildIfEndIndex
+    BuildBlockPairIndex
 End Sub
+
+Public Property Get BlockPairErrors() As Object
+    Set BlockPairErrors = m_blockPairErrors
+End Property
 
 Public Function SelectBlock(ByVal SelectLine As Long) As clsSelectBlock
     If m_selectBlocks.exists(CStr(SelectLine)) Then Set SelectBlock = m_selectBlocks(CStr(SelectLine))
@@ -256,6 +265,16 @@ Public Function IsGotoAllowed(ByVal sourceLine As Long, ByVal targetLine As Long
 
     If SubAreaIdAt(sourceLine) <> SubAreaIdAt(targetLine) Then Exit Function
     IsGotoAllowed = IsLoopTransferAllowed(sourceLine, targetLine)
+End Function
+
+' [CALL 경계] CALL의 존재 이유가 다른 sub-area의 서브루틴 호출이므로 IsGotoAllowed의
+'   동일 영역 강제는 적용하지 않는다. 루프 본문 중간 진입만 금지 - 헤더를 거치지 않은
+'   진입은 LoopStack 프레임 부재로 END_* 백점프/RETURN 깊이 복원이 깨진다.
+Public Function IsCallAllowed(ByVal sourceLine As Long, ByVal targetLine As Long) As Boolean
+    m_source.ValidateLineRange sourceLine
+    m_source.ValidateLineRange targetLine
+
+    IsCallAllowed = IsLoopTransferAllowed(sourceLine, targetLine)
 End Function
 
 Public Function HasDuplicateLabels() As Boolean
@@ -538,6 +557,79 @@ NextRow:
         Next i
     End If
 End Sub
+
+' [C3] 루프 3그룹(WHILE/REPEAT/FOREACH) 통합 스택 스캔 + SELECT 깊이 추적.
+'   고아 ENDER / 미폐쇄 STARTER / 루프 그룹 교차 / 고아 CASE·END_SELECT를 기록한다.
+'   IF 짝은 BuildIfStructureAnalysis, SELECT 미폐쇄는 SelectBlocks 검증이 담당하므로 제외.
+Private Sub BuildBlockPairIndex()
+    Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
+
+    Dim stackGroups() As String
+    Dim stackLines() As Long
+    Dim Top As Long
+    Dim selectDepth As Long
+
+    Dim R As Long
+    For R = 1 To m_source.totalLines
+        If m_source.IsSkippable(R) Then GoTo NextRow
+
+        Dim cmd As String
+        cmd = m_source.CmdAt(R)
+
+        If cmd = "SELECT" Then
+            selectDepth = selectDepth + 1
+        ElseIf cmd = "CASE" Then
+            If selectDepth = 0 Then AddBlockPairError R, "CASE line " & R & " has no enclosing SELECT."
+        ElseIf cmd = "END_SELECT" Then
+            If selectDepth = 0 Then
+                AddBlockPairError R, "END_SELECT line " & R & " has no matching SELECT."
+            Else
+                selectDepth = selectDepth - 1
+            End If
+        ElseIf IsLoopStarter(cmd) Then
+            Top = Top + 1
+            ReDim Preserve stackGroups(1 To Top)
+            ReDim Preserve stackLines(1 To Top)
+            stackGroups(Top) = LoopGroupOf(cmd)
+            stackLines(Top) = R
+        ElseIf IsLoopEnder(cmd) Then
+            If Top = 0 Then
+                AddBlockPairError R, cmd & " line " & R & " has no matching loop starter."
+            Else
+                If stackGroups(Top) <> LoopEnderGroupOf(cmd) Then
+                    AddBlockPairError R, cmd & " line " & R & " crosses loop nesting: innermost open loop is " _
+                        & stackGroups(Top) & " (line " & stackLines(Top) & ")."
+                End If
+                Top = Top - 1
+            End If
+        End If
+
+NextRow:
+    Next R
+
+    Do While Top > 0
+        AddBlockPairError stackLines(Top), stackGroups(Top) & " line " & stackLines(Top) & " has no matching loop ender."
+        Top = Top - 1
+    Loop
+End Sub
+
+Private Sub AddBlockPairError(ByVal lineNo As Long, ByVal message As String)
+    Dim key As String
+    key = CStr(lineNo)
+    If m_blockPairErrors.exists(key) Then
+        m_blockPairErrors(key) = m_blockPairErrors(key) & " / " & message
+    Else
+        m_blockPairErrors(key) = message
+    End If
+End Sub
+
+Private Function LoopEnderGroupOf(ByVal cmd As String) As String
+    Select Case cmd
+        Case "END_WHILE": LoopEnderGroupOf = "WHILE"
+        Case "END_REPEAT": LoopEnderGroupOf = "REPEAT"
+        Case "END_FOREACH": LoopEnderGroupOf = "FOREACH"
+    End Select
+End Function
 
 Private Function IsStaticLabelSymbol(ByVal value As String) As Boolean
     value = Trim$(value)

@@ -244,6 +244,10 @@ Public Function IsGotoAllowed(ByVal sourceLine As Long, ByVal targetLine As Long
     IsGotoAllowed = m_index.IsGotoAllowed(sourceLine, targetLine)
 End Function
 
+Public Function IsCallAllowed(ByVal sourceLine As Long, ByVal targetLine As Long) As Boolean
+    IsCallAllowed = m_index.IsCallAllowed(sourceLine, targetLine)
+End Function
+
 Public Function HasDuplicateLabels() As Boolean
     HasDuplicateLabels = m_index.HasDuplicateLabels()
 End Function

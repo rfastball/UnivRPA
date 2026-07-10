@@ -134,6 +134,12 @@ Public Function ValidateStructure() As Boolean
         If block.EndSelectLine <= 0 Then AddValidationError "SELECT line " & key & " has no END_SELECT."
     Next key
 
+    ' [C3] 루프 짝 불균형/교차, 고아 CASE·END_SELECT 승격 (Index 통합 스택 스캔이 기록)
+    Dim pairKey As Variant
+    For Each pairKey In m_index.BlockPairErrors.keys
+        AddValidationError CStr(m_index.BlockPairErrors(pairKey))
+    Next pairKey
+
     ValidateStructure = (m_validationErrors.count = 0)
 End Function
 
@@ -470,11 +476,16 @@ Private Sub ValidateJumpTargets()
             AddValidationError cmd & " line " & R & " must target a static LABEL."
         ElseIf Not m_index.HasLabel(rawTarget) Then
             AddValidationError cmd & " line " & R & " target not found: " & rawTarget
-        ElseIf cmd = "GOTO" Then
+        Else
             Dim targetLine As Long
             targetLine = m_index.LabelLine(rawTarget)
             If targetLine > 0 Then
-                If Not m_index.IsGotoAllowed(R, targetLine) Then AddValidationError "GOTO line " & R & " crosses invalid flow boundary."
+                If cmd = "GOTO" Then
+                    If Not m_index.IsGotoAllowed(R, targetLine) Then AddValidationError "GOTO line " & R & " crosses invalid flow boundary."
+                Else
+                    ' [CALL 경계] sub-area 교차는 CALL의 존재 이유라 허용, 루프 본문 중간 진입만 차단
+                    If Not m_index.IsCallAllowed(R, targetLine) Then AddValidationError "CALL line " & R & " enters a loop body from outside."
+                End If
             End If
         End If
 
