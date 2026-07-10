@@ -136,39 +136,49 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          '--- [Loop] WHILE / END_WHILE (활성 루프 스택) ---
          Case "WHILE"
             Dim whileEnd As Long
+            ' 백엣지 재진입이면 프레임이 이미 있다(top.header=R) - 짝 스캔 없이 프레임 값 사용.
+            ' 첫 진입은 프레임이 없으므로 END_WHILE 짝을 전방 스캔해야 한다(제거 불가).
+            Dim whileReentry As Boolean
+            whileReentry = (modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R)
+
             If modEngine.CheckIfSyntax(args(1), args(2), args(3)) Then
-                whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
-                If whileEnd <= 0 Then
-                    modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
-                    ICommand_Execute = CMD_ERROR
-                    GoTo CleanUp
-                End If
-                ' 참: 첫 진입이면 PUSH, 백엣지 재진입(top.header=R)이면 회차+1
-                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then
+                ' 참: 재진입이면 회차+1, 첫 진입이면 짝 스캔 후 PUSH
+                If whileReentry Then
                     modContext.LoopIncrement
                 Else
+                    whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
+                    If whileEnd <= 0 Then
+                        modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
+                        ICommand_Execute = CMD_ERROR
+                        GoTo CleanUp
+                    End If
                     modContext.LoopPush "WHILE", R, whileEnd, 0
                 End If
                 ICommand_Execute = CMD_NEXT_LINE
             Else
-                ' 거짓: 활성 프레임이 이 WHILE이면 POP 후 탈출
-                If modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R Then modContext.LoopPop "end"
-                whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
-                If whileEnd > 0 Then
+                ' 거짓: 재진입이면 POP 전에 프레임 end 포착 후 탈출, 첫 진입이면 짝 스캔으로 탈출
+                If whileReentry Then
+                    whileEnd = modContext.LoopTopEnd()
+                    modContext.LoopPop "end"
                     ICommand_Execute = whileEnd + 1
                 Else
-                    modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
-                    ICommand_Execute = CMD_ERROR
+                    whileEnd = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", 1)
+                    If whileEnd > 0 Then
+                        ICommand_Execute = whileEnd + 1
+                    Else
+                        modContext.SetLastError "WHILE 라인 " & R & ": END_WHILE 짝을 찾지 못했습니다."
+                        ICommand_Execute = CMD_ERROR
+                    End If
                 End If
             End If
 
          Case "END_WHILE"
             ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
-            Dim wHead As Long: wHead = modEngine.ActiveProgram().FindBlockPair(R, "WHILE", -1)
-            If wHead > 0 Then
-                ICommand_Execute = wHead
+            ' 헤더 줄은 활성 프레임에 이미 있다 - 후방 스캔 없이 조회 (구조상 최상위가 이 WHILE)
+            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "WHILE" Then
+                ICommand_Execute = modContext.LoopTopHeader()
             Else
-                modContext.SetLastError "END_WHILE 라인 " & R & ": WHILE 짝을 찾지 못했습니다."
+                modContext.SetLastError "END_WHILE 라인 " & R & ": 활성 WHILE 프레임이 없습니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -202,9 +212,9 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "END_REPEAT"
-            Dim rHead As Long: rHead = modEngine.ActiveProgram().FindBlockPair(R, "REPEAT", -1)
-            If rHead > 0 And modContext.LoopDepth() > 0 And _
-               modContext.LoopTopKind() = "REPEAT" And modContext.LoopTopHeader() = rHead Then
+            ' 헤더 줄은 활성 프레임에서 조회 - 후방 스캔 제거 (기존엔 스캔값을 프레임과 등가 검증만 했음)
+            Dim rHead As Long: rHead = modContext.LoopTopHeader()
+            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "REPEAT" Then
                 If modContext.LoopTopMax() = 0 Then
                     modContext.LoopIncrement
                     ICommand_Execute = rHead + 1   ' 무한 반복: 본문 재실행
@@ -216,7 +226,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
-                modContext.SetLastError "END_REPEAT 라인 " & R & ": REPEAT 짝이 없거나 활성 REPEAT 프레임과 불일치합니다."
+                modContext.SetLastError "END_REPEAT 라인 " & R & ": 활성 REPEAT 프레임이 없습니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
@@ -249,10 +259,9 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "END_FOREACH"
-            Dim fHead As Long
-            fHead = modEngine.ActiveProgram().FindBlockPair(R, "FOREACH", -1)
-            If fHead > 0 And modContext.LoopDepth() > 0 And _
-               modContext.LoopTopKind() = "FOREACH" And modContext.LoopTopHeader() = fHead Then
+            ' 헤더 줄은 활성 프레임에서 조회 - 행마다 반복되던 후방 스캔 제거 (핫패스)
+            Dim fHead As Long: fHead = modContext.LoopTopHeader()
+            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "FOREACH" Then
                 If modContext.ForeachAdvance() Then
                     ICommand_Execute = fHead + 1
                 Else
@@ -260,7 +269,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                     ICommand_Execute = CMD_NEXT_LINE
                 End If
             Else
-                modContext.SetLastError "END_FOREACH 라인 " & R & ": FOREACH_ROW 짝이 없거나 활성 FOREACH 프레임과 불일치합니다."
+                modContext.SetLastError "END_FOREACH 라인 " & R & ": 활성 FOREACH 프레임이 없습니다."
                 ICommand_Execute = CMD_ERROR
             End If
 
