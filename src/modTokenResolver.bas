@@ -137,6 +137,17 @@ Private Function UndefinedVarMessage(ByVal key As String, ByVal candidates As Va
     UndefinedVarMessage = msg
 End Function
 
+Private Function UndefinedColumnMessage(ByVal colName As String, ByVal candidates As Variant) As String
+    Dim msg As String
+    msg = "Undefined column: {$ROW." & colName & "}"
+
+    Dim suggestion As String
+    suggestion = modStringDistance.ClosestName(UCase$(Trim$(colName)), candidates)
+    If Len(suggestion) > 0 Then msg = msg & ". Did you mean {$ROW." & suggestion & "}?"
+
+    UndefinedColumnMessage = msg
+End Function
+
 Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As String) As String
     On Error GoTo ErrHandler
 
@@ -145,6 +156,13 @@ Private Function ResolveRowToken(ByVal colName As String, ByVal originalInner As
     If tbl Is Nothing Or modContext.ActiveForeachRow() <= 0 Then
         ResolveRowToken = "{" & originalInner & "}"
         Exit Function
+    End If
+
+    ' [미지 컬럼 = 시끄러운 에러] 오타난 헤더가 조용히 빈 값이 되는 것을 막는다.
+    '   {name}(미정의 변수)과 대칭 - 존재하는 컬럼의 빈 셀만 ""로 남긴다.
+    Dim colKey As String: colKey = UCase$(Trim$(colName))
+    If Not tbl.headers.exists(colKey) Then
+        Err.Raise 5, "modTokenResolver.ResolveRowToken", UndefinedColumnMessage(colName, tbl.headers.keys)
     End If
 
     Dim value As Variant

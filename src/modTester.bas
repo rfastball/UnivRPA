@@ -1111,6 +1111,19 @@ Private Function TC_ForeachRowExecution() As Long
     ExpectLoopDepth 0, fails
     ws.AutoFilterMode = False
 
+    ' [행 토큰 대칭] 오타난 컬럼은 {name}처럼 시끄럽게 실패 + 추천 (조용한 빈값 금지)
+    Dim badColArr(1 To 4, 1 To 5) As Variant
+    Call MakeCmd(badColArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
+    Call MakeCmd(badColArr, 2, "SET", "{bad_col}", 0, "{$ROW.Cod}")
+    Call MakeCmd(badColArr, 3, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(badColArr, 4, "EXIT", 0, 0, "")
+    result = RunProgram(badColArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectBool "bad row column errors loudly", True, _
+        (InStr(1, modEngine.LastRuntimeError(), "Undefined column", vbTextCompare) > 0), fails
+    ExpectBool "bad row column suggests Code", True, _
+        (InStr(1, modEngine.LastRuntimeError(), "CODE", vbTextCompare) > 0), fails
+
     ws.Range("A2:D4").ClearContents
     Dim emptyArr(1 To 5, 1 To 5) As Variant
     Call MakeCmd(emptyArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
