@@ -1,6 +1,8 @@
 Attribute VB_Name = "modCmdRegistry"
 ' @desc 명령어 메타데이터 레지스트리 빌드 및 GetCmdDef 단일 게이트 제공 담당
 ' @depends CmdDef, ParamSpec
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================

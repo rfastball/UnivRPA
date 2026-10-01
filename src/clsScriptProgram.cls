@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc Static ScriptProgram facade. External modules should query only this class.
 ' @depends clsScriptProgramSource, clsScriptProgramIndex, clsScriptProgramAnalysis
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Private m_source As clsScriptProgramSource

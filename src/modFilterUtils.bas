@@ -1,4 +1,6 @@
 Attribute VB_Name = "modFilterUtils"
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' Applies an Excel number format with graceful fallback for narrow-column "####" snapshots.

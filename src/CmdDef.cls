@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 명령어 1개의 메타데이터 레코드(식별/구조/서식/파라미터) 보유
 ' @depends modCmdRegistry, ParamSpec
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' [식별]

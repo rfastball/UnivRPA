@@ -1,5 +1,7 @@
 Attribute VB_Name = "modStringDistance"
 ' @desc 편집거리 계산과 최근접 이름 추천 반환 담당
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================
