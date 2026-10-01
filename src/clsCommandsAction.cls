@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 입력 액션 명령어(마우스/키보드) 6종 디스패치 실행 담당
 ' @depends modActions, modContext, modCmdRegistry, modParse, ICommand
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Implements ICommand

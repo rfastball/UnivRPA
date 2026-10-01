@@ -1,6 +1,8 @@
 Attribute VB_Name = "modCondition"
 ' @desc Condition comparison/operator SSOT for the script runtime layer.
 ' @depends modParse
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' [Logic] condition comparison

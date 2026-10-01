@@ -2,6 +2,8 @@ Attribute VB_Name = "modTester"
 ' @dist exclude
 ' @desc 명령어셋 통합 자가진단 및 레지스트리 역검증 실행 담당
 ' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry, modStringDistance
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Private Const DEFAULT_MAX_STEPS As Long = 10000

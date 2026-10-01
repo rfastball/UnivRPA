@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 명령어 파라미터 슬롯 1개의 decode 스펙(의미/타입/해석모드/필수) 보유
 ' @depends modCmdRegistry
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' [decode 스펙] CmdDef가 P1/P2/P3로 3개 보유

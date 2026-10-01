@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 흐름제어 명령어(분기/반복/점프) 19종 디스패치 실행 담당
 ' @depends modEngine, modContext, modCmdRegistry, modParse, ICommand
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Implements ICommand

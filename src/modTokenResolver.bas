@@ -1,6 +1,8 @@
 Attribute VB_Name = "modTokenResolver"
 ' @desc 파라미터 토큰({name}/{$...})을 스캔해 값으로 치환 반환 담당
 ' @depends modContext, modWinAPI, modParse, modStringDistance
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================
