@@ -7,6 +7,8 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Private Const MAX_VALIDATE_CELLS As Long = 500
 
 Private Sub Workbook_Open()

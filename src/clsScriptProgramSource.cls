@@ -11,6 +11,8 @@ Attribute VB_Exposed = False
 ' @access Only clsScriptProgram should create or call this class.
 ' @desc ScriptProgram source, row, command access, and instruction cache.
 ' @depends modCmdRegistry, CmdDef, clsInstruction
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Private Const COL_CMD As Long = 2

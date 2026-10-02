@@ -1,6 +1,8 @@
 Attribute VB_Name = "modContext"
 ' @desc 변수 메모리/콜스택/루프·분기 스택 실행 상태 보관 담당
 ' @depends modCmdRegistry, LogShim
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================

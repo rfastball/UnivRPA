@@ -1,6 +1,8 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
 ' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, LogShim
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================

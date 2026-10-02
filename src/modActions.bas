@@ -1,6 +1,8 @@
 Attribute VB_Name = "modActions"
 ' @desc 클릭/입력/대기 등 구체 동작 수행 담당
 ' @depends modWinAPI, LogShim
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================

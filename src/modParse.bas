@@ -1,5 +1,7 @@
 Attribute VB_Name = "modParse"
 ' @desc 스크립트 숫자 문자열을 엄격 문법으로 파싱해 반환 담당
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 '==============================================================================

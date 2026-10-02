@@ -1,6 +1,8 @@
 Attribute VB_Name = "modDevTools"
 ' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
 ' @depends modCmdRegistry, modParse, clsScriptProgram
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' 반복 사용 색상 (VBA Const는 RGB() 호출 불가 - BGR hex 리터럴로 고정)

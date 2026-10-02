@@ -1,6 +1,8 @@
 Attribute VB_Name = "modHelper"
 ' @desc 폼 컨트롤러(캡처 HUD/상태 폼) 구동 및 상태바/화면 배치 담당
 ' @depends modWinAPI
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 ' 캡처 자동입력 채움색 (RGB 220,255,220 연녹)

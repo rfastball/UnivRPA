@@ -11,6 +11,8 @@ Attribute VB_Exposed = False
 ' @access Only clsScriptProgram should create or call this class.
 ' @desc ScriptProgram structure, label, and coordinate indexes.
 ' @depends modCmdRegistry, CmdDef, clsSelectBlock, clsScriptProgramSource
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 

@@ -9,6 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc 이름 붙은 슬롯 쓰기(SET/INC/DEC) 실행 담당
 ' @depends modContext, modWinAPI, modCmdRegistry, modParse, ICommand
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Implements ICommand

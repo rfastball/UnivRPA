@@ -1,6 +1,8 @@
 Attribute VB_Name = "modScriptAssist"
 ' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
 ' @depends modCmdRegistry, modDevTools, modStringDistance, CmdDef, ParamSpec, clsScriptProgram
+' SPDX-License-Identifier: MIT
+' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
 Private Const ASSIST_PREFIX As String = "[ScriptAssist]"
