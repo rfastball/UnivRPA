@@ -120,12 +120,6 @@ Public Sub EnsureRegistry()
     BuildRegistry
 End Sub
 
-' @desc 레지스트리 전체를 새로 빌드함 (테스트/재적재용 강제 리셋)
-Public Sub RebuildRegistry()
-    Set m_reg = Nothing
-    EnsureRegistry
-End Sub
-
 ' @desc 등록된 모든 명령어 정식명 배열 반환 (역검증 순회용)
 Public Function AllCommands() As Variant
     EnsureRegistry

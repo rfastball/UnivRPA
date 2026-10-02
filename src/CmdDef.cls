@@ -13,7 +13,6 @@ Option Explicit
 
 ' [식별]
 Public Canonical As String      ' 명령어 정식명 (레지스트리 키)
-Public IsPattern As Boolean     ' 패턴/별칭 여부 (예약 슬롯)
 
 ' [구조]
 Public Category As eCategory    ' FLOW/ACTION/VISION/MEMORY/SYSTEM (1단 디스패치 키)

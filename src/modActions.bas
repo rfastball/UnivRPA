@@ -35,11 +35,6 @@ Public Sub SetUnattendedMode(ByVal enabled As Boolean)
     m_unattended = enabled
 End Sub
 
-' @desc 현재 무인 모드 여부 반환
-Public Function IsUnattendedMode() As Boolean
-    IsUnattendedMode = m_unattended
-End Function
-
 ' @desc 중단 래치를 설정함 (ESC 감지 또는 외부 요청)
 Public Sub RequestAbort()
     m_abortRequested = True
@@ -62,7 +57,13 @@ Public Function AbortPending() As Boolean
     End If
 End Function
 
-Private Function WaitIfPaused() As Boolean
+' @desc Pause 해제까지 대기하고 ESC 중단 시 True 반환함
+Public Function WaitIfPaused(Optional ByRef resumed As Boolean = False) As Boolean
+    resumed = False
+    If AbortPending() Then
+        WaitIfPaused = True
+        Exit Function
+    End If
     If m_unattended Then Exit Function
     If Not IsKeyDown(VK_PAUSE_RESUME) Then Exit Function
 
@@ -77,6 +78,7 @@ Private Function WaitIfPaused() As Boolean
 
         If IsKeyDown(VK_PAUSE_RESUME) Then
             Sleep 200
+            resumed = True
             Exit Function
         End If
 

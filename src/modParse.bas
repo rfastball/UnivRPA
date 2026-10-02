@@ -77,3 +77,25 @@ Private Function IsStrictNumberSyntax(ByVal s As String) As Boolean
 
     IsStrictNumberSyntax = (digitCount > 0)
 End Function
+
+' @desc 쓰기 토큰 받아 MEM/CLIP 종류와 키 반환, 빈 이름/읽기전용이면 False 반환
+Public Function TryParseLValue(ByVal text As String, ByRef kind As String, ByRef key As String) As Boolean
+    kind = ""
+    key = ""
+    text = Trim$(text)
+    If Len(text) < 2 Then Exit Function
+    If Left$(text, 1) <> "{" Or Right$(text, 1) <> "}" Then Exit Function
+
+    Dim inner As String
+    inner = Trim$(Mid$(text, 2, Len(text) - 2))
+    If Len(inner) = 0 Then Exit Function
+    If UCase$(inner) = "$CLIP" Then
+        kind = "CLIP"
+    ElseIf Left$(inner, 1) = "$" Then
+        Exit Function
+    Else
+        kind = "MEM"
+        key = inner
+    End If
+    TryParseLValue = True
+End Function

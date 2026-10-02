@@ -10,7 +10,7 @@ Attribute VB_Exposed = False
 ' @internal ScriptProgram implementation detail.
 ' @access Only clsScriptProgram should create or call this class.
 ' @desc ScriptProgram flow, variable, and validation analysis.
-' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex, modStringDistance
+' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex, modStringDistance, modParse, modCondition
 Option Explicit
 
 Private m_source As clsScriptProgramSource
@@ -30,10 +30,6 @@ Private m_styleDepths() As Long
 Private m_subDepths() As Long
 ' [D2] 정적 분석 빌드 완료 플래그 (소스 불변 - 재빌드 스킵)
 Private m_staticBuilt As Boolean
-
-Private Sub Class_Initialize()
-    ResetAnalysis
-End Sub
 
 Public Sub Init(ByVal Source As clsScriptProgramSource, ByVal index As clsScriptProgramIndex)
     Set m_source = Source
@@ -65,19 +61,6 @@ Public Sub BuildStaticAnalysis()
     ReDim m_displayDepths(1 To m_source.totalLines)
     ReDim m_styleDepths(1 To m_source.totalLines)
     ReDim m_subDepths(1 To m_source.totalLines)
-
-    Set m_subroutineStartRows = CreateObject("Scripting.Dictionary")
-    Set m_subroutineEndRows = CreateObject("Scripting.Dictionary")
-    Set m_flowInvalidRows = CreateObject("Scripting.Dictionary")
-    Set m_flowBlockingErrors = CreateObject("Scripting.Dictionary")
-    Set m_variableErrors = CreateObject("Scripting.Dictionary")
-    Set m_variableWarnings = CreateObject("Scripting.Dictionary")
-    m_subroutineStartRows.CompareMode = vbTextCompare
-    m_subroutineEndRows.CompareMode = vbTextCompare
-    m_flowInvalidRows.CompareMode = vbTextCompare
-    m_flowBlockingErrors.CompareMode = vbTextCompare
-    m_variableErrors.CompareMode = vbTextCompare
-    m_variableWarnings.CompareMode = vbTextCompare
 
     BuildDisplayDepths
     MarkIfStructureRows
@@ -380,7 +363,10 @@ Private Sub BuildVariableAnalysis()
 
         If cmd = "SET" Or cmd = "INC" Or cmd = "DEC" Then
             Dim lvalueName As String
-            lvalueName = MemoryLValueName(m_source.P1At(R))
+            Dim lvalueKind As String
+            If modParse.TryParseLValue(m_source.P1At(R), lvalueKind, lvalueName) Then
+                If lvalueKind <> "MEM" Then lvalueName = ""
+            End If
             If Len(lvalueName) > 0 Then
                 If (cmd = "INC" Or cmd = "DEC") And Not defined.exists(lvalueName) Then
                     AddRowMessage m_variableErrors, R, UndefinedVarMessage(lvalueName, defined.keys) & ". Initialize it with SET first."
@@ -510,21 +496,6 @@ Private Function IsUserVariableToken(ByVal inner As String) As Boolean
     If InStr(1, key, "{", vbTextCompare) > 0 Or InStr(1, key, "}", vbTextCompare) > 0 Then Exit Function
 
     IsUserVariableToken = True
-End Function
-
-Private Function MemoryLValueName(ByVal rawP1 As String) As String
-    Dim s As String
-    s = Trim$(rawP1)
-    If Len(s) < 2 Then Exit Function
-    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
-
-    Dim inner As String
-    inner = Trim$(Mid$(s, 2, Len(s) - 2))
-    If Len(inner) = 0 Then Exit Function
-    If UCase$(inner) = "$CLIP" Then Exit Function
-    If Left$(inner, 1) = "$" Then Exit Function
-
-    MemoryLValueName = inner
 End Function
 
 Private Sub AddDefRow(ByVal defRows As Object, ByVal varName As String, ByVal lineNo As Long)

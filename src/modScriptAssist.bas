@@ -1,6 +1,6 @@
 Attribute VB_Name = "modScriptAssist"
 ' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
-' @depends modCmdRegistry, modDevTools, modStringDistance, CmdDef, ParamSpec
+' @depends modCmdRegistry, modDevTools, modStringDistance, CmdDef, ParamSpec, clsScriptProgram
 Option Explicit
 
 Private Const ASSIST_PREFIX As String = "[ScriptAssist]"
@@ -186,13 +186,17 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
 
     Dim isValid As Boolean
     isValid = modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value)
-    If isValid Then isValid = modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row)
-    If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row, True)
+    Dim program As clsScriptProgram
+    If isValid Then
+        Set program = modDevTools.ProgramSnapshotFromSheet(Target.Worksheet)
+        isValid = modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row, program)
+    End If
+    If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row, True, program)
 
     If isValid Then
         Dim warning As String
         warning = modDevTools.LastValidationWarning()
-        If cmd = "LABEL" And modDevTools.RefreshLabelRoleDisplay(Target.Worksheet, Target.Row) Then
+        If cmd = "LABEL" And modDevTools.RefreshLabelRoleDisplay(Target.Worksheet, Target.Row, program) Then
             If Len(warning) > 0 Then Application.StatusBar = Replace(warning, vbCrLf, " ")
         Else
             If cmd <> "CALL" And cmd <> "GOTO" Then modDevTools.ClearLabelRoleDisplay Target.Worksheet, Target.Row

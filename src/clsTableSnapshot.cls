@@ -13,15 +13,12 @@ Option Explicit
 ' Class Name: clsTableSnapshot
 ' Description: 엑셀 시트 데이터를 메모리화하여 관리하는 고속 데이터 컨테이너
 ' Features:
-'   1. Lazy Indexing: 검색이 필요한 시점에 인덱스 생성 (메모리 절약)
-'   2. Row-ID Mapping: 중복 데이터 허용 (Key -> Collection of RowIDs)
-'   3. Direct Access: 2D 배열 기반의 초고속 데이터 접근
+'   읽기 전용 2D 스냅샷과 헤더 이름 기반 셀 조회.
 ' ==============================================================================
 
 ' [저장소]
 Private m_vData As Variant          ' 전체 데이터 (2D Array, 1-based or 0-based)
 Private m_dicHeaders As Object      ' 컬럼명 -> 열 번호 매핑 (Key: String, Value: Long)
-Private m_dicIndices As Object      ' 생성된 인덱스 캐시 (Key: ColName, Value: Dictionary)
 
 ' [메타 데이터]
 Private m_lRowCount As Long
@@ -31,13 +28,11 @@ Private m_lHeaderRowIndex As Long   ' 헤더가 위치한 행 번호 (기본 1)
 ' [초기화]
 Private Sub Class_Initialize()
     Set m_dicHeaders = CreateObject("Scripting.Dictionary")
-    Set m_dicIndices = CreateObject("Scripting.Dictionary")
     m_lHeaderRowIndex = 1
 End Sub
 
 Private Sub Class_Terminate()
     Set m_dicHeaders = Nothing
-    Set m_dicIndices = Nothing
     m_vData = Empty
 End Sub
 
@@ -308,7 +303,6 @@ End Sub
 Public Sub Clear()
     m_vData = Empty
     m_dicHeaders.RemoveAll
-    m_dicIndices.RemoveAll
     m_lRowCount = 0
     m_lColCount = 0
 End Sub
@@ -331,165 +325,6 @@ Public Function GetValue(ByVal lRow As Long, ByVal sColName As String) As Varian
     End If
 End Function
 
-' 2-2. 특정 행의 전체 레코드 가져오기 (배열 반환)
-'   [테스트 지원] 런타임 경로는 GetValue만 소비 - GetRecord와 [3] 인덱싱 표면
-'   (GetIndex/SelectRows/GetUniqueKeys 계열)은 테스트/향후 확장용으로 유지한다.
-Public Function GetRecord(ByVal lRow As Long) As Variant
-    Dim vRow() As Variant
-    Dim j As Long, lStartCol As Long, lEndCol As Long
-    
-    If lRow < LBound(m_vData, 1) Or lRow > m_lRowCount Then Exit Function
-    
-    lStartCol = LBound(m_vData, 2)
-    lEndCol = UBound(m_vData, 2)
-    
-    ReDim vRow(lStartCol To lEndCol)
-    
-    For j = lStartCol To lEndCol
-        vRow(j) = m_vData(lRow, j)
-    Next j
-    
-    GetRecord = vRow
-End Function
-
-' ==============================================================================
-' [3] 인덱싱 및 검색 (Core Engine)
-' ==============================================================================
-
-' 3-1a. 인덱스 생성 및 획득 (By 컬럼명)
-Public Function GetIndex(ByVal sColName As String) As Object
-    Dim lCol As Long
-    Dim dicResult As Object
-    
-    sColName = UCase(Trim(sColName))
-    
-    ' 1. 캐시 확인 (키: 컬럼명)
-    If m_dicIndices.exists(sColName) Then
-        Set GetIndex = m_dicIndices(sColName)
-        Exit Function
-    End If
-    
-    ' 2. 컬럼 인덱스 찾기
-    If Not m_dicHeaders.exists(sColName) Then
-        Exit Function ' 컬럼 없음
-    End If
-    lCol = m_dicHeaders(sColName)
-    
-    ' 3. 숫자 인덱스 기반으로 실제 인덱스 생성/조회
-    Set dicResult = GetIndexByIndex(lCol) ' This will build and cache it for lCol if needed
-    
-    ' 4. 컬럼명 기준으로도 캐시 등록
-    If Not dicResult Is Nothing Then
-        Set m_dicIndices(sColName) = dicResult
-    End If
-    Set GetIndex = dicResult
-End Function
-
-' 3-1b. 인덱스 생성 및 획득 (By 숫자 인덱스) - v2.5.1 최적화
-Public Function GetIndexByIndex(ByVal lCol As Long) As Object
-    Dim i As Long
-    Dim vVal As Variant
-    Dim sKey As String
-    Dim dicIdx As Object
-    Dim colRows As Collection
-
-    ' 1. 캐시 확인 (키: 숫자 인덱스)
-    If m_dicIndices.exists(lCol) Then
-        Set GetIndexByIndex = m_dicIndices(lCol)
-        Exit Function
-    End If
-
-    ' 2. 컬럼 유효성 검사 (배열 범위)
-    If lCol < LBound(m_vData, 2) Or lCol > UBound(m_vData, 2) Then
-        Exit Function
-    End If
-
-    ' 3. 인덱스 빌드 시작
-    Set dicIdx = CreateObject("Scripting.Dictionary")
-    dicIdx.CompareMode = vbTextCompare ' 대소문자 무시
-
-    For i = (m_lHeaderRowIndex + 1) To m_lRowCount
-        vVal = m_vData(i, lCol)
-        
-        If Not IsError(vVal) Then
-            If IsEmpty(vVal) Then sKey = "" Else sKey = CStr(vVal)
-            
-            If Not dicIdx.exists(sKey) Then
-                Set colRows = New Collection
-                dicIdx.Add sKey, colRows
-            Else
-                Set colRows = dicIdx(sKey)
-            End If
-            colRows.Add i
-        End If
-    Next i
-
-    ' 4. 캐시 등록 및 반환
-    Set m_dicIndices(lCol) = dicIdx
-    Set GetIndexByIndex = dicIdx
-End Function
-
-
-' 3-2a. 특정 조건에 맞는 행 번호들 찾기 (By 컬럼명)
-Public Function SelectRows(ByVal sColName As String, ByVal vValue As Variant) As Collection
-    Dim dicIdx As Object
-    Dim sKey As String
-    
-    Set dicIdx = GetIndex(sColName)
-    If dicIdx Is Nothing Then Set SelectRows = New Collection: Exit Function
-    
-    If IsEmpty(vValue) Then sKey = "" Else sKey = CStr(vValue)
-    
-    ' CompareMode 설정으로 인해 대소문자 무시 검색
-    If dicIdx.exists(sKey) Then
-        Set SelectRows = dicIdx(sKey)
-    Else
-        Set SelectRows = New Collection
-    End If
-End Function
-
-' 3-2b. 특정 조건에 맞는 행 번호들 찾기 (By 숫자 인덱스) - v2.5.1 최적화
-Public Function SelectRowsByIndex(ByVal lCol As Long, ByVal vValue As Variant) As Collection
-    Dim dicIdx As Object
-    Dim sKey As String
-
-    Set dicIdx = GetIndexByIndex(lCol)
-    If dicIdx Is Nothing Then Set SelectRowsByIndex = New Collection: Exit Function
-
-    If IsEmpty(vValue) Then sKey = "" Else sKey = CStr(vValue)
-    
-    If dicIdx.exists(sKey) Then
-        Set SelectRowsByIndex = dicIdx(sKey)
-    Else
-        Set SelectRowsByIndex = New Collection
-    End If
-End Function
-
-
-' 3-3a. 특정 컬럼의 고유값 목록 추출 (By 컬럼명)
-Public Function GetUniqueKeys(ByVal sColName As String) As Variant
-    Dim dicIdx As Object
-    Set dicIdx = GetIndex(sColName)
-    
-    If dicIdx Is Nothing Then
-        GetUniqueKeys = Array()
-    Else
-        GetUniqueKeys = dicIdx.keys
-    End If
-End Function
-
-' 3-3b. 특정 컬럼의 고유값 목록 추출 (By 숫자 인덱스) - v2.5.1 최적화
-Public Function GetUniqueKeysByIndex(ByVal lCol As Long) As Variant
-    Dim dicIdx As Object
-    Set dicIdx = GetIndexByIndex(lCol)
-    
-    If dicIdx Is Nothing Then
-        GetUniqueKeysByIndex = Array()
-    Else
-        GetUniqueKeysByIndex = dicIdx.keys
-    End If
-End Function
-
 ' ==============================================================================
 ' [4] 속성 (Properties)
 ' ==============================================================================
@@ -508,8 +343,4 @@ End Property
 
 Public Property Get headers() As Object
     Set headers = m_dicHeaders
-End Property
-
-Public Property Get RawArray() As Variant
-    RawArray = m_vData
 End Property

@@ -85,13 +85,6 @@ Public Type KEYBDINPUT
     dwExtraInfo As LongPtr
 End Type
 
-' 64비트 엑셀 크래시 방지를 위한 패딩 적용 구조체 (Union 대체)
-Public Type GENERALINPUT
-    dwType As Long
-    ' 64비트 환경에서 구조체 정렬(Alignment)을 맞추기 위해 넉넉한 바이트 배열 사용
-    xi(0 To 39) As Byte
-End Type
-
 ' [상수 모음]
 Public Const INPUT_KEYBOARD = 1
 Public Const INPUT_MOUSE = 0

@@ -274,7 +274,8 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
                 ValidateParamSlot = False
             End If
         Case RK_LVALUE
-            If Not IsWritableLValue(text) Then
+            Dim kind As String, key As String
+            If Not modParse.TryParseLValue(text, kind, key) Then
                 SetValidationError "Invalid writable target: " & text
                 ValidateParamSlot = False
             End If
@@ -333,28 +334,11 @@ Private Function ContainsTokenSyntax(ByVal text As String) As Boolean
     ContainsTokenSyntax = (InStr(1, text, "{", vbTextCompare) > 0 Or InStr(1, text, "}", vbTextCompare) > 0)
 End Function
 
-Private Function IsWritableLValue(ByVal rawP1 As String) As Boolean
-    Dim s As String
-    s = Trim$(rawP1)
-    If Len(s) < 2 Then Exit Function
-    If Left$(s, 1) <> "{" Or Right$(s, 1) <> "}" Then Exit Function
-
-    Dim inner As String
-    inner = Trim$(Mid$(s, 2, Len(s) - 2))
-    If Len(inner) = 0 Then Exit Function
-
-    If UCase$(inner) = "$CLIP" Then
-        IsWritableLValue = True
-    ElseIf Left$(inner, 1) <> "$" Then
-        IsWritableLValue = True
-    End If
-End Function
-
 Private Sub SetValidationError(ByVal msg As String)
     If Len(m_lastValidationMessage) = 0 Then m_lastValidationMessage = msg
 End Sub
 
-Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal program As clsScriptProgram = Nothing) As Boolean
     ValidateSheetFlowAt = True
     m_lastValidationWarning = ""
     If ws Is Nothing Then Exit Function
@@ -364,15 +348,14 @@ Public Function ValidateSheetFlowAt(ByVal ws As Worksheet, ByVal rowNum As Long)
     lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
-    Dim program As clsScriptProgram
-    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If program Is Nothing Then Set program = ProgramSnapshotFromSheet(ws, lastRow)
     If Not program Is Nothing Then
         ValidateSheetFlowAt = Not program.IsFlowInvalidAtSheetRow(rowNum)
         m_lastValidationWarning = program.LabelRoleWarningAtSheetRow(rowNum)
     End If
 End Function
 
-Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal preserveExistingWarning As Boolean = False) As Boolean
+Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal preserveExistingWarning As Boolean = False, Optional ByVal program As clsScriptProgram = Nothing) As Boolean
     Dim existingWarning As String
     If preserveExistingWarning Then existingWarning = m_lastValidationWarning
 
@@ -387,8 +370,7 @@ Public Function ValidateSheetVariablesAt(ByVal ws As Worksheet, ByVal rowNum As 
     lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
-    Dim program As clsScriptProgram
-    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If program Is Nothing Then Set program = ProgramSnapshotFromSheet(ws, lastRow)
     If program Is Nothing Then Exit Function
 
     Dim variableError As String
@@ -433,7 +415,7 @@ Public Function ResolveFirstCallSourceRow(ByVal ws As Worksheet, ByVal labelName
     If Not program Is Nothing Then ResolveFirstCallSourceRow = program.FirstCallSourceSheetRowForLabel(labelName)
 End Function
 
-Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long) As Boolean
+Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long, Optional ByVal program As clsScriptProgram = Nothing) As Boolean
     If ws Is Nothing Then Exit Function
     If rowNum < 2 Then Exit Function
 
@@ -441,8 +423,7 @@ Public Function RefreshLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As L
     lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If rowNum > lastRow Then Exit Function
 
-    Dim program As clsScriptProgram
-    Set program = ProgramSnapshotFromSheet(ws, lastRow)
+    If program Is Nothing Then Set program = ProgramSnapshotFromSheet(ws, lastRow)
     Call ApplyLabelRoleDisplay(ws, rowNum, PureCommandAt(ws, rowNum), program)
     RefreshLabelRoleDisplay = True
 End Function
@@ -455,8 +436,10 @@ Public Sub ClearLabelRoleDisplay(ByVal ws As Worksheet, ByVal rowNum As Long)
     ClearEditorLinkStyle ws.Cells(rowNum, 5), True
 End Sub
 
-Private Function ProgramSnapshotFromSheet(ByVal ws As Worksheet, ByVal lastRow As Long) As clsScriptProgram
+' @desc 시트와 마지막 행 받아 정적 스냅샷 반환, 데이터 없으면 Nothing 반환
+Public Function ProgramSnapshotFromSheet(ByVal ws As Worksheet, Optional ByVal lastRow As Long = 0) As clsScriptProgram
     If ws Is Nothing Then Exit Function
+    If lastRow = 0 Then lastRow = ws.Cells(ws.rows.count, 2).End(xlUp).Row
     If lastRow < 2 Then Exit Function
 
     Dim program As clsScriptProgram

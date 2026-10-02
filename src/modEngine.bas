@@ -27,7 +27,6 @@ Private Const UI_THROTTLE_MS As Long = 100
 '==============================================================================
 Private Enum eControlSignal
     ControlContinue = 0
-    ControlPause = 1
     ControlAbort = 2
 End Enum
 
@@ -236,28 +235,12 @@ Private Function CheckControlSignals() As eControlSignal
         Exit Function
     End If
 
-    If Not modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then Exit Function
-
-    CheckControlSignals = ControlPause
-    modActions.Action_ShowNotification "일시정지됨. [Pause] 재개, [ESC] 종료", 3
-    modWinAPI.Sleep 500
-
-    Do
-        If modActions.AbortPending() Then
-            CheckControlSignals = ControlAbort
-            Exit Function
-        End If
-
-        If modWinAPI.IsKeyDown(modWinAPI.VK_PAUSE_RESUME) Then
-            modWinAPI.Sleep 200
-            modHelper.SetStatusBar "일시정지를 해제하고 현재 줄에서 재개합니다."
-            CheckControlSignals = ControlContinue
-            Exit Function
-        End If
-
-        DoEvents
-        modWinAPI.Sleep 50
-    Loop
+    Dim resumed As Boolean
+    If modActions.WaitIfPaused(resumed) Then
+        CheckControlSignals = ControlAbort
+    ElseIf resumed Then
+        modHelper.SetStatusBar "일시정지를 해제하고 현재 줄에서 재개합니다."
+    End If
 End Function
 
 Private Function NextPointer(ByVal curLine As Long, ByVal retCode As Long) As Long
@@ -405,11 +388,9 @@ Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As 
 End Function
 
 ' [이관됨 - D4] ResolveParam/ResolveToken 계열 토큰 해석기는 modTokenResolver로 추출됨
-' [이관됨] ParseLValue는 clsCommandsMemory로 흡수됨 (lvalue 합법성 = 메모리 명령어 고유 지식)
 ' [이관됨 - P2] ResolveGotoTarget/ResolveCallTarget/ResolveSelectTarget/CheckIfSyntax는
 '   clsCommandsFlow로 이관됨 (흐름 정책 일원화). 에러 사유는 modContext.SetLastError 경유,
 '   ExecuteSmartAction 합류점이 LastRuntimeError로 1회 표면화 (B1)
 
 ' [삭제됨 - P2] FindBlockPair/CmdAt 호환 래퍼는 호출자 0으로 폐기.
 '   구조 질의는 ActiveProgram() 경유로 clsScriptProgram에 직접 질의한다.
-

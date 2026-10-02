@@ -937,9 +937,6 @@ Private Function TC_TableSnapshotReadOnly() As Long
     Dim fails As Long
     Dim data(1 To 4, 1 To 3) As Variant
     Dim tbl As clsTableSnapshot
-    Dim rec As Variant
-    Dim rows As Collection
-    Dim keys As Variant
 
     Debug.Print "--- [Flow 2A] TableSnapshot read-only surface ---"
 
@@ -956,24 +953,6 @@ Private Function TC_TableSnapshotReadOnly() As Long
     ExpectLong "Snapshot ColCount", 3, tbl.ColCount, fails
     ExpectBool "Snapshot Headers CODE", True, tbl.headers.exists("CODE"), fails
     ExpectText "Snapshot GetValue", "Alice", CStr(tbl.GetValue(2, "Name")), fails
-
-    rec = tbl.GetRecord(3)
-    ExpectText "Snapshot GetRecord", "Bob", CStr(rec(2)), fails
-
-    Set rows = tbl.SelectRows("Group", "A")
-    ExpectLong "Snapshot SelectRows count", 2, rows.count, fails
-    ExpectLong "Snapshot SelectRows first", 2, CLng(rows(1)), fails
-    ExpectLong "Snapshot SelectRows second", 4, CLng(rows(2)), fails
-
-    Set rows = tbl.SelectRowsByIndex(1, "002")
-    ExpectLong "Snapshot SelectRowsByIndex count", 1, rows.count, fails
-    ExpectLong "Snapshot SelectRowsByIndex row", 3, CLng(rows(1)), fails
-
-    keys = tbl.GetUniqueKeys("Group")
-    ExpectLong "Snapshot GetUniqueKeys count", 2, UBound(keys) - LBound(keys) + 1, fails
-
-    keys = tbl.GetUniqueKeysByIndex(1)
-    ExpectLong "Snapshot GetUniqueKeysByIndex count", 3, UBound(keys) - LBound(keys) + 1, fails
 
     tbl.Clear
     ExpectLong "Snapshot Clear RowCount", 0, tbl.RowCount, fails
@@ -1578,6 +1557,7 @@ Private Function TC_ParamSpecValidation() As Long
     ExpectBool "Reject IF operator", False, modDevTools.ValidateLine("IF", "abc", "EQUALS", "abc"), fails
     ExpectBool "Validate SET memory lvalue", True, modDevTools.ValidateLine("SET", "{name}", "", "value"), fails
     ExpectBool "Validate SET clipboard lvalue", True, modDevTools.ValidateLine("SET", "{$CLIP}", "", "value"), fails
+    ExpectBool "Reject empty memory lvalue", False, modDevTools.ValidateLine("SET", "{ }", "", "value"), fails
     ExpectBool "Reject read-only lvalue", False, modDevTools.ValidateLine("INC", "{$LOOP}", "", ""), fails
     ExpectBool "Reject raw label token", False, modDevTools.ValidateLine("LABEL", "", "", "{dynamic}"), fails
     ExpectBool "Validate GOTO static label", True, modDevTools.ValidateLine("GOTO", "", "", "DONE"), fails
@@ -1607,6 +1587,10 @@ Private Function TC_ParamGuardRuntime() As Long
     code = ExecuteArrayLine(arrCmd, 1)
     ExpectLong "Guard: SET {$BLANK} passes", CMD_NEXT_LINE, code, fails
     ExpectVar "pg", "", fails
+
+    Call MakeCmd(arrCmd, 1, "SET", "{ }", 0, "value")
+    ExpectLong "Guard: empty memory lvalue", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+    ExpectBool "Guard: empty memory not created", False, modContext.HasVar(""), fails
 
     ' 필수 숫자 슬롯: SLEEP P3 비숫자 차단 / 숫자 통과
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "abc")
@@ -1677,11 +1661,14 @@ Private Function TC_AbortLatch() As Long
     ' 래치 기본 상태 (물리 ESC 미입력 가정)
     modActions.ClearAbort
     ExpectBool "Abort: clear state", False, modActions.AbortPending(), fails
+    modActions.SetUnattendedMode True
+    ExpectBool "Pause: unattended returns", False, modActions.WaitIfPaused(), fails
 
     ' 래치 설정 후 유지 (순간 신호 유실 방지의 핵심)
     modActions.RequestAbort
     ExpectBool "Abort: latched", True, modActions.AbortPending(), fails
     ExpectBool "Abort: latch persists", True, modActions.AbortPending(), fails
+    ExpectBool "Pause: abort returns", True, modActions.WaitIfPaused(), fails
 
     ' BetterWait 조기 탈출: 1000ms 요청이 즉시 반환
     t0 = modWinAPI.GetTickCount()
@@ -2354,6 +2341,26 @@ Private Function TC_ScriptProgramModel() As Long
     Set program = New clsScriptProgram
     program.LoadFromArray callAcrossAreaArr, 1
     ExpectBool "CALL across sub-area passes", True, program.ValidateLabels(), fails
+
+    ' Reload the same facade: no previous errors, labels, blocks or analysis survive.
+    program.LoadFromArray dupArr, 1
+    ExpectBool "Reload seeds label errors", False, program.ValidateLabels(), fails
+    program.LoadFromArray arr, 5
+    ExpectBool "Reload clears structure errors", True, program.ValidateStructure(), fails
+    ExpectBool "Reload clears label errors", True, program.ValidateLabels(), fails
+    ExpectBool "Reload drops duplicate label", False, program.HasLabel("DUP"), fails
+    program.LoadFromArray varArr, 30
+    ExpectBool "Reload seeds variable errors", True, (Len(program.VariableErrorAt(2)) > 0), fails
+    program.LoadFromArray ifChainModelArr, 1
+    ExpectText "Reload clears variable errors", "", program.VariableErrorAt(2), fails
+    ExpectText "Reload clears variable warnings", "", program.VariableWarningAt(3), fails
+    ExpectBool "Reload drops old label", False, program.HasLabel("LOGIN"), fails
+    Set outerBlock = program.SelectBlock(10)
+    ExpectBool "Reload drops SELECT block", True, (outerBlock Is Nothing), fails
+    ExpectLong "Reload builds next branch", 3, program.FindBlockPair(1, "IF"), fails
+    ExpectLong "IF backward skips branches", 1, program.FindBlockPair(7, "IF", -1), fails
+    ExpectLong "Block query rejects wrong group", CMD_ERROR, program.FindBlockPair(1, "REPEAT"), fails
+    ExpectLong "Block query rejects direction", CMD_ERROR, program.FindBlockPair(1, "IF", 0), fails
 
     TC_ScriptProgramModel = fails
 End Function

@@ -18,6 +18,8 @@ Private m_source As clsScriptProgramSource
 Private m_selectBlocks As Object
 Private m_caseEndSelectLines As Object
 Private m_ifEndLines As Object
+Private m_nextBlockLines As Object
+Private m_prevBlockLines As Object
 Private m_labels As Object
 Private m_labelRows As Object
 Private m_duplicateLabels As Object
@@ -42,10 +44,6 @@ Private m_structureBuilt As Boolean
 Private m_labelIndexBuilt As Boolean
 Private m_coordinatesBuilt As Boolean
 
-Private Sub Class_Initialize()
-    ResetIndexes
-End Sub
-
 Public Sub Init(ByVal Source As clsScriptProgramSource)
     Set m_source = Source
     ResetIndexes
@@ -55,6 +53,8 @@ Private Sub ResetIndexes()
     Set m_selectBlocks = CreateObject("Scripting.Dictionary")
     Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
     Set m_ifEndLines = CreateObject("Scripting.Dictionary")
+    Set m_nextBlockLines = CreateObject("Scripting.Dictionary")
+    Set m_prevBlockLines = CreateObject("Scripting.Dictionary")
     Set m_labels = CreateObject("Scripting.Dictionary")
     Set m_labelRows = CreateObject("Scripting.Dictionary")
     Set m_duplicateLabels = CreateObject("Scripting.Dictionary")
@@ -85,64 +85,21 @@ End Property
 
 Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Optional ByVal Direction As Long = 1) As Long
     On Error GoTo ErrHandler
-    m_source.ValidateLineRange startLine
-
-    group = UCase$(Trim$(group))
-    If group <> "IF" And group <> "WHILE" And group <> "REPEAT" And group <> "FOREACH" Then
-        FindBlockPair = CMD_ERROR
-        Exit Function
-    End If
-    If Direction <> 1 And Direction <> -1 Then
-        FindBlockPair = CMD_ERROR
-        Exit Function
-    End If
-
-    Dim R As Long
-    Dim endLine As Long
-    Dim depth As Long
-    If Direction = 1 Then endLine = m_source.totalLines Else endLine = 1
-
-    For R = startLine + Direction To endLine Step Direction
-        If m_source.IsSkippable(R) Then GoTo NextRow
-
-        Dim def As CmdDef
-        Set def = modCmdRegistry.GetCmdDef(m_source.CmdAt(R))
-        If def Is Nothing Then GoTo NextRow
-        If UCase$(def.BlockGroup) <> group Then GoTo NextRow
-
-        If Direction = 1 Then
-            Select Case def.BlockRole
-                Case STARTER
-                    depth = depth + 1
-                Case MIDBLOCK
-                    If group = "IF" And depth = 0 Then
-                        FindBlockPair = R
-                        Exit Function
-                    End If
-                Case ENDER
-                    If depth = 0 Then
-                        FindBlockPair = R
-                        Exit Function
-                    End If
-                    depth = depth - 1
-            End Select
-        Else
-            Select Case def.BlockRole
-                Case ENDER
-                    depth = depth + 1
-                Case STARTER
-                    If depth = 0 Then
-                        FindBlockPair = R
-                        Exit Function
-                    End If
-                    depth = depth - 1
-            End Select
-        End If
-
-NextRow:
-    Next R
-
     FindBlockPair = CMD_ERROR
+    m_source.ValidateLineRange startLine
+    group = UCase$(Trim$(group))
+    If group <> "IF" And group <> "WHILE" And group <> "REPEAT" And group <> "FOREACH" Then Exit Function
+
+    Dim def As CmdDef
+    Set def = m_source.InstructionAt(startLine).def
+    If def Is Nothing Then Exit Function
+    If def.BlockGroup <> group Then Exit Function
+
+    If Direction = 1 Then
+        If m_nextBlockLines.exists(CStr(startLine)) Then FindBlockPair = CLng(m_nextBlockLines(CStr(startLine)))
+    ElseIf Direction = -1 Then
+        If m_prevBlockLines.exists(CStr(startLine)) Then FindBlockPair = CLng(m_prevBlockLines(CStr(startLine)))
+    End If
     Exit Function
 ErrHandler:
     FindBlockPair = CMD_ERROR
@@ -150,15 +107,6 @@ End Function
 
 Public Sub BuildStructureIndex()
     If m_structureBuilt Then Exit Sub
-
-    Set m_selectBlocks = CreateObject("Scripting.Dictionary")
-    Set m_caseEndSelectLines = CreateObject("Scripting.Dictionary")
-    Set m_ifEndLines = CreateObject("Scripting.Dictionary")
-
-    Dim R As Long
-    For R = 1 To m_source.totalLines
-        If m_source.CmdAt(R) = "SELECT" Then BuildSelectBlock R
-    Next R
     BuildBlockPairIndex
     m_structureBuilt = True
 End Sub
@@ -203,7 +151,6 @@ Public Sub BuildStateCoordinates()
 
     ReDim m_loopDepths(1 To m_source.totalLines)
     ReDim m_subAreaIds(1 To m_source.totalLines)
-    Set m_loopRanges = New Collection
 
     BuildLoopCoordinates
     BuildSubAreaCoordinates
@@ -316,23 +263,6 @@ Public Function ContainsTokenSyntax(ByVal value As String) As Boolean
 End Function
 
 Private Sub BuildLabelReferenceIndex()
-    Set m_labels = CreateObject("Scripting.Dictionary")
-    Set m_labelRows = CreateObject("Scripting.Dictionary")
-    Set m_duplicateLabels = CreateObject("Scripting.Dictionary")
-    Set m_callLabelTargets = CreateObject("Scripting.Dictionary")
-    Set m_gotoLabelTargets = CreateObject("Scripting.Dictionary")
-    Set m_callSourceRows = CreateObject("Scripting.Dictionary")
-    Set m_labelRoles = CreateObject("Scripting.Dictionary")
-    Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
-    m_labels.CompareMode = vbTextCompare
-    m_labelRows.CompareMode = vbTextCompare
-    m_duplicateLabels.CompareMode = vbTextCompare
-    m_callLabelTargets.CompareMode = vbTextCompare
-    m_gotoLabelTargets.CompareMode = vbTextCompare
-    m_callSourceRows.CompareMode = vbTextCompare
-    m_labelRoles.CompareMode = vbTextCompare
-    m_labelRoleWarnings.CompareMode = vbTextCompare
-
     Dim R As Long
     For R = 1 To m_source.totalLines
         If m_source.IsSkippable(R) Then GoTo NextRow
@@ -511,62 +441,19 @@ Private Sub MarkSubArea(ByVal startLine As Long, ByVal endLine As Long, ByVal ar
     Next R
 End Sub
 
-Private Sub BuildSelectBlock(ByVal SelectLine As Long)
-    If m_selectBlocks.exists(CStr(SelectLine)) Then Exit Sub
-
-    Dim block As clsSelectBlock
-    Set block = New clsSelectBlock
-    block.SelectLine = SelectLine
-
-    Dim depth As Long
-    Dim R As Long
-    For R = SelectLine + 1 To m_source.totalLines
-        If m_source.IsSkippable(R) Then GoTo NextRow
-
-        Dim def As CmdDef
-        Set def = modCmdRegistry.GetCmdDef(m_source.CmdAt(R))
-        If def Is Nothing Then GoTo NextRow
-        If UCase$(def.BlockGroup) <> "SELECT" Then GoTo NextRow
-
-        Select Case def.BlockRole
-            Case STARTER
-                depth = depth + 1
-            Case MIDBLOCK
-                If depth = 0 Then block.AddCaseLine R
-            Case ENDER
-                If depth = 0 Then
-                    block.EndSelectLine = R
-                    Exit For
-                End If
-                depth = depth - 1
-        End Select
-
-NextRow:
-    Next R
-
-    m_selectBlocks.Add CStr(SelectLine), block
-    If block.EndSelectLine > 0 Then
-        Dim i As Long
-        For i = 1 To block.CaseCount
-            m_caseEndSelectLines(CStr(block.CaseLineAt(i))) = block.EndSelectLine
-        Next i
-    End If
-End Sub
-
 ' [C3+D3] 블록 구조 통합 스택 스캔 (단일 패스, Index가 스캔의 단일 소유자):
 '   - 루프 3그룹(WHILE/REPEAT/FOREACH): 고아 ENDER / 미폐쇄 STARTER / 그룹 교차
-'   - SELECT 깊이: 고아 CASE / END_SELECT
+'   - SELECT 스택: CASE 목록/END_SELECT 인덱스 + 고아 CASE / END_SELECT
 '   - IF 그룹: 멤버->END_IF 짝 인덱스(m_ifEndLines) + 구조 오류(고아 분기,
 '     ELSE 순서/중복, 미폐쇄 IF)를 m_ifStructureErrors에 기록
 '   SELECT 미폐쇄는 SelectBlocks 검증, ELSE_IF 파라미터는 Analysis가 담당.
 Private Sub BuildBlockPairIndex()
-    Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
-    Set m_ifStructureErrors = CreateObject("Scripting.Dictionary")
-
     Dim stackGroups() As String
     Dim stackLines() As Long
     Dim Top As Long
-    Dim selectDepth As Long
+    Dim selectStack As New Collection
+    Dim block As clsSelectBlock
+    Dim caseIndex As Long
 
     Dim ifMembers() As Collection
     Dim ifSawElse() As Boolean
@@ -582,14 +469,27 @@ Private Sub BuildBlockPairIndex()
 
         Select Case cmd
             Case "SELECT"
-                selectDepth = selectDepth + 1
+                Set block = New clsSelectBlock
+                block.SelectLine = R
+                m_selectBlocks.Add CStr(R), block
+                selectStack.Add block
             Case "CASE"
-                If selectDepth = 0 Then AddBlockPairError R, "CASE line " & R & " has no enclosing SELECT."
+                If selectStack.count = 0 Then
+                    AddBlockPairError R, "CASE line " & R & " has no enclosing SELECT."
+                Else
+                    Set block = selectStack(selectStack.count)
+                    block.AddCaseLine R
+                End If
             Case "END_SELECT"
-                If selectDepth = 0 Then
+                If selectStack.count = 0 Then
                     AddBlockPairError R, "END_SELECT line " & R & " has no matching SELECT."
                 Else
-                    selectDepth = selectDepth - 1
+                    Set block = selectStack(selectStack.count)
+                    block.EndSelectLine = R
+                    For caseIndex = 1 To block.CaseCount
+                        m_caseEndSelectLines(CStr(block.CaseLineAt(caseIndex))) = R
+                    Next caseIndex
+                    selectStack.Remove selectStack.count
                 End If
 
             Case "IF"
@@ -603,6 +503,10 @@ Private Sub BuildBlockPairIndex()
                 ifLines(ifTop) = R
 
             Case "ELSE_IF"
+                If ifTop > 0 Then
+                    m_nextBlockLines(CStr(ifMembers(ifTop)(ifMembers(ifTop).count))) = R
+                    m_prevBlockLines(CStr(R)) = ifLines(ifTop)
+                End If
                 If ifTop = 0 Then
                     AddIfStructureError R, "ELSE_IF line " & R & " has no matching IF."
                 ElseIf ifSawElse(ifTop) Then
@@ -613,6 +517,10 @@ Private Sub BuildBlockPairIndex()
                 End If
 
             Case "ELSE"
+                If ifTop > 0 Then
+                    m_nextBlockLines(CStr(ifMembers(ifTop)(ifMembers(ifTop).count))) = R
+                    m_prevBlockLines(CStr(R)) = ifLines(ifTop)
+                End If
                 If ifTop = 0 Then
                     AddIfStructureError R, "ELSE line " & R & " has no matching IF."
                 ElseIf ifSawElse(ifTop) Then
@@ -624,6 +532,10 @@ Private Sub BuildBlockPairIndex()
                 End If
 
             Case "END_IF"
+                If ifTop > 0 Then
+                    m_nextBlockLines(CStr(ifMembers(ifTop)(ifMembers(ifTop).count))) = R
+                    m_prevBlockLines(CStr(R)) = ifLines(ifTop)
+                End If
                 If ifTop = 0 Then
                     AddIfStructureError R, "END_IF line " & R & " has no matching IF."
                 Else
@@ -649,6 +561,9 @@ Private Sub BuildBlockPairIndex()
                         If stackGroups(Top) <> LoopEnderGroupOf(cmd) Then
                             AddBlockPairError R, cmd & " line " & R & " crosses loop nesting: innermost open loop is " _
                                 & stackGroups(Top) & " (line " & stackLines(Top) & ")."
+                        Else
+                            m_nextBlockLines(CStr(stackLines(Top))) = R
+                            m_prevBlockLines(CStr(R)) = stackLines(Top)
                         End If
                         Top = Top - 1
                     End If

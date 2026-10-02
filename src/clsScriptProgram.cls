@@ -19,7 +19,6 @@ Private Sub Class_Initialize()
     Set m_source = New clsScriptProgramSource
     Set m_index = New clsScriptProgramIndex
     Set m_analysis = New clsScriptProgramAnalysis
-    WireInternals
 End Sub
 
 Private Sub WireInternals()
@@ -94,10 +93,6 @@ Public Function FindBlockPair(ByVal startLine As Long, ByVal group As String, Op
     FindBlockPair = m_index.FindBlockPair(startLine, group, Direction)
 End Function
 
-Public Sub BuildStructureIndex()
-    m_index.BuildStructureIndex
-End Sub
-
 Public Function SelectBlock(ByVal SelectLine As Long) As clsSelectBlock
     Set SelectBlock = m_index.SelectBlock(SelectLine)
 End Function
@@ -109,12 +104,6 @@ End Function
 Public Function EndIfOf(ByVal lineNo As Long) As Long
     EndIfOf = m_index.EndIfOf(lineNo)
 End Function
-
-Public Sub BuildLabelIndex()
-    m_index.BuildLabelIndex
-    m_index.BuildStateCoordinates
-    m_analysis.BuildStaticAnalysis
-End Sub
 
 Public Function LabelRoleAt(ByVal lineNo As Long) As String
     LabelRoleAt = m_index.LabelRoleAt(lineNo)
@@ -136,16 +125,8 @@ Public Function IsCallTargetLabelAt(ByVal lineNo As Long) As Boolean
     IsCallTargetLabelAt = m_index.IsCallTargetLabelAt(lineNo)
 End Function
 
-Public Function IsCallTargetLabelAtSheetRow(ByVal sheetRow As Long) As Boolean
-    IsCallTargetLabelAtSheetRow = IsCallTargetLabelAt(RuntimeLineFromSheetRow(sheetRow))
-End Function
-
 Public Function IsJumpTargetMissingAt(ByVal lineNo As Long) As Boolean
     IsJumpTargetMissingAt = m_index.IsJumpTargetMissingAt(lineNo)
-End Function
-
-Public Function IsJumpTargetMissingAtSheetRow(ByVal sheetRow As Long) As Boolean
-    IsJumpTargetMissingAtSheetRow = IsJumpTargetMissingAt(RuntimeLineFromSheetRow(sheetRow))
 End Function
 
 Public Function ResolveJumpTargetSheetRow(ByVal Target As String) As Long
