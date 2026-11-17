@@ -35,6 +35,7 @@ Private m_subAreaIds() As Long
 Private m_structureDepths() As Long
 Private m_subEndLines As Object
 Private m_loopRanges As Collection
+Private m_ifBranchRanges As Collection
 ' [C3] 루프 짝/고아 CASE 구조 오류 (라인 -> 메시지). BuildStructureIndex의
 '   통합 스택 스캔이 채우고 Analysis.ValidateStructure가 차단 오류로 승격한다.
 Private m_blockPairErrors As Object
@@ -68,6 +69,7 @@ Private Sub ResetIndexes()
     Set m_labelRoles = CreateObject("Scripting.Dictionary")
     Set m_labelRoleWarnings = CreateObject("Scripting.Dictionary")
     Set m_loopRanges = New Collection
+    Set m_ifBranchRanges = New Collection
     Set m_subEndLines = CreateObject("Scripting.Dictionary")
     Set m_blockPairErrors = CreateObject("Scripting.Dictionary")
     Set m_ifStructureErrors = CreateObject("Scripting.Dictionary")
@@ -236,7 +238,15 @@ Public Function IsGotoAllowed(ByVal sourceLine As Long, ByVal targetLine As Long
     m_source.ValidateLineRange targetLine
 
     If SubAreaIdAt(sourceLine) <> SubAreaIdAt(targetLine) Then Exit Function
-    IsGotoAllowed = IsLoopTransferAllowed(sourceLine, targetLine)
+    If Not IsLoopTransferAllowed(sourceLine, targetLine) Then Exit Function
+    ' Entering a branch without its condition leaves the runtime IF stack unset.
+    Dim branch As Variant
+    For Each branch In m_ifBranchRanges
+        If targetLine > branch(0) And targetLine < branch(1) Then
+            If sourceLine <= branch(0) Or sourceLine >= branch(1) Then Exit Function
+        End If
+    Next branch
+    IsGotoAllowed = True
 End Function
 
 ' [CALL 경계] CALL의 존재 이유가 다른 sub-area의 서브루틴 호출이므로 IsGotoAllowed의
@@ -501,6 +511,7 @@ Private Sub BuildBlockPairIndex()
                         If sawElse(top) Then AddIfStructureError R, m_source.CmdAt(R) & " line " & R & " cannot appear after ELSE."
                         If m_source.CmdAt(R) = "ELSE" Then sawElse(top) = True
                         previousLine = CLng(members(top)(members(top).count))
+                        m_ifBranchRanges.Add Array(previousLine, R)
                         m_nextBlockLines(CStr(previousLine)) = R
                         m_prevBlockLines(CStr(R)) = stackLines(top)
                         members(top).Add R
@@ -517,6 +528,7 @@ Private Sub BuildBlockPairIndex()
                             Next caseIndex
                         Case "IF"
                             previousLine = CLng(members(top)(members(top).count))
+                            m_ifBranchRanges.Add Array(previousLine, R)
                             m_nextBlockLines(CStr(previousLine)) = R
                             m_prevBlockLines(CStr(R)) = stackLines(top)
                             members(top).Add R

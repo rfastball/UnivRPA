@@ -59,6 +59,7 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
         
     ElseIf TypeOf vSource Is Range Then
         ' [Case B] Range 객체가 넘어온 경우
+        If vSource.Areas.count <> 1 Then Err.Raise 5, "clsTableSnapshot.LoadFromSheet", "A contiguous table range is required."
         If vSource.Cells.count = 1 Then
             ' [Case B-1] 단일 셀(예: A1)만 넘김 -> 여기서부터 끝까지 자동 탐색
             Set rngTarget = GetRealUsedRange(vSource.Worksheet, vSource)
@@ -158,6 +159,8 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly
                 Set cell = rngTarget.Cells(R, c)
                 textValue = cell.text
                 If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(vValues(R, c))) Then
+                    ' Currency from .Value has already lost digits beyond four decimals.
+                    If VarType(vValues(R, c)) = vbCurrency Then vValues(R, c) = cell.Value2
                     textValue = modFilterUtils.GetSafeFormattedText(vValues(R, c), cell.NumberFormat)
                 End If
             End If

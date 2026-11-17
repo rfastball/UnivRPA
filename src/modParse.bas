@@ -91,6 +91,7 @@ Public Function TryParseLValue(ByVal text As String, ByRef kind As String, ByRef
     Dim inner As String
     inner = Trim$(Mid$(text, 2, Len(text) - 2))
     If Len(inner) = 0 Then Exit Function
+    If InStr(inner, "{") > 0 Or InStr(inner, "}") > 0 Then Exit Function
     If UCase$(inner) = "$CLIP" Then
         kind = "CLIP"
     ElseIf Left$(inner, 1) = "$" Then

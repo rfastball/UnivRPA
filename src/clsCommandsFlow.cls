@@ -359,7 +359,7 @@ Private Function ResolveGotoTarget(ByVal sourceLine As Long, ByVal Target As Str
     End If
 
     If Not prog.IsGotoAllowed(sourceLine, targetLine) Then
-        modContext.SetLastError "GOTO 라인 " & sourceLine & ": 라인 " & targetLine & "으로의 점프가 흐름 경계(루프/영역)를 침범합니다."
+        modContext.SetLastError "GOTO 라인 " & sourceLine & ": 라인 " & targetLine & "으로의 점프가 흐름 경계(루프/분기/영역)를 침범합니다."
         Exit Function
     End If
 

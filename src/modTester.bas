@@ -1272,6 +1272,30 @@ Private Function TC_ForeachRowExecution() As Long
     ExpectVar "empty_after", "yes", fails
     ExpectLoopDepth 0, fails
 
+    Dim precisionTable As clsTableSnapshot
+    ws.Range("E1").value = "Amount"
+    ws.Range("E2").NumberFormat = "$#,##0.000000"
+    ws.Range("E2").Value2 = 1.234567
+    ws.Columns("E").ColumnWidth = 20
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!E1:E2")
+    ExpectText "Currency: wide column retains precision", "1.234567", Right$(CStr(precisionTable.GetValue(2, "Amount")), 8), fails
+    ws.Columns("E").ColumnWidth = 1
+    ExpectLong "Currency: fixture exercises Currency coercion", vbCurrency, VarType(ws.Range("E2").value), fails
+    ExpectBool "Currency: narrow fixture needs fallback", True, Len(ws.Range("E2").text) = 0 Or Left$(ws.Range("E2").text, 1) = "#", fails
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!E1:E2")
+    ExpectText "Currency: narrow column retains precision", "1.234567", Right$(CStr(precisionTable.GetValue(2, "Amount")), 8), fails
+
+    ws.Range("A2").value = "first"
+    ws.Range("A4").value = "last"
+    Dim areaError As Long, areaReason As String
+    On Error Resume Next
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!A1:A2,A4")
+    areaError = Err.Number: areaReason = Err.Description
+    Err.Clear
+    On Error GoTo ErrHandler
+    ExpectLong "Table: disjoint source is rejected", 5, areaError, fails
+    ExpectBool "Table: disjoint source reason", True, InStr(areaReason, "contiguous") > 0, fails
+
     Dim wbProbe As Workbook, openedHere As Boolean, openError As Long
     Dim opener As New clsActionTestDriver
     opener.Reset
@@ -1525,6 +1549,21 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectVisits trace, 8, 0, fails
     ExpectVar "nested_inner_hit", "yes", fails
     ExpectIfBranchDepth 0, fails
+
+    Dim enterIfArr(1 To 8, 1 To 5) As Variant
+    MakeCmd enterIfArr, 1, "GOTO", "", "", "INSIDE_IF"
+    MakeCmd enterIfArr, 2, "IF", "1", "EQ", "0"
+    MakeCmd enterIfArr, 3, "LABEL", "", "", "INSIDE_IF"
+    MakeCmd enterIfArr, 4, "SET", "{first_branch}", "", "bad"
+    MakeCmd enterIfArr, 5, "ELSE_IF", "1", "EQ", "1"
+    MakeCmd enterIfArr, 6, "SET", "{second_branch}", "", "bad"
+    MakeCmd enterIfArr, 7, "END_IF", "", "", ""
+    MakeCmd enterIfArr, 8, "EXIT", "", "", ""
+    result = RunProgram(enterIfArr, 1, 20, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectLong "GOTO into IF stops at jump", 1, lastLine, fails
+    ExpectBool "GOTO never executes first branch", False, modContext.HasVar("first_branch"), fails
+    ExpectBool "GOTO never executes second branch", False, modContext.HasVar("second_branch"), fails
 
     Dim gotoIfArr(1 To 7, 1 To 5) As Variant
     Call MakeCmd(gotoIfArr, 1, "IF", "1", "EQ", "1")
@@ -1975,6 +2014,15 @@ Private Function TC_ParamGuardRuntime() As Long
     Call MakeCmd(arrCmd, 1, "SET", "{ }", 0, "value")
     ExpectLong "Guard: empty memory lvalue", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
     ExpectBool "Guard: empty memory not created", False, modContext.HasVar(""), fails
+
+    Dim badAddress As Variant, memoryCmd As Variant
+    For Each badAddress In Array("{a}{b}", "{{a}}", "{a{b}", "{a}b}")
+        For Each memoryCmd In Array("SET", "INC", "DEC")
+            MakeCmd arrCmd, 1, CStr(memoryCmd), CStr(badAddress), "", "1"
+            ExpectLong "Guard: malformed address " & memoryCmd & " " & badAddress, CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+        Next memoryCmd
+    Next badAddress
+    ExpectBool "Guard: malformed variable never created", False, modContext.HasVar("a}{b"), fails
 
     ' 필수 숫자 슬롯: SLEEP P3 비숫자 차단 / 숫자 통과
     Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "abc")
@@ -2549,6 +2597,22 @@ Private Function TC_EngineLifecycle() As Long
     ExpectSheetRun ws, "FAILED", fails
     ExpectBool "Engine: negative wait reason", True, InStr(modEngine.LastRuntimeError(), "negative") > 0, fails
     ExpectLong "Engine: negative wait not dispatched to OS", 0, driver.SleepCalls, fails
+
+    MakeCmd badArr, 1, "KEY", "ENTER", "", ""
+    MakeCmd badArr, 2, "REPEAT", "1", "", ""
+    MakeCmd badArr, 3, "BREAK", "", "", ""
+    MakeCmd badArr, 4, "END_REPEAT", "", "", ""
+    MakeCmd badArr, 5, "EXIT", "", "", ""
+    Dim errorCell As Variant
+    For Each errorCell In Array("B3", "C3", "D3", "E3")
+        driver.Reset
+        ws.Range("A2:E6").value = badArr
+        ws.Range(CStr(errorCell)).Formula = "=1/0"
+        ws.Range(CStr(errorCell)).Calculate
+        ExpectSheetRun ws, "FAILED", fails
+        ExpectBool "Engine: reports error cell " & errorCell, True, InStr(modEngine.LastRuntimeError(), "Excel error at " & errorCell) > 0, fails
+        ExpectLong "Engine: rejects error cell before input", 0, driver.KeyCalls, fails
+    Next errorCell
 
     MakeCmd badArr, 1, "KEY", "ENTER", 0, ""
     MakeCmd badArr, 2, "IF", "0", "EQ", "1"
@@ -3200,6 +3264,36 @@ Private Function TC_ScriptProgramModel() As Long
     MakeCmd earlyReturnArr, 8, "SET", "{tail}", 0, "1"
     program.LoadFromArray earlyReturnArr, 1
     ExpectBool "Conditional RETURN valid tail", True, program.ValidateStructure() And program.ValidateLabels(), fails
+
+    Dim branchJumpArr(1 To 17, 1 To 5) As Variant
+    MakeCmd branchJumpArr, 1, "GOTO", "", "", "FIRST"
+    MakeCmd branchJumpArr, 2, "IF", "1", "EQ", "1"
+    MakeCmd branchJumpArr, 3, "LABEL", "", "", "FIRST"
+    MakeCmd branchJumpArr, 4, "GOTO", "", "", "SAME"
+    MakeCmd branchJumpArr, 5, "LABEL", "", "", "SAME"
+    MakeCmd branchJumpArr, 6, "IF", "1", "EQ", "1"
+    MakeCmd branchJumpArr, 7, "LABEL", "", "", "INNER"
+    MakeCmd branchJumpArr, 8, "GOTO", "", "", "SAME"
+    MakeCmd branchJumpArr, 9, "END_IF", "", "", ""
+    MakeCmd branchJumpArr, 10, "ELSE_IF", "1", "EQ", "1"
+    MakeCmd branchJumpArr, 11, "LABEL", "", "", "SECOND"
+    MakeCmd branchJumpArr, 12, "GOTO", "", "", "FIRST"
+    MakeCmd branchJumpArr, 13, "ELSE", "", "", ""
+    MakeCmd branchJumpArr, 14, "LABEL", "", "", "THIRD"
+    MakeCmd branchJumpArr, 15, "END_IF", "", "", ""
+    MakeCmd branchJumpArr, 16, "LABEL", "", "", "OUTSIDE"
+    MakeCmd branchJumpArr, 17, "EXIT", "", "", ""
+    program.LoadFromArray branchJumpArr
+    ExpectBool "IF jump: valid block structure", True, program.ValidateStructure(), fails
+    ExpectBool "IF jump: invalid entries block preflight", False, program.ValidateLabels(), fails
+    ExpectBool "IF jump: outside entry rejected", False, program.IsGotoAllowed(1, 3), fails
+    ExpectBool "IF jump: same branch allowed", True, program.IsGotoAllowed(4, 5), fails
+    ExpectBool "IF jump: nested branch entry rejected", False, program.IsGotoAllowed(4, 7), fails
+    ExpectBool "IF jump: nested branch exit allowed", True, program.IsGotoAllowed(8, 5), fails
+    ExpectBool "IF jump: sibling IF entry rejected", False, program.IsGotoAllowed(12, 3), fails
+    ExpectBool "IF jump: sibling ELSE_IF entry rejected", False, program.IsGotoAllowed(4, 11), fails
+    ExpectBool "IF jump: sibling ELSE entry rejected", False, program.IsGotoAllowed(12, 14), fails
+    ExpectBool "IF jump: exit all branches allowed", True, program.IsGotoAllowed(8, 16), fails
 
     ' Reload the same facade: no previous errors, labels, blocks or analysis survive.
     program.LoadFromArray dupArr, 1

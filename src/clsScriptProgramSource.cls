@@ -99,7 +99,9 @@ End Function
 Public Function ValueAt(ByVal lineNo As Long, ByVal columnNo As Long) As String
     ValidateLineRange lineNo
     If columnNo > UBound(m_lines, 2) Then Exit Function
-    If IsError(m_lines(lineNo, columnNo)) Or IsNull(m_lines(lineNo, columnNo)) Or IsEmpty(m_lines(lineNo, columnNo)) Then Exit Function
+    If IsError(m_lines(lineNo, columnNo)) Then _
+        Err.Raise 13, "clsScriptProgramSource.ValueAt", "Excel error at " & Chr$(64 + columnNo) & SheetRowFromRuntimeLine(lineNo)
+    If IsNull(m_lines(lineNo, columnNo)) Or IsEmpty(m_lines(lineNo, columnNo)) Then Exit Function
     ValueAt = CStr(m_lines(lineNo, columnNo))
 End Function
 
