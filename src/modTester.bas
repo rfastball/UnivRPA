@@ -1093,8 +1093,8 @@ Private Function TC_TableSnapshotReadOnly() As Long
 
     Debug.Print "--- [Flow 2A] TableSnapshot read-only surface ---"
 
-    data(1, 1) = "Code": data(1, 2) = "Name": data(1, 3) = "Group"
-    data(2, 1) = "001": data(2, 2) = "Alice": data(2, 3) = "A"
+    data(1, 1) = "Code": data(1, 2) = " Name ": data(1, 3) = "Group"
+    data(2, 1) = "001": data(2, 2) = " Alice ": data(2, 3) = "A"
     data(3, 1) = "002": data(3, 2) = "Bob": data(3, 3) = "B"
     data(4, 1) = "003": data(4, 2) = "Cara": data(4, 3) = "A"
 
@@ -1105,7 +1105,7 @@ Private Function TC_TableSnapshotReadOnly() As Long
     ExpectLong "Snapshot FirstDataRow", 2, tbl.FirstDataRow, fails
     ExpectLong "Snapshot ColCount", 3, tbl.ColCount, fails
     ExpectBool "Snapshot Headers CODE", True, tbl.headers.exists("CODE"), fails
-    ExpectText "Snapshot GetValue", "Alice", CStr(tbl.GetValue(2, "Name")), fails
+    ExpectText "Snapshot trims headers but preserves data spaces", " Alice ", CStr(tbl.GetValue(2, "Name")), fails
 
     tbl.Clear
     ExpectLong "Snapshot Clear RowCount", 0, tbl.RowCount, fails
@@ -1168,7 +1168,7 @@ Private Function TC_ForeachRowExecution() As Long
     ws.Columns("C").ColumnWidth = 1
     ws.Range("D2").value = "first"
     ws.Range("A3:D3").value = Array("B", 20, DateSerial(2024, 2, 2), "skip")
-    ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), "break")
+    ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), " break ")
 
     Dim arr(1 To 23, 1 To 5) As Variant
     Call MakeCmd(arr, 1, "SET", "{processed}", 0, "0")
@@ -1178,7 +1178,7 @@ Private Function TC_ForeachRowExecution() As Long
     Call MakeCmd(arr, 5, "SET", "{first_rounded}", 0, "{$ROW.Rounded}")
     Call MakeCmd(arr, 6, "SET", "{first_date}", 0, "{$ROW.DateNarrow}")
     Call MakeCmd(arr, 7, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 8, "SET", "{last_code}", 0, "{$ROW.Code}")
+    Call MakeCmd(arr, 8, "SET", "{last_code}", 0, "{$ROW.Code}|{$ROW.Note}")
     Call MakeCmd(arr, 9, "SET", "{last_idx}", 0, "{$RIDX}")
     Call MakeCmd(arr, 10, "SET", "{last_total}", 0, "{$RTOTAL}")
     Call MakeCmd(arr, 11, "IF", "{$ROW.Code}", "EQ", "B")
@@ -1200,7 +1200,7 @@ Private Function TC_ForeachRowExecution() As Long
     ExpectVar "first_code", "007", fails
     ExpectVar "first_rounded", "11", fails
     ExpectVar "first_date", "2024-02-01", fails
-    ExpectVar "last_code", "C", fails
+    ExpectVar "last_code", "C| break ", fails
     ExpectVar "last_idx", "3", fails
     ExpectVar "last_total", "3", fails
     ExpectVar "processed", "2", fails
@@ -1908,6 +1908,15 @@ Private Function TC_MemoryResolverHeadless() As Long
     ExpectVar "n", "2", fails
     ExpectTrace trace, Array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22), fails
 
+    Dim invalidPixel As Variant, badPixelArr(1 To 1, 1 To 5) As Variant
+    modContext.SetVar "x", "abc"
+    For Each invalidPixel In Array("{$PIXEL:abc,200}", "{$PIXEL:100,}", "{$PIXEL:2147483648,200}", _
+                                  "{$PIXEL:100}", "{$PIXEL:1,2,3}", "{$PIXEL:{x},200}")
+        MakeCmd badPixelArr, 1, "SET", "{invalid_pixel}", "", CStr(invalidPixel)
+        ExpectLong "Pixel token rejects " & invalidPixel, CMD_ERROR, ExecuteArrayLine(badPixelArr, 1), fails
+    Next invalidPixel
+    ExpectBool "Pixel token failure never stores a color", False, modContext.HasVar("invalid_pixel"), fails
+
     TC_MemoryResolverHeadless = fails
 End Function
 
@@ -2099,6 +2108,21 @@ Private Function TC_AbortLatch() As Long
     code = ExecuteArrayLine(arr, 1)
     ExpectLong "Combo: bad key rejected", CMD_ERROR, code, fails
     ExpectText "Combo: validate both keys before Down", "", driver.KeyEvents, fails
+    Dim inputCmd As Variant
+    For Each inputCmd In Array("KEY", "COMBO")
+        driver.Reset
+        If inputCmd = "KEY" Then
+            MakeCmd arr, 1, "KEY", ".", "", ""
+        Else
+            MakeCmd arr, 1, "COMBO", "CTRL", ".", ""
+        End If
+        ExpectLong "Punctuation rejected by " & inputCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectText "Punctuation never sends keys", "", driver.KeyEvents, fails
+    Next inputCmd
+    driver.Reset
+    MakeCmd arr, 1, "KEY", "46", "", ""
+    ExpectLong "Explicit numeric Delete remains supported", CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+    ExpectText "Explicit numeric Delete sends Down and Up", "46:0;46:2;", driver.KeyEvents, fails
     driver.Reset
     driver.FailOnKey = 2
     MakeCmd arr, 1, "COMBO", "CTRL", "C", ""
@@ -2113,7 +2137,7 @@ Private Function TC_AbortLatch() As Long
     ExpectText "Combo: both releases attempted", "17:0;67:0;67:2;67:2;17:2;", driver.KeyEvents, fails
     driver.Reset
     driver.AbortOnSleep = 1
-    modActions.Action_PressCombo "CTRL", "C"
+    modActions.Action_PressCombo "CTRL", "c"
     ExpectText "Combo: abort releases first key without second Down", "17:0;17:2;", driver.KeyEvents, fails
     driver.Reset
     driver.FailOnKey = 2
@@ -2175,8 +2199,24 @@ Private Function TC_AbortLatch() As Long
     For Each invalidColor In Array("!ZZZZZZ", "!FFFFF", "!FFFFFF0", "!", "{$BLANK}")
         MakeCmd arr, 1, "ASSERT", "0", "0", CStr(invalidColor)
         ExpectLong "Pixel: malformed color rejected " & invalidColor, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
-        ExpectBool "Pixel: malformed color reason", True, InStr(modEngine.LastRuntimeError(), "Invalid ASSERT color") > 0, fails
+        ExpectBool "Pixel: malformed color reason", True, InStr(modEngine.LastRuntimeError(), "Invalid pixel color") > 0, fails
     Next invalidColor
+    driver.PixelColor = &HFFFFFF
+    For Each visionCmd In Array("WAIT_APPEAR", "WAIT_VANISH")
+        driver.Reset
+        For Each invalidColor In Array("ZZZZZZ", "FFFFF", "FFFFFF0", "!FFFFFF", "{$BLANK}")
+            MakeCmd arr, 1, CStr(visionCmd), "0", "0", CStr(invalidColor)
+            ExpectLong "Wait rejects malformed color " & visionCmd & " " & invalidColor, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+            ExpectBool "Wait retains color error", True, InStr(modEngine.LastRuntimeError(), "Invalid pixel color") > 0, fails
+        Next invalidColor
+        ExpectLong "Invalid colors never wait", 0, driver.SleepCalls, fails
+        If visionCmd = "WAIT_APPEAR" Then
+            MakeCmd arr, 1, CStr(visionCmd), "0", "0", " ffffff "
+        Else
+            MakeCmd arr, 1, CStr(visionCmd), "0", "0", " 000000 "
+        End If
+        ExpectLong "Wait accepts normalized color " & visionCmd, CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+    Next visionCmd
     ExpectText "Pixel: existing BGR representation retained", "0000FF", modWinAPI.FormatColorHex(&HFF), fails
 
     Dim failureStage As Variant
@@ -2305,6 +2345,8 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
     Dim fails As Long
     Dim ws As Worksheet
     Dim sheetName As String
+    Dim previousEvents As Boolean
+    previousEvents = Application.EnableEvents
 
     Debug.Print "--- [Flow 6B] Script Assist formatter comments ---"
 
@@ -2330,6 +2372,17 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
     ws.Cells.Clear
     modDevTools.FormatRPAScript ws
     ExpectBool "Formatter initializes empty sheet", True, modScriptAssist.IsScriptSheet(ws), fails
+
+    ws.Activate
+    ws.Range("A1").Select
+    Application.EnableEvents = True
+    Application.StatusBar = "selection probe"
+    ws.Cells.Select
+    ExpectBool "Whole-sheet selection event clears hint", True, Application.StatusBar = False, fails
+    Application.EnableEvents = previousEvents
+    Application.StatusBar = "hint probe"
+    modScriptAssist.ShowParamHint ws.Cells
+    ExpectBool "Whole-sheet hint clears safely", True, Application.StatusBar = False, fails
 
     ws.Cells(2, 2).value = "IF"
     ws.Cells(2, 3).value = "1"
@@ -2367,6 +2420,7 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
 
 CleanUp:
     On Error Resume Next
+    Application.EnableEvents = previousEvents
     Application.DisplayAlerts = False
     If Not ws Is Nothing Then ws.Delete
     Application.DisplayAlerts = True
@@ -2476,6 +2530,12 @@ Private Function TC_EngineLifecycle() As Long
     modActions.SetUnattendedMode True
     modActions.SetInputTestDriver driver
     driver.Reset
+    MakeCmd singleArr, 1, "KEY", "ENTER", "", ""
+    ws.Range("A2:E2").value = singleArr
+    ExpectSheetRun ws, "FAILED", fails
+    ExpectBool "Engine: non-script sheet reason", True, InStr(modEngine.LastRuntimeError(), "headers ROW and COMMAND") > 0, fails
+    ExpectLong "Engine: non-script sheet never sends keys", 0, driver.KeyCalls, fails
+    ws.Range("A2:E2").ClearContents
     modDevTools.EnsureHeaders ws
     ExpectSheetRun ws, "FAILED", fails
     MakeCmd singleArr, 1, "SET", "{value}", 0, "1"
@@ -2553,6 +2613,18 @@ Private Function TC_EngineLifecycle() As Long
     ws.Range("A2:E2").value = singleArr
     ExpectSheetRun ws, "FAILED", fails
     ExpectBool "Engine: label validation connected", True, InStr(modEngine.LastRuntimeError(), "target not found") > 0, fails
+
+    Dim localLabelArr(1 To 7, 1 To 5) As Variant
+    MakeCmd localLabelArr, 1, "CALL", "", "", "SUB_LOCAL"
+    MakeCmd localLabelArr, 2, "EXIT", "", "", ""
+    MakeCmd localLabelArr, 3, "LABEL", "", "", "SUB_LOCAL"
+    MakeCmd localLabelArr, 4, "GOTO", "", "", "DONE_LOCAL"
+    MakeCmd localLabelArr, 5, "LABEL", "", "", "DONE_LOCAL"
+    MakeCmd localLabelArr, 6, "SLEEP", "", "", "9"
+    MakeCmd localLabelArr, 7, "RETURN", "", "", ""
+    ws.Range("A2:E8").value = localLabelArr
+    ExpectSheetRun ws, "HALTED", fails
+    ExpectLong "Engine: internal label executes and returns", 9, driver.SleepTotal, fails
 CleanUp:
     On Error Resume Next
     modActions.SetInputTestDriver Nothing
@@ -2978,6 +3050,20 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectBool "Subroutine no-RETURN blocks", False, program.ValidateLabels(), fails
     ExpectBool "Subroutine no-RETURN message", True, (InStr(1, program.ValidationErrors(), "RETURN", vbTextCompare) > 0), fails
     ExpectBool "Subroutine no-RETURN flow invalid", True, program.IsFlowInvalidAt(3), fails
+
+    Dim adjacentSubArr(1 To 8, 1 To 5) As Variant
+    MakeCmd adjacentSubArr, 1, "CALL", "", "", "FIRST_SUB"
+    MakeCmd adjacentSubArr, 2, "CALL", "", "", "SECOND_SUB"
+    MakeCmd adjacentSubArr, 3, "EXIT", "", "", ""
+    MakeCmd adjacentSubArr, 4, "LABEL", "", "", "FIRST_SUB"
+    MakeCmd adjacentSubArr, 5, "LABEL", "", "", "LOCAL_LABEL"
+    MakeCmd adjacentSubArr, 6, "EXIT", "", "", ""
+    MakeCmd adjacentSubArr, 7, "LABEL", "", "", "SECOND_SUB"
+    MakeCmd adjacentSubArr, 8, "RETURN", "", "", ""
+    program.LoadFromArray adjacentSubArr, 1
+    ExpectBool "Missing RETURN cannot borrow next subroutine RETURN", False, program.ValidateLabels(), fails
+    ExpectBool "First subroutine still lacks RETURN", True, program.IsFlowInvalidAt(4), fails
+    ExpectBool "Next subroutine retains its RETURN", True, program.IsSubroutineEndAt(8), fails
 
     ' 정상 서브루틴(앞 EXIT + RETURN 있음)은 통과 (회귀 가드)
     Dim goodSubArr(1 To 4, 1 To 5) As Variant

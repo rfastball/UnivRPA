@@ -1,6 +1,6 @@
 Attribute VB_Name = "modScriptAssist"
 ' @desc 작성 UX 이벤트/상태바/메모 담당. 구조·라벨·흐름·변수 판단을 직접 계산하지 않는다.
-' @depends modCmdRegistry, modDevTools, modStringDistance, CmdDef, ParamSpec, clsScriptProgram
+' @depends modCmdRegistry, modDevTools, modStringDistance, modHelper, CmdDef, ParamSpec, clsScriptProgram
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -19,10 +19,7 @@ Public Function ResolveCmdCol(ByVal Sh As Worksheet) As Long
 End Function
 
 Public Function IsScriptSheet(ByVal Sh As Worksheet) As Boolean
-    On Error GoTo SafeExit
-    IsScriptSheet = (UCase$(Trim$(CStr(Sh.Cells(1, 1).value))) = "ROW" _
-                  And UCase$(Trim$(CStr(Sh.Cells(1, 2).value))) = "COMMAND")
-SafeExit:
+    IsScriptSheet = modHelper.IsScriptSheet(Sh)
 End Function
 
 Public Sub SetupScriptSheet(ByVal Sh As Worksheet)
@@ -191,7 +188,7 @@ End Sub
 
 Public Sub ValidateCommandCell(ByVal Target As Range, Optional ByVal program As clsScriptProgram = Nothing)
     If Target Is Nothing Then Exit Sub
-    If Target.Cells.count <> 1 Then Exit Sub
+    If Target.Cells.CountLarge <> 1 Then Exit Sub
     If ResolveCmdCol(Target.Worksheet) <> Target.Column Then Exit Sub
 
     Dim rawCmd As Variant
@@ -243,7 +240,7 @@ Public Sub ShowParamHint(ByVal Target As Range)
         Exit Sub
     End If
 
-    If Target.Cells.count <> 1 Then
+    If Target.Cells.CountLarge <> 1 Then
         ClearStatusBar
         Exit Sub
     End If
@@ -277,7 +274,7 @@ End Sub
 
 Public Function HandleBeforeDoubleClick(ByVal Target As Range) As Boolean
     If Target Is Nothing Then Exit Function
-    If Target.Cells.count <> 1 Then Exit Function
+    If Target.Cells.CountLarge <> 1 Then Exit Function
     If Target.Row <= 1 Then Exit Function
 
     Dim ws As Worksheet
@@ -486,7 +483,7 @@ End Sub
 
 Private Function AssistCommandCell(ByVal Target As Range) As Range
     If Target Is Nothing Then Exit Function
-    If Target.Cells.count <> 1 Then Exit Function
+    If Target.Cells.CountLarge <> 1 Then Exit Function
     If Target.Row <= 1 Then Exit Function
 
     Dim cmdCol As Long

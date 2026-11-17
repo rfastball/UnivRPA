@@ -435,7 +435,7 @@ Private Function FindSubroutineEnd(ByVal startLine As Long) As Long
                     FindSubroutineEnd = R
                     Exit Function
                 Case "LABEL"
-                    Exit Function
+                    If IsCallTargetLabelAt(R) Then Exit Function
             End Select
         End If
 

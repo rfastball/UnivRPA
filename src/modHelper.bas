@@ -8,6 +8,14 @@ Option Explicit
 ' 캡처 자동입력 채움색 (RGB 220,255,220 연녹)
 Private Const CLR_CAPTURE_FILL As Long = &HDCFFDC
 
+' @desc 시트의 ROW/COMMAND 시그니처 일치 여부 반환, 읽기 실패 시 False 반환
+Public Function IsScriptSheet(ByVal Sh As Worksheet) As Boolean
+    On Error GoTo SafeExit
+    IsScriptSheet = (UCase$(Trim$(CStr(Sh.Cells(1, 1).value))) = "ROW" _
+                  And UCase$(Trim$(CStr(Sh.Cells(1, 2).value))) = "COMMAND")
+SafeExit:
+End Function
+
 '==============================================================================
 ' StatusBar gate (UI 쓰기의 단일 통로 - 상태 모듈(modContext)은 UI 무접촉)
 '==============================================================================

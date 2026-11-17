@@ -72,6 +72,7 @@ Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unatt
     ' 이후 모든 로직은 ActiveSheet가 아닌 wsSource를 바라봅니다.
     '==========================================================
     If wsSource Is Nothing Then Err.Raise 5, "modEngine.RunScriptSheet", "Script worksheet is required."
+    If Not modHelper.IsScriptSheet(wsSource) Then Err.Raise 5, "modEngine.RunScriptSheet", "Script headers ROW and COMMAND are required."
     Set rngTarget = ResolveScriptRange(wsSource)
 
     ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우

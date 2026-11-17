@@ -292,9 +292,8 @@ Private Function ParseKeyCode(ByVal vKey As Variant) As Long
         Case "F7": ParseKeyCode = 118: Case "F8": ParseKeyCode = 119: Case "F9": ParseKeyCode = 120
         Case "F10": ParseKeyCode = 121: Case "F11": ParseKeyCode = 122: Case "F12": ParseKeyCode = 123
         Case Else
-            ' [알파벳/숫자] 1글자인 경우 ASCII 값 사용 (A-Z, 0-9는 VK코드와 일치)
-            ' UCase로 변환했으므로 소문자 a도 A(65)로 변환되어 정상 동작함
-            If Len(sKey) = 1 Then ParseKeyCode = Asc(sKey) Else ParseKeyCode = 0
+            ' Only letters share their character code with the intended virtual key.
+            If sKey Like "[A-Z]" Then ParseKeyCode = Asc(sKey)
     End Select
 
     ' 알 수 없는 키 이름은 VK 0으로 조용히 발사되지 않도록 명시 오류로 전환
@@ -423,8 +422,10 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
     Dim timeLimit As Long: timeLimit = TIMEOUT_DEFAULT ' 30초 제한
     Dim isVanish As Boolean: isVanish = (sType = "WAIT_VANISH")
     Dim curColor As String
+    Dim targetColor As String
     
     If AbortPending() Then Exit Function
+    targetColor = NormalizeHexColor(hexColor)
     startTime = modWinAPI.GetTickCount()
     
     Do
@@ -432,9 +433,9 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         
         ' 조건 충족 확인
         If isVanish Then
-            If curColor <> UCase(hexColor) Then Action_Wait = True: Exit Function
+            If curColor <> targetColor Then Action_Wait = True: Exit Function
         Else
-            If curColor = UCase(hexColor) Then Action_Wait = True: Exit Function
+            If curColor = targetColor Then Action_Wait = True: Exit Function
         End If
         
         ' 타임아웃 (무인 환경: 모달 금지, 조용히 실패 반환 → 알림 여부는 엔진이 결정)
@@ -465,8 +466,7 @@ Public Function Action_Assert(x As Long, y As Long, condition As String) As Bool
     targetColor = UCase$(Trim$(condition))
     isForbidden = (Left(targetColor, 1) = "!")
     If isForbidden Then targetColor = Mid(targetColor, 2)
-    If Len(targetColor) <> 6 Or targetColor Like "*[!0-9A-F]*" Then _
-        Err.Raise 5, "modActions.Action_Assert", "Invalid ASSERT color: " & condition
+    targetColor = NormalizeHexColor(targetColor)
     
     nowColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
     
@@ -485,6 +485,12 @@ ErrHandler:
     Resume CleanUp
 End Function
 
+Private Function NormalizeHexColor(ByVal colorText As String) As String
+    colorText = UCase$(Trim$(colorText))
+    If Len(colorText) <> 6 Or colorText Like "*[!0-9A-F]*" Then _
+        Err.Raise 5, "modActions.NormalizeHexColor", "Invalid pixel color: " & colorText
+    NormalizeHexColor = colorText
+End Function
 
 
 '==============================================================================

@@ -88,7 +88,7 @@ Did you mean CLICK?
 
 | 대상 | 동작 |
 |------|------|
-| `CALL` / `GOTO`의 PARAM3 | 해당 라벨 또는 줄번호 위치로 스크롤합니다. |
+| `CALL` / `GOTO`의 PARAM3 | 해당 정적 라벨 위치로 스크롤합니다. 줄번호는 지원하지 않습니다. |
 | `LABEL`의 PARAM3 | 최근에 이동해 온 `CALL` 원본 줄로 돌아갑니다. 최근 기록이 없으면 같은 라벨을 호출하는 첫 `CALL`을 찾습니다. |
 
 대상을 찾지 못하면 상태표시줄에 `target LABEL not found` 또는 `source CALL not found` 안내가 표시됩니다.

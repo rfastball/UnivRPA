@@ -187,11 +187,11 @@ Private Function ResolvePixelToken(ByVal coordText As String) As String
     On Error GoTo ErrHandler
     Dim coords() As String
     coords = Split(coordText, ",")
-    If UBound(coords) = 1 Then
-        ResolvePixelToken = modWinAPI.GetColorHexAt(modParse.ParseLongOrDefault(coords(0), 0), modParse.ParseLongOrDefault(coords(1), 0))
-    Else
-        ResolvePixelToken = "{$PIXEL:" & coordText & "}"  ' 형식 불일치 시 원본
-    End If
+    If UBound(coords) <> 1 Then Err.Raise 5, "modTokenResolver.ResolvePixelToken", "PIXEL requires two numeric coordinates: " & coordText
+    Dim x As Long, y As Long
+    x = modParse.ParseLongStrict(coords(0))
+    y = modParse.ParseLongStrict(coords(1))
+    ResolvePixelToken = modWinAPI.GetColorHexAt(x, y)
 
 CleanUp:
     Exit Function

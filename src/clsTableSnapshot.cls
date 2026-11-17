@@ -255,7 +255,7 @@ End Function
 
 ' 1-2. 배열에서 직접 로드 (데이터 정규화 포함 버전)
 Public Sub LoadFromArray(ByVal vArr As Variant, Optional ByVal bHasHeader As Boolean = True)
-    Dim i As Long, j As Long
+    Dim j As Long
     Dim sColName As String
     
     Clear ' 기존 데이터 초기화
@@ -264,22 +264,11 @@ Public Sub LoadFromArray(ByVal vArr As Variant, Optional ByVal bHasHeader As Boo
     m_lRowCount = UBound(m_vData, 1)
     m_lColCount = UBound(m_vData, 2)
     
-    ' [전처리] 전체 데이터 영역 초고속 트리밍
-    ' * 문자열 타입(vbString)인 경우에만 Trim$ 수행하여 속도 최적화
-    For i = LBound(m_vData, 1) To UBound(m_vData, 1)
-        For j = LBound(m_vData, 2) To UBound(m_vData, 2)
-            If VarType(m_vData(i, j)) = vbString Then
-                m_vData(i, j) = Trim$(m_vData(i, j))
-            End If
-        Next j
-    Next i
-    
     ' 헤더 매핑 생성
     If bHasHeader Then
         Dim lHeadRow As Long: lHeadRow = LBound(m_vData, 1)
         For j = LBound(m_vData, 2) To UBound(m_vData, 2)
-            ' 헤더 자체도 다시 한번 Trim (이미 위에서 처리되었지만 명시적 유지)
-            sColName = CStr(m_vData(lHeadRow, j))
+            sColName = Trim$(CStr(m_vData(lHeadRow, j)))
             If Len(sColName) > 0 Then
                 ' 중복 헤더는 조용히 덮어쓰지 않는다: 스크립트가 "어느 열을 보는지"
                 '   잃으면 자동화가 위험하므로 자동 suffix 대신 하드 에러
