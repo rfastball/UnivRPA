@@ -94,7 +94,6 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             Dim restoredDepth As Long
             retLine = modContext.PopStack(restoredDepth)
             If retLine > 0 Then
-                modContext.ReconcileIfBranchStackForJump retLine
                 LogShim.LogEvent "return.pop", _
                     Array("line", "returnRow", "stackDepth_after", "loopDepth_restored"), _
                     Array(R, retLine, modContext.GetStackDepth(), restoredDepth)
@@ -141,7 +140,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             ' 백엣지 재진입이면 프레임이 이미 있다(top.header=R) - 짝 스캔 없이 프레임 값 사용.
             ' 첫 진입은 프레임이 없으므로 END_WHILE 짝을 전방 스캔해야 한다(제거 불가).
             Dim whileReentry As Boolean
-            whileReentry = (modContext.LoopDepth() > 0 And modContext.LoopTopHeader() = R)
+            whileReentry = (modContext.LocalLoopDepth() > 0 And modContext.LoopTopHeader() = R)
 
             If EvalCondition(args(1), args(2), args(3)) Then
                 ' 참: 재진입이면 회차+1, 첫 진입이면 짝 스캔 후 PUSH
@@ -177,7 +176,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "END_WHILE"
             ' 헤더로 백점프. POP은 WHILE 거짓 갈래가 담당 (백엣지 동안 {$LOOP} 유지)
             ' 헤더 줄은 활성 프레임에 이미 있다 - 후방 스캔 없이 조회 (구조상 최상위가 이 WHILE)
-            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "WHILE" Then
+            If modContext.LocalLoopDepth() > 0 And modContext.LoopTopKind() = "WHILE" Then
                 ICommand_Execute = modContext.LoopTopHeader()
             Else
                 modContext.SetLastError "END_WHILE 라인 " & R & ": 활성 WHILE 프레임이 없습니다."
@@ -216,7 +215,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "END_REPEAT"
             ' 헤더 줄은 활성 프레임에서 조회 - 후방 스캔 제거 (기존엔 스캔값을 프레임과 등가 검증만 했음)
             Dim rHead As Long: rHead = modContext.LoopTopHeader()
-            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "REPEAT" Then
+            If modContext.LocalLoopDepth() > 0 And modContext.LoopTopKind() = "REPEAT" Then
                 If modContext.LoopTopMax() = 0 Then
                     modContext.LoopIncrement
                     ICommand_Execute = rHead + 1   ' 무한 반복: 본문 재실행
@@ -263,7 +262,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
          Case "END_FOREACH"
             ' 헤더 줄은 활성 프레임에서 조회 - 행마다 반복되던 후방 스캔 제거 (핫패스)
             Dim fHead As Long: fHead = modContext.LoopTopHeader()
-            If modContext.LoopDepth() > 0 And modContext.LoopTopKind() = "FOREACH" Then
+            If modContext.LocalLoopDepth() > 0 And modContext.LoopTopKind() = "FOREACH" Then
                 If modContext.ForeachAdvance() Then
                     ICommand_Execute = fHead + 1
                 Else
@@ -277,7 +276,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 
          '--- [Loop Control] BREAK / CONTINUE ---
          Case "BREAK"
-            If modContext.LoopDepth() > 0 Then
+            If modContext.LocalLoopDepth() > 0 Then
                 Dim brkEnd As Long: brkEnd = modContext.LoopTopEnd()
                 Dim brkTarget As Long: brkTarget = brkEnd + 1
                 modContext.LoopPop "break" ' 카운터 정리
@@ -289,7 +288,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             End If
 
          Case "CONTINUE"
-            If modContext.LoopDepth() > 0 Then
+            If modContext.LocalLoopDepth() > 0 Then
                 ' 감싸는 루프의 ENDER로 점프 → WHILE/REPEAT 각각의 ENDER가 알맞게 처리
                 Dim continueTarget As Long: continueTarget = modContext.LoopTopEnd()
                 modContext.ReconcileIfBranchStackForJump continueTarget

@@ -1,7 +1,7 @@
 Attribute VB_Name = "modTester"
 ' @dist exclude
 ' @desc 명령어셋 통합 자가진단 및 레지스트리 역검증 실행 담당
-' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry, modStringDistance
+' @depends modEngine, modContext, modActions, modWinAPI, modCmdRegistry, modStringDistance, clsActionTestDriver
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -45,6 +45,7 @@ Public Sub Run_Flow_Diagnosis()
     failCount = failCount + TC_CommandNormalization()
     failCount = failCount + TC_ParseStrict()
     failCount = failCount + TC_ScriptRangeResolution()
+    failCount = failCount + TC_EngineLifecycle()
 
     Debug.Print "--- [Regression] Registry/ScriptProgram ---"
     failCount = failCount + TC_RegistryDispatchSync()
@@ -100,6 +101,11 @@ End Sub
 ' @desc FOREACH_ROW 실행 스위트 실행해 실패 0건 단언함
 Public Sub Test_ForeachRowExecution()
     ReportSuiteResult "flow.foreach_row", TC_ForeachRowExecution()
+End Sub
+
+' @desc FOREACH+CALL 판단 서브루틴 분기 기술데모 스위트 실행해 실패 0건 단언함
+Public Sub Test_DemoForeachJudgeDispatch()
+    ReportSuiteResult "demo.foreach_judge_dispatch", TC_DemoForeachJudgeDispatch()
 End Sub
 
 ' @desc 중첩 흐름 상호작용 스위트 실행해 실패 0건 단언함
@@ -170,6 +176,12 @@ End Sub
 ' @desc ScriptProgram 정적 모델 스위트 실행해 실패 0건 단언함
 Public Sub Test_ScriptProgramModel()
     ReportSuiteResult "model.script_program", TC_ScriptProgramModel()
+End Sub
+
+
+' @desc 실제 시트 실행 경로의 검증 및 종료 상태와 재진입 차단을 검증함
+Public Sub Test_EngineLifecycle()
+    ReportSuiteResult "engine.lifecycle", TC_EngineLifecycle()
 End Sub
 
 Public Function RunProgram(ByRef arr As Variant, ByVal firstRow As Long, ByVal maxSteps As Long, _
@@ -626,6 +638,13 @@ Public Function TC_RegistryDispatchSync() As Long
     Dim cmds As Variant: cmds = modCmdRegistry.AllCommands()
     Dim i As Long, fails As Long
     Dim cmd As String, def As CmdDef, h As ICommand
+    Dim driver As New clsActionTestDriver, ws As Worksheet, previousAlerts As Boolean
+    previousAlerts = Application.DisplayAlerts
+    On Error GoTo Failed
+    modActions.SetUnattendedMode True
+    modActions.SetInputTestDriver driver
+    Set ws = ThisWorkbook.Worksheets.Add
+    ws.Cells(1, 1).value = "Header"
 
     ' [C2] RawKind 시맨틱 태그의 전수 동기 검증용 집계
     Dim conditionSlots As String, lvalueSlots As String, jumpSlots As String
@@ -641,6 +660,10 @@ Public Function TC_RegistryDispatchSync() As Long
             If h Is Nothing Then
                 Debug.Print "[FAIL] 핸들러 없음 (category=" & def.Category & "): " & cmd
                 fails = fails + 1
+            Else
+                driver.Reset
+                driver.ChangePixelAfterClick = True
+                CheckRegistryDispatch cmd, h, ws, fails
             End If
 
             ' [C2] 불변식: RawKind <> RK_NONE 인 슬롯 == IsRaw 슬롯 (전수)
@@ -669,8 +692,107 @@ Public Function TC_RegistryDispatchSync() As Long
     ExpectText "RawKind jump slots", "GOTO.P3;CALL.P3;", jumpSlots, fails
 
     Debug.Print "[역검증] 총 " & (UBound(cmds) - LBound(cmds) + 1) & "개 명령어 라우팅 확인, 실패 " & fails
+CleanUp:
+    On Error Resume Next
+    modActions.SetInputTestDriver Nothing
+    modContext.ResetContext
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = previousAlerts
+    On Error GoTo 0
     TC_RegistryDispatchSync = fails
+    Exit Function
+Failed:
+    fails = fails + 1
+    LogFail "Registry dispatch " & cmd, "valid command fixture", Err.Description
+    Resume CleanUp
 End Function
+
+' Each registry entry must reach its command branch, with real input replaced by the driver.
+Private Sub CheckRegistryDispatch(ByVal cmd As String, ByVal handler As ICommand, ByVal ws As Worksheet, ByRef fails As Long)
+    Dim arr(1 To 6, 1 To 5) As Variant, args(1 To 3) As String
+    Dim lineNo As Long, expected As Long, tbl As clsTableSnapshot
+    Dim data(1 To 2, 1 To 1) As Variant
+    modContext.InitContext
+    lineNo = 1
+    args(1) = "0": args(2) = "0": args(3) = ""
+    MakeCmd arr, 1, cmd, "", "", ""
+    Select Case cmd
+        Case "IF", "ELSE_IF", "ELSE", "END_IF"
+            MakeCmd arr, 1, "IF", "1", "EQ", "0"
+            MakeCmd arr, 2, "ELSE_IF", "1", "EQ", "1"
+            MakeCmd arr, 3, "ELSE", "", "", ""
+            MakeCmd arr, 4, "END_IF", "", "", ""
+            args(1) = "1": args(2) = "EQ": args(3) = "1"
+            Select Case cmd
+                Case "IF": args(3) = "0": expected = 2
+                Case "ELSE_IF": lineNo = 2
+                Case "ELSE": lineNo = 3: expected = 4
+                Case "END_IF": lineNo = 4
+            End Select
+        Case "SELECT", "CASE", "END_SELECT"
+            MakeCmd arr, 1, "SELECT", "A", "", ""
+            MakeCmd arr, 2, "CASE", "A", "", ""
+            MakeCmd arr, 3, "END_SELECT", "", "", ""
+            args(1) = "A"
+            If cmd = "SELECT" Then expected = 3
+            If cmd = "CASE" Then lineNo = 2: expected = 3
+            If cmd = "END_SELECT" Then lineNo = 3
+        Case "WHILE", "END_WHILE", "REPEAT", "END_REPEAT", "FOREACH_ROW", "END_FOREACH"
+            Dim starter As String, ender As String, loopKind As String
+            Select Case cmd
+                Case "WHILE", "END_WHILE": starter = "WHILE": ender = "END_WHILE": loopKind = "WHILE"
+                Case "REPEAT", "END_REPEAT": starter = "REPEAT": ender = "END_REPEAT": loopKind = "REPEAT"
+                Case Else: starter = "FOREACH_ROW": ender = "END_FOREACH": loopKind = "FOREACH"
+            End Select
+            MakeCmd arr, 1, starter, "1", "EQ", "1"
+            MakeCmd arr, 2, ender, "", "", ""
+            args(1) = "1": args(2) = "EQ": args(3) = "1"
+            If cmd = ender Then
+                lineNo = 2
+                If cmd = "END_FOREACH" Then
+                    Set tbl = New clsTableSnapshot
+                    data(1, 1) = "Header": data(2, 1) = "value"
+                    tbl.LoadFromArray data
+                    modContext.LoopPushForeach 1, 2, tbl
+                Else
+                    modContext.LoopPush loopKind, 1, 2, 1
+                End If
+                If cmd = "END_WHILE" Then expected = 1
+            ElseIf cmd = "FOREACH_ROW" Then
+                args(1) = ThisWorkbook.name: args(2) = ws.name: args(3) = "ALL_ROWS"
+                expected = 3
+            End If
+        Case "BREAK", "CONTINUE"
+            modContext.LoopPush "REPEAT", 1, 4, 2
+            expected = 5
+            If cmd = "CONTINUE" Then expected = 4
+        Case "GOTO", "CALL"
+            MakeCmd arr, 2, "LABEL", "", "", "DEST"
+            MakeCmd arr, 3, "RETURN", "", "", ""
+            args(3) = "DEST": expected = 2
+        Case "RETURN"
+            modContext.PushStack 6
+            expected = 6
+        Case "LABEL", "MOVE", "CLICK", "RCLICK", "CLICK_SYNC"
+        Case "SET", "INC", "DEC"
+            modContext.SetVar "registry_value", "0"
+            args(1) = "{registry_value}": args(3) = "1"
+        Case "KEY": args(1) = "ENTER"
+        Case "COMBO": args(1) = "CTRL": args(2) = "C"
+        Case "TYPE": args(1) = "1": args(3) = "A"
+        Case "FOCUS": args(3) = "test window"
+        Case "SLEEP": args(3) = "0"
+        Case "NOTIFY": args(1) = "1": args(3) = "registry"
+        Case "EXIT": expected = CMD_HALT
+        Case "WAIT_APPEAR", "ASSERT": args(3) = "FFFFFF"
+        Case "WAIT_VANISH": args(3) = "000000"
+        Case Else
+            Err.Raise 5, "CheckRegistryDispatch", "Missing dispatch fixture: " & cmd
+    End Select
+    modEngine.LoadProgramFromArray arr
+    ExpectLong "Registry executes " & cmd, expected, handler.Execute(cmd, lineNo, args), fails
+End Sub
 
 ' [Helper] 연산자 단위 검증
 Private Sub AssertCond(ByVal name As String, ByVal v1 As String, ByVal op As String, _
@@ -862,6 +984,18 @@ Private Function TC_FlowHappyPaths() As Long
     AssertElseIfOperator "ENDS", "abcdef", "ENDS", "def", fails
     AssertElseIfOperator "CONTAINS", "abcdef", "CONTAINS", "cd", fails
 
+    Dim skippedCondition(1 To 6, 1 To 5) As Variant
+    MakeCmd skippedCondition, 1, "IF", "1", "EQ", "1"
+    MakeCmd skippedCondition, 2, "SET", "{selected}", "", "yes"
+    MakeCmd skippedCondition, 3, "ELSE_IF", "{never_set}", "EQ", "1"
+    MakeCmd skippedCondition, 4, "SET", "{wrong_branch}", "", "bad"
+    MakeCmd skippedCondition, 5, "END_IF", "", "", ""
+    MakeCmd skippedCondition, 6, "EXIT", "", "", ""
+    result = RunProgram(skippedCondition, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "selected", "yes", fails
+    ExpectVisits trace, 4, 0, fails
+
     Dim whileArr(1 To 13, 1 To 5) As Variant
     Call MakeCmd(whileArr, 1, "SET", "{i}", 0, "0")
     Call MakeCmd(whileArr, 2, "WHILE", "{i}", "<", "3")
@@ -930,6 +1064,23 @@ Private Function TC_FlowHappyPaths() As Long
     ExpectVisits trace, 7, 1, fails
     ExpectVar "fallback", "yes", fails
 
+    Dim skippedCase(1 To 7, 1 To 5) As Variant
+    MakeCmd skippedCase, 1, "SELECT", "A", "", ""
+    MakeCmd skippedCase, 2, "CASE", "A", "", ""
+    MakeCmd skippedCase, 3, "SET", "{case_selected}", "", "yes"
+    MakeCmd skippedCase, 4, "CASE", "{never_set}", "", ""
+    MakeCmd skippedCase, 5, "SET", "{case_wrong}", "", "bad"
+    MakeCmd skippedCase, 6, "END_SELECT", "", "", ""
+    MakeCmd skippedCase, 7, "EXIT", "", "", ""
+    result = RunProgram(skippedCase, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "case_selected", "yes", fails
+    ExpectVisits trace, 5, 0, fails
+    skippedCase(1, 3) = "B"
+    result = RunProgram(skippedCase, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrErrored, result, fails
+    ExpectLong "SELECT still resolves needed CASE values", 1, lastLine, fails
+
     TC_FlowHappyPaths = fails
 End Function
 
@@ -985,6 +1136,9 @@ End Function
 Private Function TC_ForeachRowExecution() As Long
     On Error GoTo ErrHandler
 
+    Dim previousSecurity As MsoAutomationSecurity, previousEvents As Boolean
+    previousSecurity = Application.AutomationSecurity
+    previousEvents = Application.EnableEvents
     Dim fails As Long
     Dim ws As Worksheet
     Dim sheetName As String
@@ -1118,8 +1272,40 @@ Private Function TC_ForeachRowExecution() As Long
     ExpectVar "empty_after", "yes", fails
     ExpectLoopDepth 0, fails
 
+    Dim wbProbe As Workbook, openedHere As Boolean, openError As Long
+    Dim opener As New clsActionTestDriver
+    opener.Reset
+    Set wbProbe = modTableSource.ResolveWorkbook(ThisWorkbook.path & "\.\" & ThisWorkbook.name, openedHere)
+    ExpectBool "Source: normalized full path reuses exact workbook", True, (wbProbe Is ThisWorkbook), fails
+    ExpectBool "Source: existing workbook is not owned", False, openedHere, fails
+    On Error Resume Next
+    Set wbProbe = modTableSource.ResolveWorkbook(ThisWorkbook.path & "\other\" & ThisWorkbook.name, openedHere)
+    openError = Err.Number
+    On Error GoTo ErrHandler
+    ExpectLong "Source: same filename different path rejected", 5, openError, fails
+
+    Application.AutomationSecurity = msoAutomationSecurityByUI
+    Application.EnableEvents = True
+    Set wbProbe = modTableSource.ResolveWorkbook(ThisWorkbook.path & "\_dbg\probe-input.xlsx", openedHere, opener)
+    ExpectBool "Source: new workbook owned", True, openedHere, fails
+    ExpectLong "Source: VBA disabled during open", msoAutomationSecurityForceDisable, opener.OpenSecurity, fails
+    ExpectBool "Source: events disabled during open", False, opener.OpenEvents, fails
+    ExpectLong "Source: security restored after open", msoAutomationSecurityByUI, Application.AutomationSecurity, fails
+    ExpectBool "Source: events restored after open", True, Application.EnableEvents, fails
+    opener.FailOpen = True
+    On Error Resume Next
+    Set wbProbe = modTableSource.ResolveWorkbook(ThisWorkbook.path & "\_dbg\probe-input.xlsx", openedHere, opener)
+    openError = Err.Number
+    On Error GoTo ErrHandler
+    ExpectLong "Source: original open error preserved", 53, openError, fails
+    ExpectBool "Source: failed open not owned", False, openedHere, fails
+    ExpectLong "Source: security restored after failure", msoAutomationSecurityByUI, Application.AutomationSecurity, fails
+    ExpectBool "Source: events restored after failure", True, Application.EnableEvents, fails
+
 CleanUp:
     On Error Resume Next
+    Application.AutomationSecurity = previousSecurity
+    Application.EnableEvents = previousEvents
     Application.DisplayAlerts = False
     If Not ws Is Nothing Then ws.Delete
     Application.DisplayAlerts = True
@@ -1130,6 +1316,88 @@ CleanUp:
 ErrHandler:
     fails = fails + 1
     LogFail "FOREACH_ROW test", "no error", Err.Description
+    Resume CleanUp
+End Function
+
+'==============================================================================
+' [기술 데모] FOREACH로 데이터를 순회하며, 행마다 판단 서브루틴을 CALL해 분기.
+'   이 스위트가 증명하는 것 (클릭커에는 없는 성질):
+'   1) 스크립트는 데이터(시트 행)다 - 판정 로직은 스텝 복붙이 아니라 한 곳(LABEL 판정)
+'   2) CALL 대상(판정)은 루프 밖 depth-0 서브루틴 - IsCallAllowed가 허용, RETURN이 복귀
+'   3) CALL 중에도 FOREACH 프레임이 살아 있어 서브루틴 안에서 {$ROW.컬럼}이 해석된다
+'   4) 분기 순서가 의미를 가진다 - 최지훈은 미비이자 고액이지만 미비(선순위)로 반려
+'==============================================================================
+Private Function TC_DemoForeachJudgeDispatch() As Long
+    On Error GoTo ErrHandler
+
+    Dim fails As Long
+    Dim ws As Worksheet
+    Dim sheetName As String
+    Dim trace() As Long
+    Dim lastCode As Long
+    Dim lastLine As Long
+    Dim result As eRunResult
+
+    Debug.Print "--- [Demo] FOREACH + CALL 판단 서브루틴 분기 ---"
+
+    sheetName = "DEMO_JUDGE_DATA"
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets(sheetName).Delete
+    On Error GoTo ErrHandler
+    Application.DisplayAlerts = True
+
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+    ws.name = sheetName
+    ws.Range("A1:C1").value = Array("신청자", "금액", "상태")
+    ws.Range("A2:C2").value = Array("김철수", 500000, "정상")     ' 정상+소액  -> 승인
+    ws.Range("A3:C3").value = Array("이영희", 1500000, "정상")    ' 정상+고액  -> 보류
+    ws.Range("A4:C4").value = Array("박민수", 300000, "미비")     ' 미비       -> 반려
+    ws.Range("A5:C5").value = Array("최지훈", 2000000, "미비")    ' 미비+고액  -> 반려(미비 선순위)
+
+    '--- 스크립트 (6열 명령어 테이블) ------------------------------------------
+    Dim arr(1 To 17, 1 To 5) As Variant
+    Call MakeCmd(arr, 1, "SET", "{승인}", 0, "0")
+    Call MakeCmd(arr, 2, "SET", "{보류}", 0, "0")
+    Call MakeCmd(arr, 3, "SET", "{반려}", 0, "0")
+    Call MakeCmd(arr, 4, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
+    Call MakeCmd(arr, 5, "CALL", 0, 0, "판정")
+    Call MakeCmd(arr, 6, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(arr, 7, "SET", "{요약}", 0, "승인 {승인} / 보류 {보류} / 반려 {반려}")
+    Call MakeCmd(arr, 8, "EXIT", 0, 0, "")
+    '--- 판단 서브루틴 (루프 밖 depth-0) - {$ROW.*}는 살아있는 FOREACH 커서를 읽는다
+    Call MakeCmd(arr, 9, "LABEL", 0, 0, "판정")
+    Call MakeCmd(arr, 10, "IF", "{$ROW.상태}", "EQ", "미비")
+    Call MakeCmd(arr, 11, "INC", "{반려}", 0, "")
+    Call MakeCmd(arr, 12, "ELSE_IF", "{$ROW.금액}", ">", "1000000")
+    Call MakeCmd(arr, 13, "INC", "{보류}", 0, "")
+    Call MakeCmd(arr, 14, "ELSE", 0, 0, "")
+    Call MakeCmd(arr, 15, "INC", "{승인}", 0, "")
+    Call MakeCmd(arr, 16, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 17, "RETURN", 0, 0, "")
+
+    result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
+
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "승인", "1", fails
+    ExpectVar "보류", "1", fails
+    ExpectVar "반려", "2", fails
+    ExpectVar "요약", "승인 1 / 보류 1 / 반려 2", fails
+    ExpectStackDepth 0, fails    ' 모든 CALL이 RETURN으로 정확히 복귀
+    ExpectLoopDepth 0, fails     ' FOREACH 프레임이 소진 후 정리됨
+
+CleanUp:
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    TC_DemoForeachJudgeDispatch = fails
+    Exit Function
+
+ErrHandler:
+    fails = fails + 1
+    LogFail "Demo FOREACH+CALL dispatch", "no error", Err.Description
     Resume CleanUp
 End Function
 
@@ -1313,6 +1581,111 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectVisits trace, 7, 0, fails
     ExpectStackDepth 0, fails
     ExpectIfBranchDepth 0, fails
+
+    Dim callerIfArr(1 To 11, 1 To 5) As Variant, transfer As Variant
+    MakeCmd callerIfArr, 1, "IF", "1", "EQ", "1"
+    MakeCmd callerIfArr, 2, "CALL", "", "", "SUB"
+    MakeCmd callerIfArr, 3, "ELSE_IF", "1", "EQ", "1"
+    MakeCmd callerIfArr, 4, "SET", "{wrong_caller_branch}", "", "bad"
+    MakeCmd callerIfArr, 5, "END_IF", "", "", ""
+    MakeCmd callerIfArr, 6, "EXIT", "", "", ""
+    MakeCmd callerIfArr, 7, "LABEL", "", "", "SUB"
+    MakeCmd callerIfArr, 8, "REPEAT", "1", "", ""
+    MakeCmd callerIfArr, 10, "END_REPEAT", "", "", ""
+    MakeCmd callerIfArr, 11, "RETURN", "", "", ""
+    For Each transfer In Array("BREAK", "CONTINUE")
+        MakeCmd callerIfArr, 9, CStr(transfer), "", "", ""
+        result = RunProgram(callerIfArr, 1, 0, trace, lastCode, lastLine)
+        ExpectTerminal rrHalted, result, fails
+        ExpectBool "Caller IF example validates", True, modEngine.ActiveProgram().ValidateStructure(), fails
+        ExpectBool "Caller IF labels validate", True, modEngine.ActiveProgram().ValidateLabels(), fails
+        ExpectVisits trace, 4, 0, fails
+        ExpectIfBranchDepth 0, fails
+        ExpectStackDepth 0, fails
+    Next transfer
+
+    Dim callerGotoArr(1 To 14, 1 To 5) As Variant
+    MakeCmd callerGotoArr, 1, "REPEAT", "2", "", ""
+    MakeCmd callerGotoArr, 2, "IF", "1", "EQ", "1"
+    MakeCmd callerGotoArr, 3, "CALL", "", "", "SUB_GOTO"
+    MakeCmd callerGotoArr, 4, "ELSE_IF", "1", "EQ", "1"
+    MakeCmd callerGotoArr, 5, "SET", "{wrong_goto_branch}", "", "bad"
+    MakeCmd callerGotoArr, 6, "END_IF", "", "", ""
+    MakeCmd callerGotoArr, 7, "END_REPEAT", "", "", ""
+    MakeCmd callerGotoArr, 8, "EXIT", "", "", ""
+    MakeCmd callerGotoArr, 9, "LABEL", "", "", "SUB_GOTO"
+    MakeCmd callerGotoArr, 10, "IF", "1", "EQ", "1"
+    MakeCmd callerGotoArr, 11, "GOTO", "", "", "DONE_GOTO"
+    MakeCmd callerGotoArr, 12, "LABEL", "", "", "DONE_GOTO"
+    MakeCmd callerGotoArr, 13, "END_IF", "", "", ""
+    MakeCmd callerGotoArr, 14, "RETURN", "", "", ""
+    result = RunProgram(callerGotoArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectBool "Caller GOTO structure validates", True, modEngine.ActiveProgram().ValidateStructure(), fails
+    ExpectBool "Caller GOTO labels validate", True, modEngine.ActiveProgram().ValidateLabels(), fails
+    ExpectVisits trace, 3, 2, fails
+    ExpectVisits trace, 5, 0, fails
+    ExpectLoopDepth 0, fails
+    ExpectIfBranchDepth 0, fails
+    ExpectStackDepth 0, fails
+
+    Dim recursiveIf(1 To 12, 1 To 5) As Variant
+    MakeCmd recursiveIf, 1, "SET", "{n}", "", "0"
+    MakeCmd recursiveIf, 2, "CALL", "", "", "RECURSE"
+    MakeCmd recursiveIf, 3, "EXIT", "", "", ""
+    MakeCmd recursiveIf, 4, "LABEL", "", "", "RECURSE"
+    MakeCmd recursiveIf, 5, "INC", "{n}", "", ""
+    MakeCmd recursiveIf, 6, "IF", "{n}", "<", "2"
+    MakeCmd recursiveIf, 7, "CALL", "", "", "RECURSE"
+    MakeCmd recursiveIf, 8, "DEC", "{n}", "", ""
+    MakeCmd recursiveIf, 9, "ELSE_IF", "{n}", "EQ", "2"
+    MakeCmd recursiveIf, 10, "SET", "{base_case}", "", "yes"
+    MakeCmd recursiveIf, 11, "END_IF", "", "", ""
+    MakeCmd recursiveIf, 12, "RETURN", "", "", ""
+    result = RunProgram(recursiveIf, 1, 100, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectBool "Recursive IF validates", True, modEngine.ActiveProgram().ValidateStructure() And modEngine.ActiveProgram().ValidateLabels(), fails
+    ExpectVar "base_case", "yes", fails
+    ExpectVisits trace, 10, 1, fails
+    ExpectVisits trace, 9, 2, fails
+    ExpectIfBranchDepth 0, fails
+    ExpectStackDepth 0, fails
+
+    Dim callerLoop(1 To 7, 1 To 5) As Variant
+    MakeCmd callerLoop, 1, "REPEAT", "2", "", ""
+    MakeCmd callerLoop, 2, "CALL", "", "", "SUB"
+    MakeCmd callerLoop, 3, "END_REPEAT", "", "", ""
+    MakeCmd callerLoop, 4, "EXIT", "", "", ""
+    MakeCmd callerLoop, 5, "LABEL", "", "", "SUB"
+    MakeCmd callerLoop, 7, "RETURN", "", "", ""
+    For Each transfer In Array("BREAK", "CONTINUE")
+        MakeCmd callerLoop, 6, CStr(transfer), "", "", ""
+        result = RunProgram(callerLoop, 1, 100, trace, lastCode, lastLine)
+        ExpectTerminal rrErrored, result, fails
+        ExpectLong "Callee " & transfer & " stops at source", 6, lastLine, fails
+        ExpectLoopDepth 1, fails
+        ExpectStackDepth 1, fails
+        ExpectVisits trace, 3, 0, fails
+    Next transfer
+
+    Dim recursiveWhile(1 To 10, 1 To 5) As Variant
+    MakeCmd recursiveWhile, 1, "SET", "{n}", "", "0"
+    MakeCmd recursiveWhile, 2, "CALL", "", "", "RECURSE"
+    MakeCmd recursiveWhile, 3, "EXIT", "", "", ""
+    MakeCmd recursiveWhile, 4, "LABEL", "", "", "RECURSE"
+    MakeCmd recursiveWhile, 5, "WHILE", "{n}", "<", "2"
+    MakeCmd recursiveWhile, 6, "INC", "{n}", "", ""
+    MakeCmd recursiveWhile, 7, "CALL", "", "", "RECURSE"
+    MakeCmd recursiveWhile, 8, "SET", "{caller_iteration}", "", "{$LOOP}"
+    MakeCmd recursiveWhile, 9, "END_WHILE", "", "", ""
+    MakeCmd recursiveWhile, 10, "RETURN", "", "", ""
+    result = RunProgram(recursiveWhile, 1, 100, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "n", "2", fails
+    ExpectVar "caller_iteration", "1", fails
+    ExpectVisits trace, 8, 2, fails
+    ExpectStackDepth 0, fails
+    ExpectLoopDepth 0, fails
 
     TC_FlowNestedInteractions = fails
 End Function
@@ -1649,47 +2022,222 @@ Private Function TC_ParamGuardRuntime() As Long
     ExpectTerminal rrErrored, result, fails
     ExpectLong "Guard: IF empty operator line", 1, lastLine, fails
 
+    Dim conditionCmd As Variant
+    For Each conditionCmd In Array("IF", "WHILE", "ELSE_IF")
+        MakeCmd arrCmd, 1, CStr(conditionCmd), "1", "EQUALS", "1"
+        ExpectLong "Guard: invalid " & conditionCmd & " operator", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
+        ExpectBool "Guard: operator error reason", True, InStr(modEngine.LastRuntimeError(), "Invalid condition operator") > 0, fails
+    Next conditionCmd
+
     TC_ParamGuardRuntime = fails
 End Function
 
 ' [Flow 5E] 중단 래치 (B2): 물리키 없이 RequestAbort 주입으로 조기 탈출 검증
 Private Function TC_AbortLatch() As Long
-    Dim fails As Long
-    Dim t0 As Long
-    Dim ok As Boolean
-
-    Debug.Print "--- [Flow 5E] Abort latch ---"
-
-    ' 래치 기본 상태 (물리 ESC 미입력 가정)
-    modActions.ClearAbort
-    ExpectBool "Abort: clear state", False, modActions.AbortPending(), fails
+    Dim fails As Long, errorNumber As Long, code As Long
+    Dim driver As New clsActionTestDriver
+    Dim arr(1 To 1, 1 To 5) As Variant
+    On Error GoTo Failed
     modActions.SetUnattendedMode True
+    modActions.SetInputTestDriver driver
+    modContext.InitContext
+    driver.Reset
+    ExpectBool "Abort: clear state", False, modActions.AbortPending(), fails
     ExpectBool "Pause: unattended returns", False, modActions.WaitIfPaused(), fails
-
-    ' 래치 설정 후 유지 (순간 신호 유실 방지의 핵심)
     modActions.RequestAbort
     ExpectBool "Abort: latched", True, modActions.AbortPending(), fails
     ExpectBool "Abort: latch persists", True, modActions.AbortPending(), fails
     ExpectBool "Pause: abort returns", True, modActions.WaitIfPaused(), fails
-
-    ' BetterWait 조기 탈출: 1000ms 요청이 즉시 반환
-    t0 = modWinAPI.GetTickCount()
     modActions.BetterWait 1000
-    ExpectBool "Abort: BetterWait early exit", True, _
-        (modWinAPI.GetTickCount() - t0) < 500, fails
+    modActions.Action_MouseClick 0, 0
+    modActions.Action_PressKey "ENTER"
+    ExpectLong "Abort: no sleep", 0, driver.SleepCalls, fails
+    ExpectLong "Abort: no cursor movement", 0, driver.MoveCalls, fails
+    ExpectText "Abort: no click", "", driver.MouseEvents, fails
+    ExpectText "Abort: no key", "", driver.KeyEvents, fails
+    ExpectBool "Abort: wait returns False", False, modActions.Action_Wait("WAIT_APPEAR", 0, 0, "#ZZZZZZ"), fails
 
-    ' Action_Wait 조기 탈출: 30초 타임아웃 대신 즉시 False
-    t0 = modWinAPI.GetTickCount()
-    ok = modActions.Action_Wait("WAIT_APPEAR", 0, 0, "#ZZZZZZ")
-    ExpectBool "Abort: Action_Wait returns False", False, ok, fails
-    ExpectBool "Abort: Action_Wait early exit", True, _
-        (modWinAPI.GetTickCount() - t0) < 1000, fails
+    driver.Reset
+    On Error Resume Next
+    modActions.BetterWait -1
+    errorNumber = Err.Number
+    On Error GoTo Failed
+    ExpectLong "Wait: negative rejected", 5, errorNumber, fails
+    ExpectLong "Wait: negative never reaches API", 0, driver.SleepCalls, fails
+    modActions.BetterWait 75
+    ExpectLong "Wait: includes remainder", 75, driver.SleepTotal, fails
+    ExpectLong "Wait: two bounded slices", 2, driver.SleepCalls, fails
+    driver.Reset
+    modActions.BetterWait 0
+    ExpectLong "Wait: zero yields once", 1, driver.SleepCalls, fails
+    ExpectLong "Wait: zero duration", 0, driver.SleepTotal, fails
 
-    ' 해제 확인
+    driver.Reset
+    driver.AbortOnSleep = 1
+    modActions.Action_MouseClick 0, 0
+    ExpectLong "Click: moved before abort", 1, driver.MoveCalls, fails
+    ExpectText "Click: no Down after settle abort", "", driver.MouseEvents, fails
+    driver.Reset
+    driver.AbortOnSleep = 3
+    ExpectBool "ClickSync: hover abort", False, modActions.Action_ClickSync(0, 0), fails
+    ExpectText "ClickSync: no Down after hover abort", "", driver.MouseEvents, fails
+    driver.Reset
+    driver.AbortOnSleep = 1
+    modActions.FireClick
+    ExpectText "Click: Up even after abort", "2;4;", driver.MouseEvents, fails
+    driver.Reset
+    driver.FailOnSleep = 1
+    On Error Resume Next
+    modActions.FireClick True
+    errorNumber = Err.Number
+    On Error GoTo Failed
+    ExpectLong "Click: original wait error", 5, errorNumber, fails
+    ExpectText "Click: right Up after failure", "8;16;", driver.MouseEvents, fails
+
+    driver.Reset
+    MakeCmd arr, 1, "COMBO", "CTRL", "40000", ""
+    code = ExecuteArrayLine(arr, 1)
+    ExpectLong "Combo: bad key rejected", CMD_ERROR, code, fails
+    ExpectText "Combo: validate both keys before Down", "", driver.KeyEvents, fails
+    driver.Reset
+    driver.FailOnKey = 2
+    MakeCmd arr, 1, "COMBO", "CTRL", "C", ""
+    code = ExecuteArrayLine(arr, 1)
+    ExpectLong "Combo: API failure reaches command", CMD_ERROR, code, fails
+    ExpectText "Combo: release first key on second Down failure", "17:0;67:0;17:2;", driver.KeyEvents, fails
+    ExpectBool "Combo: retains input failure reason", True, InStr(modEngine.LastRuntimeError(), "SendInput failed") > 0, fails
+    driver.Reset
+    driver.FailOnKey = 3
+    code = ExecuteArrayLine(arr, 1)
+    ExpectLong "Combo: failed Up reaches command", CMD_ERROR, code, fails
+    ExpectText "Combo: both releases attempted", "17:0;67:0;67:2;67:2;17:2;", driver.KeyEvents, fails
+    driver.Reset
+    driver.AbortOnSleep = 1
+    modActions.Action_PressCombo "CTRL", "C"
+    ExpectText "Combo: abort releases first key without second Down", "17:0;17:2;", driver.KeyEvents, fails
+    driver.Reset
+    driver.FailOnKey = 2
+    MakeCmd arr, 1, "TYPE", "1", "", "A"
+    code = ExecuteArrayLine(arr, 1)
+    ExpectLong "Type: failed Up reaches command", CMD_ERROR, code, fails
+    ExpectText "Type: release attempted after failure", "0:4;0:6;0:6;", driver.KeyEvents, fails
+
+    ExpectBool "Clock: signed boundary", True, modWinAPI.ElapsedMilliseconds(2147483640, -2147483640) = 16, fails
+    ExpectBool "Clock: unsigned wrap", True, modWinAPI.ElapsedMilliseconds(-10, 10) = 20, fails
+    ExpectBool "Clock: negative interval", True, modWinAPI.ElapsedMilliseconds(-200, -100) = 100, fails
+    ExpectBool "Clock: positive interval", True, modWinAPI.ElapsedMilliseconds(100, 175) = 75, fails
+
+    driver.Reset
+    MakeCmd arr, 1, "FOCUS", "", "", "test window"
+    driver.FocusResult = 0
+    ExpectLong "Focus: activation failure stops command", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    driver.FocusResult = 1
+    driver.ForegroundHandle = 999
+    ExpectLong "Focus: mismatched foreground stops command", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    driver.ForegroundHandle = driver.WindowHandle
+    ExpectLong "Focus: confirmed foreground succeeds", CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+
+    driver.Reset
+    modContext.SetVar "empty_title", ""
+    MakeCmd arr, 1, "FOCUS", "", "", "{empty_title}"
+    ExpectLong "Focus: resolved empty title rejected", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    MakeCmd arr, 1, "FOCUS", "", "", "{$SPACE}"
+    ExpectLong "Focus: whitespace title rejected", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    ExpectLong "Focus: empty title never activates a window", 0, driver.FocusCalls, fails
+
+    Dim mouseCmd As Variant
+    For Each mouseCmd In Array("MOVE", "CLICK", "RCLICK", "CLICK_SYNC")
+        driver.Reset
+        driver.MoveResult = 0
+        MakeCmd arr, 1, CStr(mouseCmd), "10", "20", ""
+        ExpectLong "Move failure stops " & mouseCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectBool "Move failure reason", True, InStr(modEngine.LastRuntimeError(), "SetCursorPos failed") > 0, fails
+        ExpectText "Move failure sends no button events", "", driver.MouseEvents, fails
+    Next mouseCmd
+
+    driver.Reset
+    driver.PixelColor = -1
+    Dim visionCmd As Variant
+    For Each visionCmd In Array("WAIT_APPEAR", "WAIT_VANISH", "ASSERT", "CLICK_SYNC")
+        MakeCmd arr, 1, CStr(visionCmd), "0", "0", "FFFFFF"
+        ExpectLong "Pixel: invalid read stops " & visionCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectBool "Pixel: failure reason retained", True, InStr(modEngine.LastRuntimeError(), "GetPixel failed") > 0, fails
+    Next visionCmd
+    ExpectText "Pixel: failed baseline never clicks", "", driver.MouseEvents, fails
+    driver.PixelColor = &HFFFFFF
+    MakeCmd arr, 1, "ASSERT", "0", "0", " ffffff "
+    ExpectLong "Pixel: normalized white succeeds", CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+    MakeCmd arr, 1, "ASSERT", "0", "0", " !ffffff "
+    ExpectLong "Pixel: lowercase forbidden white fails", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    driver.PixelColor = 0
+    ExpectLong "Pixel: allowed black succeeds", CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+    Dim invalidColor As Variant
+    For Each invalidColor In Array("!ZZZZZZ", "!FFFFF", "!FFFFFF0", "!", "{$BLANK}")
+        MakeCmd arr, 1, "ASSERT", "0", "0", CStr(invalidColor)
+        ExpectLong "Pixel: malformed color rejected " & invalidColor, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectBool "Pixel: malformed color reason", True, InStr(modEngine.LastRuntimeError(), "Invalid ASSERT color") > 0, fails
+    Next invalidColor
+    ExpectText "Pixel: existing BGR representation retained", "0000FF", modWinAPI.FormatColorHex(&HFF), fails
+
+    Dim failureStage As Variant
+    For Each failureStage In Array("allocate", "open", "empty", "set", "")
+        driver.Reset
+        driver.ClipboardFailure = CStr(failureStage)
+        errorNumber = 0
+        On Error Resume Next
+        modWinAPI.SetClipboardText "new text", driver
+        errorNumber = Err.Number
+        On Error GoTo Failed
+        If Len(failureStage) = 0 Then
+            ExpectLong "Clipboard: successful write", 0, errorNumber, fails
+            ExpectText "Clipboard: new text installed", "new text", driver.ClipboardContents, fails
+            ExpectBool "Clipboard: transferred memory not freed", False, driver.ClipboardFreed, fails
+        Else
+            ExpectBool "Clipboard: " & failureStage & " failure is surfaced", True, errorNumber <> 0, fails
+            ExpectBool "Clipboard: untransferred memory freed", failureStage <> "allocate", driver.ClipboardFreed, fails
+        End If
+        ExpectBool "Clipboard: close only after opening", failureStage <> "allocate" And failureStage <> "open", driver.ClipboardClosed, fails
+        If failureStage = "allocate" Or failureStage = "open" Or failureStage = "empty" Then _
+            ExpectText "Clipboard: old contents preserved before clearing", "old", driver.ClipboardContents, fails
+        If failureStage <> "allocate" Then ExpectBool "Clipboard: nonzero owner window", True, driver.ClipboardOwner <> 0, fails
+    Next failureStage
+    Dim clipboardValue As String
+    For Each failureStage In Array("open", "get", "lock", "read", "")
+        driver.Reset
+        driver.ClipboardFailure = CStr(failureStage)
+        errorNumber = 0
+        On Error Resume Next
+        clipboardValue = modWinAPI.GetClipboardText(driver)
+        errorNumber = Err.Number
+        On Error GoTo Failed
+        If Len(failureStage) = 0 Then
+            ExpectLong "Clipboard read: success", 0, errorNumber, fails
+            ExpectText "Clipboard read: value preserved", "old", clipboardValue, fails
+        Else
+            ExpectBool "Clipboard read: " & failureStage & " failure surfaced", True, errorNumber <> 0, fails
+        End If
+        ExpectBool "Clipboard read: closes acquired clipboard", failureStage <> "open", driver.ClipboardClosed, fails
+        ExpectBool "Clipboard read: unlocks acquired memory", failureStage = "read" Or failureStage = "", driver.ClipboardUnlocked, fails
+        ExpectBool "Clipboard read: never frees Windows memory", False, driver.ClipboardFreed, fails
+    Next failureStage
+    driver.Reset
+    driver.ClipboardContents = ""
+    ExpectText "Clipboard read: empty text is valid", "", modWinAPI.GetClipboardText(driver), fails
+    ExpectBool "Clipboard read: empty text unlocks", True, driver.ClipboardUnlocked, fails
+    driver.Reset
+    driver.ClipboardHasText = False
+    ExpectText "Clipboard read: absent text format is empty", "", modWinAPI.GetClipboardText(driver), fails
+    ExpectBool "Clipboard read: absent format closes", True, driver.ClipboardClosed, fails
+    ExpectBool "Clipboard read: absent format never locks", False, driver.ClipboardUnlocked, fails
+CleanUp:
+    modActions.SetInputTestDriver Nothing
     modActions.ClearAbort
-    ExpectBool "Abort: cleared", False, modActions.AbortPending(), fails
-
     TC_AbortLatch = fails
+    Exit Function
+Failed:
+    fails = fails + 1
+    LogFail "Input safety", "no unexpected error", Err.Description
+    Resume CleanUp
 End Function
 
 Private Function TC_StaticVariableAnalysis() As Long
@@ -1726,7 +2274,7 @@ Private Function TC_StaticVariableAnalysis() As Long
 
     ws.Cells(5, 2).value = "SET"
     ws.Cells(5, 3).value = "{sys}"
-    ws.Cells(5, 5).value = "{$BLANK}{$LOOP}{$RIDX}{$RTOTAL}{$ROW.Code}{$PIXEL:1,1}{$XXX}"
+    ws.Cells(5, 5).value = "{$BLANK}{$LOOP}{$RIDX}{$RTOTAL}{$ROW.Code}{$PIXEL:1,1}{$XXX}{broken"
 
     ExpectBool "Static undefined var", False, modDevTools.ValidateSheetVariablesAt(ws, 3), fails
     ExpectBool "Static var suggestion", True, (InStr(1, modDevTools.LastValidationMessage(), "{score}", vbTextCompare) > 0), fails
@@ -1734,7 +2282,7 @@ Private Function TC_StaticVariableAnalysis() As Long
     ExpectBool "Unused var is warning only", True, modDevTools.ValidateSheetVariablesAt(ws, 4), fails
     ExpectBool "Unused var warning text", True, (InStr(1, modDevTools.LastValidationWarning(), "{unused}", vbTextCompare) > 0), fails
 
-    ExpectBool "System tokens ignored by var analysis", True, modDevTools.ValidateSheetVariablesAt(ws, 5), fails
+    ExpectBool "System tokens and unmatched suffix ignored by var analysis", True, modDevTools.ValidateSheetVariablesAt(ws, 5), fails
 
 CleanUp:
     On Error Resume Next
@@ -1770,7 +2318,18 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
 
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
     ws.name = sheetName
-    modDevTools.EnsureHeaders ws
+    ws.Range("A1:B2").value = Array("customer", "name")
+    Dim formatError As Long
+    On Error Resume Next
+    modDevTools.FormatRPAScript ws
+    formatError = Err.Number
+    On Error GoTo ErrHandler
+    ExpectLong "Formatter rejects data sheet", 5, formatError, fails
+    ExpectText "Formatter preserves data header", "customer", CStr(ws.Cells(1, 1).value), fails
+    ExpectText "Formatter preserves data row", "customer", CStr(ws.Cells(2, 1).value), fails
+    ws.Cells.Clear
+    modDevTools.FormatRPAScript ws
+    ExpectBool "Formatter initializes empty sheet", True, modScriptAssist.IsScriptSheet(ws), fails
 
     ws.Cells(2, 2).value = "IF"
     ws.Cells(2, 3).value = "1"
@@ -1779,7 +2338,13 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
     ws.Cells(3, 2).value = "#> TYPE"
     ws.Cells(3, 3).value = "0"
     ws.Cells(3, 5).value = "inside"
-    ws.Cells(4, 2).value = "END_IF"
+    ws.Cells(4, 2).value = "# SET"
+    ws.Cells(4, 3).value = "{draft}"
+    ws.Cells(4, 5).value = "value"
+    ws.Cells(5, 2).value = "END_IF"
+    ws.Cells(6, 5).value = "unfinished parameter"
+    ws.Cells(6, 6).value = "keep note"
+    ws.Cells(6, 6).AddComment "user comment"
 
     modDevTools.FormatRPAScript ws
     ExpectText "Formatter normalizes #> indent", "# > TYPE", CStr(ws.Cells(3, 2).value), fails
@@ -1789,12 +2354,16 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
 
     Dim program As clsScriptProgram
     Set program = New clsScriptProgram
-    program.LoadFromRange ws.Range(ws.Cells(2, 1), ws.Cells(4, 6))
+    program.LoadFromRange ws.Range(ws.Cells(2, 1), ws.Cells(5, 6))
     ExpectBool "Formatter comment remains skippable", True, program.IsCommentLine(2), fails
 
-    modScriptAssist.ToggleSelectedCommandComment ws.Cells(3, 2)
+    modScriptAssist.ToggleSelectedCommandComment ws.Range("B3:B4")
     modDevTools.FormatRPAScript ws
     ExpectText "Formatter restores uncommented indent", "> TYPE", CStr(ws.Cells(3, 2).value), fails
+    ExpectText "Formatter batch restores second command", "> SET", CStr(ws.Cells(4, 2).value), fails
+    ExpectText "Formatter preserves trailing parameter", "unfinished parameter", CStr(ws.Cells(6, 5).value), fails
+    ExpectText "Formatter preserves trailing note", "keep note", CStr(ws.Cells(6, 6).value), fails
+    ExpectText "Formatter preserves user comment", "user comment", ws.Cells(6, 6).Comment.text, fails
 
 CleanUp:
     On Error Resume Next
@@ -1891,6 +2460,157 @@ Private Function TC_ParseStrict() As Long
     ExpectBool "Cond: comma now string", False, modCondition.EvaluateCondition("1,000", "EQ", "1"), fails
 
     TC_ParseStrict = fails
+End Function
+
+Private Function TC_EngineLifecycle() As Long
+    Dim fails As Long, ws As Worksheet
+    Dim driver As New clsActionTestDriver
+    Dim singleArr(1 To 1, 1 To 5) As Variant
+    Dim subArr(1 To 10, 1 To 5) As Variant
+    Dim badArr(1 To 5, 1 To 5) As Variant
+    Dim reentryArr(1 To 3, 1 To 5) As Variant
+    Dim previousAlerts As Boolean
+    previousAlerts = Application.DisplayAlerts
+    On Error GoTo Failed
+    Set ws = ThisWorkbook.Worksheets.Add
+    modActions.SetUnattendedMode True
+    modActions.SetInputTestDriver driver
+    driver.Reset
+    modDevTools.EnsureHeaders ws
+    ExpectSheetRun ws, "FAILED", fails
+    MakeCmd singleArr, 1, "SET", "{value}", 0, "1"
+    ws.Range("A2:E2").value = singleArr
+    ExpectSheetRun ws, "COMPLETED", fails
+    MakeCmd singleArr, 1, "EXIT", 0, 0, ""
+    ws.Range("A2:E2").value = singleArr
+    ExpectSheetRun ws, "HALTED", fails
+    MakeCmd singleArr, 1, "SLEEP", 0, 0, "-1"
+    ws.Range("A2:E2").value = singleArr
+    ExpectSheetRun ws, "FAILED", fails
+    ExpectBool "Engine: negative wait reason", True, InStr(modEngine.LastRuntimeError(), "negative") > 0, fails
+    ExpectLong "Engine: negative wait not dispatched to OS", 0, driver.SleepCalls, fails
+
+    MakeCmd badArr, 1, "KEY", "ENTER", 0, ""
+    MakeCmd badArr, 2, "IF", "0", "EQ", "1"
+    MakeCmd badArr, 3, "WHILE", "1", "EQ", "1"
+    MakeCmd badArr, 4, "END_IF", 0, 0, ""
+    MakeCmd badArr, 5, "END_WHILE", 0, 0, ""
+    ws.Range("A2:E6").value = badArr
+    ExpectSheetRun ws, "FAILED", fails
+    ExpectLong "Engine: validates before first input", 0, driver.KeyCalls, fails
+    ExpectBool "Engine: structural rejection line", True, InStr(modEngine.LastRuntimeError(), "line 4") > 0, fails
+
+    MakeCmd subArr, 1, "SET", "{value}", 0, "25"
+    MakeCmd subArr, 2, "CALL", 0, 0, "SUB"
+    MakeCmd subArr, 3, "SLEEP", 0, 0, "{value}"
+    MakeCmd subArr, 4, "EXIT", 0, 0, ""
+    MakeCmd subArr, 5, "LABEL", 0, 0, "SUB"
+    MakeCmd subArr, 6, "IF", "0", "EQ", "1"
+    MakeCmd subArr, 7, "RETURN", 0, 0, ""
+    MakeCmd subArr, 8, "END_IF", 0, 0, ""
+    MakeCmd subArr, 9, "SET", "{value}", 0, "75"
+    MakeCmd subArr, 10, "RETURN", 0, 0, ""
+    ws.Range("A2:E11").value = subArr
+    ExpectSheetRun ws, "HALTED", fails
+    ExpectLong "Engine: conditional RETURN false result", 75, driver.SleepTotal, fails
+    driver.Reset
+    MakeCmd subArr, 6, "IF", "1", "EQ", "1"
+    ws.Range("A2:E11").value = subArr
+    ExpectSheetRun ws, "HALTED", fails
+    ExpectLong "Engine: conditional RETURN true result", 25, driver.SleepTotal, fails
+    driver.Reset
+    MakeCmd subArr, 6, "SLEEP", 0, 0, "75"
+    MakeCmd subArr, 7, "KEY", "ENTER", 0, ""
+    MakeCmd subArr, 8, "", 0, 0, ""
+    driver.AbortOnSleep = 1
+    ws.Range("A2:E11").value = subArr
+    ExpectSheetRun ws, "ABORTED", fails, 1
+    ExpectLong "Engine: no next key after abort", 0, driver.KeyCalls, fails
+
+    driver.Reset
+    ws.Range("A2:F20").ClearContents
+    MakeCmd reentryArr, 1, "SET", "{kept}", 0, "9"
+    MakeCmd reentryArr, 2, "SLEEP", 0, 0, "75"
+    MakeCmd reentryArr, 3, "SLEEP", 0, 0, "{kept}"
+    ws.Range("A2:E4").value = reentryArr
+    Set driver.ReentrySheet = ws
+    driver.AttemptReentry = True
+    ExpectSheetRun ws, "COMPLETED", fails
+    ExpectText "Engine: nested entry refused", "BUSY", driver.ReentryStatus, fails
+    ExpectLong "Engine: outer program and memory preserved", 84, driver.SleepTotal, fails
+
+    driver.Reset
+    ws.Range("A2:F20").ClearContents
+    MakeCmd singleArr, 1, "KEY", "ENTER", 0, ""
+    ws.Range("A2:E2").value = singleArr
+    driver.FailOnKey = 1
+    ExpectSheetRun ws, "FAILED", fails
+    ExpectBool "Engine: SendInput failure retained", True, InStr(modEngine.LastRuntimeError(), "SendInput failed") > 0, fails
+    ExpectSheetRun Nothing, "FAILED", fails
+    ExpectBool "Engine: fatal exception reason", True, InStr(modEngine.LastRuntimeError(), "worksheet is required") > 0, fails
+    driver.Reset
+    MakeCmd singleArr, 1, "GOTO", 0, 0, "MISSING"
+    ws.Range("A2:E2").value = singleArr
+    ExpectSheetRun ws, "FAILED", fails
+    ExpectBool "Engine: label validation connected", True, InStr(modEngine.LastRuntimeError(), "target not found") > 0, fails
+CleanUp:
+    On Error Resume Next
+    modActions.SetInputTestDriver Nothing
+    modActions.ClearAbort
+    Application.DisplayAlerts = False
+    If Not ws Is Nothing Then ws.Delete
+    Application.DisplayAlerts = previousAlerts
+    On Error GoTo 0
+    TC_EngineLifecycle = fails
+    Exit Function
+Failed:
+    fails = fails + 1
+    LogFail "Engine lifecycle", "no unexpected error", Err.Description
+    Resume CleanUp
+End Function
+
+Private Sub ExpectSheetRun(ByVal ws As Worksheet, ByVal expected As String, ByRef fails As Long, Optional ByVal callDepth As Long = 0)
+    Dim beforeCount As Long, afterCount As Long, record As String, status As String
+    record = ReadRunEnd(beforeCount)
+    status = modEngine.RunScriptSheet(ws, True)
+    record = ReadRunEnd(afterCount)
+    ExpectText "Engine: returned status", expected, status, fails
+    ExpectLong "Engine: one terminal record", beforeCount + 1, afterCount, fails
+    ExpectBool "Engine: logged status " & expected, True, InStr(record, """status"":""" & expected & """") > 0, fails
+    ExpectBool "Engine: terminal call depth", True, InStr(record, """callDepth"":" & callDepth) > 0, fails
+    ExpectBool "Engine: terminal loop depth", True, InStr(record, """loopDepth"":0") > 0, fails
+    ExpectStackDepth 0, fails
+    ExpectLoopDepth 0, fails
+    ExpectIfBranchDepth 0, fails
+    ExpectBool "Engine: ProgramImage released", True, modEngine.ActiveProgram() Is Nothing, fails
+End Sub
+
+Private Function ReadRunEnd(ByRef count As Long) As String
+    Dim fileNo As Integer, filePath As String, contents As String
+    Dim textLine As Variant
+    Dim errorNumber As Long, errorText As String
+    filePath = ThisWorkbook.Path & "\_dbg\" & Left$(ThisWorkbook.name, InStrRev(ThisWorkbook.name, ".") - 1) & ".jsonl"
+    count = 0
+    On Error GoTo Failed
+    fileNo = FreeFile
+    Open filePath For Binary Access Read As #fileNo
+    contents = Space$(LOF(fileNo))
+    Get #fileNo, , contents
+    Close #fileNo
+    ' LogShim JSONL uses LF; Line Input would treat the whole file as one record.
+    For Each textLine In Split(contents, vbLf)
+        If InStr(textLine, """kind"":""J"",""event"":""run_end""") > 0 Then
+            count = count + 1
+            ReadRunEnd = CStr(textLine)
+        End If
+    Next textLine
+    Exit Function
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    Close #fileNo
+    On Error GoTo 0
+    If errorNumber <> 53 Then Err.Raise errorNumber, "modTester.ReadRunEnd", errorText
 End Function
 
 Private Function TC_ScriptRangeResolution() As Long
@@ -2343,6 +3063,57 @@ Private Function TC_ScriptProgramModel() As Long
     Set program = New clsScriptProgram
     program.LoadFromArray callAcrossAreaArr, 1
     ExpectBool "CALL across sub-area passes", True, program.ValidateLabels(), fails
+
+    ' 서로 다른 블록의 교차 닫힘 및 다른 블록 내부 분기는 허용하지 않는다.
+    Dim crossKindArr(1 To 4, 1 To 5) As Variant
+    MakeCmd crossKindArr, 1, "IF", "0", "EQ", "1"
+    MakeCmd crossKindArr, 2, "WHILE", "1", "EQ", "1"
+    MakeCmd crossKindArr, 3, "END_IF", 0, 0, ""
+    MakeCmd crossKindArr, 4, "END_WHILE", 0, 0, ""
+    program.LoadFromArray crossKindArr, 1
+    ExpectBool "Cross IF/WHILE rejected", False, program.ValidateStructure(), fails
+    ExpectBool "Cross IF/WHILE error location", True, InStr(program.ValidationErrors(), "line 3") > 0, fails
+    MakeCmd crossKindArr, 1, "SELECT", "A", 0, ""
+    MakeCmd crossKindArr, 3, "END_SELECT", 0, 0, ""
+    program.LoadFromArray crossKindArr, 1
+    ExpectBool "Cross SELECT/WHILE rejected", False, program.ValidateStructure(), fails
+
+    Dim nestedCaseArr(1 To 6, 1 To 5) As Variant
+    MakeCmd nestedCaseArr, 1, "SELECT", "A", 0, ""
+    MakeCmd nestedCaseArr, 2, "IF", "0", "EQ", "1"
+    MakeCmd nestedCaseArr, 3, "CASE", "A", 0, ""
+    MakeCmd nestedCaseArr, 4, "SET", "{wrong}", 0, "1"
+    MakeCmd nestedCaseArr, 5, "END_IF", 0, 0, ""
+    MakeCmd nestedCaseArr, 6, "END_SELECT", 0, 0, ""
+    program.LoadFromArray nestedCaseArr, 1
+    ExpectBool "CASE under IF rejected", False, program.ValidateStructure(), fails
+    ExpectLong "CASE under IF not indexed", 0, program.SelectBlock(1).CaseCount, fails
+    MakeCmd nestedCaseArr, 1, "IF", "0", "EQ", "1"
+    MakeCmd nestedCaseArr, 2, "REPEAT", "1", 0, ""
+    MakeCmd nestedCaseArr, 3, "ELSE", 0, 0, ""
+    MakeCmd nestedCaseArr, 5, "END_REPEAT", 0, 0, ""
+    MakeCmd nestedCaseArr, 6, "END_IF", 0, 0, ""
+    program.LoadFromArray nestedCaseArr, 1
+    ExpectBool "ELSE under loop rejected", False, program.ValidateStructure(), fails
+
+    Dim earlyReturnArr(1 To 9, 1 To 5) As Variant
+    MakeCmd earlyReturnArr, 1, "CALL", 0, 0, "SUB"
+    MakeCmd earlyReturnArr, 2, "LABEL", 0, 0, "MAIN"
+    MakeCmd earlyReturnArr, 3, "EXIT", 0, 0, ""
+    MakeCmd earlyReturnArr, 4, "LABEL", 0, 0, "SUB"
+    MakeCmd earlyReturnArr, 5, "IF", "0", "EQ", "1"
+    MakeCmd earlyReturnArr, 6, "RETURN", 0, 0, ""
+    MakeCmd earlyReturnArr, 7, "END_IF", 0, 0, ""
+    MakeCmd earlyReturnArr, 8, "GOTO", 0, 0, "MAIN"
+    MakeCmd earlyReturnArr, 9, "RETURN", 0, 0, ""
+    program.LoadFromArray earlyReturnArr, 1
+    ExpectBool "Conditional RETURN structure", True, program.ValidateStructure(), fails
+    ExpectBool "Conditional RETURN end", True, program.IsSubroutineEndAt(9), fails
+    ExpectLong "Conditional RETURN area extends to final RETURN", program.SubAreaIdAt(4), program.SubAreaIdAt(9), fails
+    ExpectBool "Conditional RETURN cannot escape with GOTO", False, program.ValidateLabels(), fails
+    MakeCmd earlyReturnArr, 8, "SET", "{tail}", 0, "1"
+    program.LoadFromArray earlyReturnArr, 1
+    ExpectBool "Conditional RETURN valid tail", True, program.ValidateStructure() And program.ValidateLabels(), fails
 
     ' Reload the same facade: no previous errors, labels, blocks or analysis survive.
     program.LoadFromArray dupArr, 1

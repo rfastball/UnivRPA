@@ -139,10 +139,10 @@ Public Sub ToggleSelectedCommandComment(Optional ByVal targetRange As Range = No
             ElseIf Not IsCommentCommand(cell.value) Then
                 cell.value = CommentCommandText(cell.value)
             End If
-            ValidateCommandCell cell
             changedCount = changedCount + 1
         End If
     Next cell
+    ValidateChangedCommands commandRange
 
 CleanExit:
     Application.ScreenUpdating = prevScreenUpdating
@@ -169,7 +169,27 @@ CleanFail:
     Err.Raise failNumber, failSource, failDescription, failHelpFile, failHelpContext
 End Sub
 
-Public Sub ValidateCommandCell(ByVal Target As Range)
+' @desc 변경 범위의 명령 행들을 하나의 최종 스냅샷으로 검증함
+Public Sub ValidateChangedCommands(ByVal Target As Range)
+    If Target Is Nothing Then Exit Sub
+    Dim ws As Worksheet, cmdCol As Long, changedRows As Object, cell As Range
+    Set ws = Target.Worksheet
+    cmdCol = ResolveCmdCol(ws)
+    If cmdCol = 0 Then Exit Sub
+    Set changedRows = CreateObject("Scripting.Dictionary")
+    For Each cell In Target.Cells
+        If cell.Row > 1 Then changedRows(CStr(cell.Row)) = True
+    Next cell
+    If changedRows.count = 0 Then Exit Sub
+
+    Dim program As clsScriptProgram, key As Variant
+    Set program = modDevTools.ProgramSnapshotFromSheet(ws)
+    For Each key In changedRows.keys
+        ValidateCommandCell ws.Cells(CLng(key), cmdCol), program
+    Next key
+End Sub
+
+Public Sub ValidateCommandCell(ByVal Target As Range, Optional ByVal program As clsScriptProgram = Nothing)
     If Target Is Nothing Then Exit Sub
     If Target.Cells.count <> 1 Then Exit Sub
     If ResolveCmdCol(Target.Worksheet) <> Target.Column Then Exit Sub
@@ -188,9 +208,8 @@ Public Sub ValidateCommandCell(ByVal Target As Range)
 
     Dim isValid As Boolean
     isValid = modDevTools.ValidateLine(cmd, Target.offset(0, 1).value, Target.offset(0, 2).value, Target.offset(0, 3).value)
-    Dim program As clsScriptProgram
     If isValid Then
-        Set program = modDevTools.ProgramSnapshotFromSheet(Target.Worksheet)
+        If program Is Nothing Then Set program = modDevTools.ProgramSnapshotFromSheet(Target.Worksheet)
         isValid = modDevTools.ValidateSheetFlowAt(Target.Worksheet, Target.Row, program)
     End If
     If isValid Then isValid = modDevTools.ValidateSheetVariablesAt(Target.Worksheet, Target.Row, True, program)

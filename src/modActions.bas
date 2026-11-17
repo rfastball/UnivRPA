@@ -31,10 +31,58 @@ Private m_unattended As Boolean
 ' [중단 래치 (B2)] ESC 물리키 폴링의 단일 소유자. 한 번 감지되면 래치되어
 ' 실행 전체가 중단 경로로 수렴한다 (순간 키입력 유실 방지).
 Private m_abortRequested As Boolean
+Private m_inputTestDriver As Object
 
 ' @desc 무인 모드 여부 설정함 (True=팝업/일시정지 억제, 로그 기록만)
 Public Sub SetUnattendedMode(ByVal enabled As Boolean)
     m_unattended = enabled
+    If Not enabled Then Set m_inputTestDriver = Nothing
+End Sub
+
+
+' @desc 무인 입력 검증용 드라이버 설정함, Nothing이면 실제 API 사용
+Public Sub SetInputTestDriver(ByVal driver As Object)
+    If Not m_unattended And Not driver Is Nothing Then Err.Raise 5, "modActions", "Unattended mode required."
+    Set m_inputTestDriver = driver
+End Sub
+
+Private Sub SleepSlice(ByVal milliseconds As Long)
+    If m_inputTestDriver Is Nothing Then
+        modWinAPI.Sleep milliseconds
+        DoEvents
+    Else
+        m_inputTestDriver.SleepMilliseconds milliseconds
+    End If
+End Sub
+
+Private Sub SendMouseButton(ByVal flags As Long)
+    If m_inputTestDriver Is Nothing Then
+        modWinAPI.mouse_event flags, 0, 0, 0, 0
+    Else
+        m_inputTestDriver.MouseButton flags
+    End If
+End Sub
+
+Private Sub SendKeyboardEvent(ByVal vk As Integer, ByVal scan As Integer, ByVal flags As Long)
+    modWinAPI.SendKeyboardInput vk, scan, flags, m_inputTestDriver
+End Sub
+
+' Down 성공 후에는 중단과 무관하게 Up을 시도한다. 정리 실패는 원래 오류를 덮지 않는다.
+Private Sub SendKeyStroke(ByVal vk As Integer, ByVal scan As Integer, ByVal flags As Long)
+    Dim held As Boolean
+    Dim errorNumber As Long, errorText As String
+    On Error GoTo Failed
+    If AbortPending() Then Exit Sub
+    SendKeyboardEvent vk, scan, flags
+    held = True
+    SendKeyboardEvent vk, scan, flags Or KEYEVENTF_KEYUP
+    Exit Sub
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    If held Then SendKeyboardEvent vk, scan, flags Or KEYEVENTF_KEYUP
+    On Error GoTo 0
+    Err.Raise errorNumber, "modActions.SendKeyStroke", errorText
 End Sub
 
 ' @desc 중단 래치를 설정함 (ESC 감지 또는 외부 요청)
@@ -53,6 +101,7 @@ Public Function AbortPending() As Boolean
         AbortPending = True
         Exit Function
     End If
+    If Not m_inputTestDriver Is Nothing Then Exit Function
     If IsKeyDown(VK_ESCAPE) Then
         m_abortRequested = True
         AbortPending = True
@@ -95,28 +144,16 @@ End Function
 
 ' [스마트 대기] Sleep 대신 사용. 엑셀 응답없음 방지 + ESC 비상종료 감지
 Public Sub BetterWait(ByVal totalWait As Long)
-    On Error GoTo ErrHandler
-    Dim i As Long, stepWait As Long: stepWait = DELAY_MICRO
-    
-    If totalWait < stepWait Then
-        If AbortPending() Then Exit Sub
+    If totalWait < 0 Then Err.Raise 5, "modActions.BetterWait", "Wait milliseconds must not be negative."
+    Dim remaining As Long, slice As Long
+    remaining = totalWait
+    Do
         If WaitIfPaused() Then Exit Sub
-        Sleep totalWait
-        DoEvents
-        GoTo CleanUp
-    End If
-    For i = 1 To totalWait \ stepWait
-        If AbortPending() Then Exit Sub
-        If WaitIfPaused() Then Exit Sub
-        Sleep stepWait
-        DoEvents
-    Next i
-
-CleanUp:
-    Exit Sub
-ErrHandler:
-    Err.Raise Err.Number, "modActions.BetterWait", Err.Description
-    Resume CleanUp
+        slice = remaining
+        If slice > DELAY_MICRO Then slice = DELAY_MICRO
+        SleepSlice slice
+        remaining = remaining - slice
+    Loop While remaining > 0
 End Sub
 
 '==============================================================================
@@ -134,12 +171,8 @@ Public Sub Action_InputText(ByVal txt As String, ByVal delayMs As Long)
         If WaitIfPaused() Then Exit Sub
         charCode = AscW(Mid(txt, i, 1))
         
-        ' 1. Key Down (Unicode Flag 사용)
-        SendKeyboardInput 0, charCode, KEYEVENTF_UNICODE
-        
-        ' 2. Key Up
-        SendKeyboardInput 0, charCode, KEYEVENTF_UNICODE Or KEYEVENTF_KEYUP
-        
+        SendKeyStroke 0, CInt(charCode), KEYEVENTF_UNICODE
+
         If delayMs > 0 Then BetterWait delayMs
     Next i
 
@@ -176,7 +209,7 @@ Public Sub Action_PressKey(ByVal vKey As Variant)
     On Error GoTo ErrHandler
     Dim keyCode As Long
     keyCode = ParseKeyCode(vKey)
-    modWinAPI.SendKey_Click keyCode
+    SendKeyStroke CInt(keyCode), 0, 0
     BetterWait DELAY_MICRO ' 키 입력 후 미세 대기
 
 CleanUp:
@@ -188,31 +221,44 @@ End Sub
 
 ' [조합키 입력] Ctrl+C 등 (순차적 Down -> 순차적 Up)
 Public Sub Action_PressCombo(k1 As Variant, k2 As Variant)
-    On Error GoTo ErrHandler
     Dim c1 As Long, c2 As Long
+    Dim held1 As Boolean, held2 As Boolean
+    Dim errorNumber As Long, errorText As String
+    On Error GoTo Failed
     c1 = ParseKeyCode(k1)
     c2 = ParseKeyCode(k2)
-    modWinAPI.SendKey_Down c1
-    modWinAPI.Sleep DELAY_MICRO
-    modWinAPI.SendKey_Down c2
-    modWinAPI.Sleep DELAY_MICRO
-    modWinAPI.SendKey_Up c2
-    modWinAPI.Sleep DELAY_MICRO
-    modWinAPI.SendKey_Up c1
-    modWinAPI.Sleep DELAY_MICRO
-
-CleanUp:
+    If AbortPending() Then Exit Sub
+    SendKeyboardEvent CInt(c1), 0, 0
+    held1 = True
+    SleepSlice DELAY_MICRO
+    If Not AbortPending() Then
+        SendKeyboardEvent CInt(c2), 0, 0
+        held2 = True
+        SleepSlice DELAY_MICRO
+    End If
+    If held2 Then
+        SendKeyboardEvent CInt(c2), 0, KEYEVENTF_KEYUP
+        held2 = False
+        SleepSlice DELAY_MICRO
+    End If
+    SendKeyboardEvent CInt(c1), 0, KEYEVENTF_KEYUP
+    held1 = False
+    BetterWait DELAY_MICRO
     Exit Sub
-ErrHandler:
-    Err.Raise Err.Number, "modActions.Action_PressCombo", Err.Description
-    Resume CleanUp
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    If held2 Then SendKeyboardEvent CInt(c2), 0, KEYEVENTF_KEYUP
+    If held1 Then SendKeyboardEvent CInt(c1), 0, KEYEVENTF_KEYUP
+    On Error GoTo 0
+    Err.Raise errorNumber, "modActions.Action_PressCombo", errorText
 End Sub
 
 ' [내부 함수] 키 코드 파싱 (숫자 or 텍스트 -> Virtual Key Code)
 Private Function ParseKeyCode(ByVal vKey As Variant) As Long
     If IsNumeric(vKey) Then
         ParseKeyCode = CLng(vKey)
-        If ParseKeyCode <= 0 Then Err.Raise 5, "modActions.ParseKeyCode", "잘못된 키 코드: " & CStr(vKey)
+        If ParseKeyCode <= 0 Or ParseKeyCode > 254 Then Err.Raise 5, "modActions.ParseKeyCode", "잘못된 키 코드: " & CStr(vKey)
         Exit Function
     End If
     
@@ -262,7 +308,14 @@ End Function
 ' [프리미티브] 좌표 이동 + 안정화 대기
 Public Sub MoveAndSettle(ByVal x As Long, ByVal y As Long)
     On Error GoTo ErrHandler
-    modWinAPI.SetCursorPos x, y
+    If AbortPending() Then Exit Sub
+    Dim moved As Long
+    If m_inputTestDriver Is Nothing Then
+        moved = modWinAPI.SetCursorPos(x, y)
+    Else
+        moved = m_inputTestDriver.MoveCursor(x, y)
+    End If
+    If moved = 0 Then Err.Raise 5, "modActions.MoveAndSettle", "SetCursorPos failed."
     BetterWait DELAY_SHORT   ' 이동 후 안정화 (너무 빠르면 클릭 씹힘)
 
 CleanUp:
@@ -274,28 +327,34 @@ End Sub
 
 ' [프리미티브] 현재 커서 위치에서 Down/Up (좌/우)
 Public Sub FireClick(Optional ByVal isRightClick As Boolean = False)
-    On Error GoTo ErrHandler
+    Dim downFlag As Long, upFlag As Long
+    Dim held As Boolean
+    Dim errorNumber As Long, errorText As String
+    On Error GoTo Failed
+    If AbortPending() Then Exit Sub
+    downFlag = MOUSEEVENTF_LEFTDOWN: upFlag = MOUSEEVENTF_LEFTUP
     If isRightClick Then
-        modWinAPI.mouse_event MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0
-        BetterWait DELAY_MICRO ' 누르고 잠시 대기
-        modWinAPI.mouse_event MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0
-    Else
-        modWinAPI.mouse_event MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0
-        BetterWait DELAY_MICRO
-        modWinAPI.mouse_event MOUSEEVENTF_LEFTUP, 0, 0, 0, 0
+        downFlag = MOUSEEVENTF_RIGHTDOWN: upFlag = MOUSEEVENTF_RIGHTUP
     End If
-
-CleanUp:
+    SendMouseButton downFlag
+    held = True
+    ' 버튼을 놓기 전에는 Pause 대기에 진입하지 않는다.
+    SleepSlice DELAY_MICRO
+    SendMouseButton upFlag
     Exit Sub
-ErrHandler:
-    Err.Raise Err.Number, "modActions.FireClick", Err.Description
-    Resume CleanUp
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    If held Then SendMouseButton upFlag
+    On Error GoTo 0
+    Err.Raise errorNumber, "modActions.FireClick", errorText
 End Sub
 
 ' [마우스 클릭] 이동 -> 안정화 -> 클릭 -> 안정화 (CLICK/RCLICK = fire-and-forget)
 Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal isRightClick As Boolean = False)
     On Error GoTo ErrHandler
     MoveAndSettle x, y
+    If AbortPending() Then Exit Sub
     FireClick isRightClick
     BetterWait DELAY_SHORT
 
@@ -328,7 +387,8 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
     ' 1. 이동 -> 호버 전이가 끝난 뒤 기준색 캡처 (호버색을 기준선에 포함 = 빼버림)
     MoveAndSettle x, y
     BetterWait HOVER_SETTLE_MS
-    baseColor = modWinAPI.GetColorHexAt(x, y)
+    If AbortPending() Then Exit Function
+    baseColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
 
     ' 2. 좌클릭 발사
     FireClick False
@@ -337,8 +397,8 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
     startTime = modWinAPI.GetTickCount()
     Do
         If AbortPending() Then Action_ClickSync = False: Exit Function
-        If modWinAPI.GetColorHexAt(x, y) <> baseColor Then Action_ClickSync = True: Exit Function
-        If (modWinAPI.GetTickCount() - startTime) > TIMEOUT_DEFAULT Then
+        If modWinAPI.GetColorHexAt(x, y, m_inputTestDriver) <> baseColor Then Action_ClickSync = True: Exit Function
+        If modWinAPI.ElapsedMilliseconds(startTime, modWinAPI.GetTickCount()) > TIMEOUT_DEFAULT Then
             Action_ClickSync = False    ' 조용히 실패 (모달 금지)
             Exit Function
         End If
@@ -364,10 +424,11 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
     Dim isVanish As Boolean: isVanish = (sType = "WAIT_VANISH")
     Dim curColor As String
     
+    If AbortPending() Then Exit Function
     startTime = modWinAPI.GetTickCount()
     
     Do
-        curColor = modWinAPI.GetColorHexAt(x, y)
+        curColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
         
         ' 조건 충족 확인
         If isVanish Then
@@ -377,7 +438,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         End If
         
         ' 타임아웃 (무인 환경: 모달 금지, 조용히 실패 반환 → 알림 여부는 엔진이 결정)
-        If (modWinAPI.GetTickCount() - startTime) > timeLimit Then
+        If modWinAPI.ElapsedMilliseconds(startTime, modWinAPI.GetTickCount()) > timeLimit Then
             Action_Wait = False
             Exit Function
         End If
@@ -401,11 +462,13 @@ Public Function Action_Assert(x As Long, y As Long, condition As String) As Bool
     Dim targetColor As String, nowColor As String
     Dim isForbidden As Boolean
     
-    targetColor = condition
+    targetColor = UCase$(Trim$(condition))
     isForbidden = (Left(targetColor, 1) = "!")
     If isForbidden Then targetColor = Mid(targetColor, 2)
+    If Len(targetColor) <> 6 Or targetColor Like "*[!0-9A-F]*" Then _
+        Err.Raise 5, "modActions.Action_Assert", "Invalid ASSERT color: " & condition
     
-    nowColor = modWinAPI.GetColorHexAt(x, y)
+    nowColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
     
     ' 무인 환경: 모달 금지, 불일치 시 조용히 False 반환 (알림은 엔진이 결정)
     If isForbidden Then
@@ -431,9 +494,15 @@ End Function
 ' [창 활성화] 제목의 일부만으로 창을 찾아 맨 앞으로 가져옴
 Public Function Action_FocusWindow(ByVal partialTitle As String) As Boolean
     On Error GoTo ErrHandler
+    If Len(Trim$(partialTitle)) = 0 Then Err.Raise 5, "modActions.Action_FocusWindow", "FOCUS title must not be empty."
     Dim hwnd As LongPtr
     Dim winTitle As String
     Dim lenTitle As Long
+
+    If Not m_inputTestDriver Is Nothing Then
+        Action_FocusWindow = modWinAPI.ActivateWindow(m_inputTestDriver.WindowHandle, m_inputTestDriver)
+        Exit Function
+    End If
     
     ' 현재 실행 중인 첫 번째 윈도우 핸들
     hwnd = FindWindow(vbNullString, vbNullString)
@@ -447,11 +516,7 @@ Public Function Action_FocusWindow(ByVal partialTitle As String) As Boolean
             
             ' 부분 일치 검사
             If InStr(1, winTitle, partialTitle, vbTextCompare) > 0 Then
-                ' 최소화 상태면 먼저 복원한 뒤 반드시 전면화
-                '   (SW_RESTORE만으로는 최소화 창이 앞으로 오지 않을 수 있음)
-                If IsIconic(hwnd) Then ShowWindow hwnd, SW_RESTORE
-                SetForegroundWindow hwnd
-                Action_FocusWindow = True
+                Action_FocusWindow = modWinAPI.ActivateWindow(hwnd)
                 Exit Function
             End If
         End If

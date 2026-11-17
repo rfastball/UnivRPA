@@ -29,11 +29,13 @@ CleanUp:
 
 ErrHandler:
     Dim desc As String
+    Dim errorNumber As Long
+    errorNumber = Err.Number
     desc = Err.Description
     On Error Resume Next
     If openedHere And Not wb Is Nothing Then wb.Close SaveChanges:=False
     On Error GoTo 0
-    Err.Raise Err.Number, "modTableSource.SnapshotSource", desc
+    Err.Raise errorNumber, "modTableSource.SnapshotSource", desc
 End Function
 
 Private Function ParseSnapshotMode(ByVal modeText As String) As Boolean
@@ -69,26 +71,41 @@ Public Function OpenWorkbookHint(ByVal filterText As String) As String
     OpenWorkbookHint = "FOREACH_ROW P1 후보: " & text
 End Function
 
-Public Function ResolveWorkbook(ByVal workbookSpec As String, ByRef openedHere As Boolean) As Workbook
+Public Function ResolveWorkbook(ByVal workbookSpec As String, ByRef openedHere As Boolean, Optional ByVal workbookOpener As Object = Nothing) As Workbook
     If Len(workbookSpec) = 0 Then Err.Raise 5, "modTableSource.ResolveWorkbook", "워크북 이름 또는 경로가 필요합니다."
 
     openedHere = False
 
     If IsPathSpec(workbookSpec) Then
-        Dim baseName As String
-        baseName = Dir$(workbookSpec)
-        If Len(baseName) = 0 Then baseName = FileNameFromPath(workbookSpec)
+        Dim baseName As String, fullPath As String, files As Object
+        Set files = CreateObject("Scripting.FileSystemObject")
+        fullPath = files.GetAbsolutePathName(Replace(workbookSpec, "/", "\"))
+        baseName = files.GetFileName(fullPath)
 
         Dim wb As Workbook
         For Each wb In Application.Workbooks
-            If StrComp(wb.name, baseName, vbTextCompare) = 0 Then
+            If StrComp(files.GetAbsolutePathName(wb.FullName), fullPath, vbTextCompare) = 0 Then
                 Set ResolveWorkbook = wb
                 Exit Function
             End If
+            If StrComp(wb.name, baseName, vbTextCompare) = 0 Then _
+                Err.Raise 5, "modTableSource.ResolveWorkbook", "A different workbook with the same filename is open: " & wb.FullName
         Next wb
 
-        Set ResolveWorkbook = Application.Workbooks.Open(fileName:=workbookSpec, ReadOnly:=True, UpdateLinks:=False)
+        Dim previousSecurity As MsoAutomationSecurity, previousEvents As Boolean
+        previousSecurity = Application.AutomationSecurity
+        previousEvents = Application.EnableEvents
+        On Error GoTo OpenFailed
+        Application.AutomationSecurity = msoAutomationSecurityForceDisable
+        Application.EnableEvents = False
+        If workbookOpener Is Nothing Then
+            Set ResolveWorkbook = Application.Workbooks.Open(fileName:=fullPath, ReadOnly:=True, UpdateLinks:=False)
+        Else
+            Set ResolveWorkbook = workbookOpener.OpenWorkbook(fullPath)
+        End If
         openedHere = True
+        Application.AutomationSecurity = previousSecurity
+        Application.EnableEvents = previousEvents
         Exit Function
     End If
 
@@ -103,6 +120,16 @@ Public Function ResolveWorkbook(ByVal workbookSpec As String, ByRef openedHere A
         Case Else
             Err.Raise 5, "modTableSource.ResolveWorkbook", "워크북 이름이 모호합니다: " & workbookSpec & vbCrLf & JoinWorkbookFullNames(matches)
     End Select
+    Exit Function
+
+OpenFailed:
+    Dim errorNumber As Long, errorText As String
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    Application.AutomationSecurity = previousSecurity
+    Application.EnableEvents = previousEvents
+    On Error GoTo 0
+    Err.Raise errorNumber, "modTableSource.ResolveWorkbook", errorText
 End Function
 
 Public Function ResolveTableSourceSpec(ByVal wb As Workbook, ByVal sourceSpec As String) As Object
@@ -145,23 +172,6 @@ Private Function IsPathSpec(ByVal value As String) As Boolean
     IsPathSpec = (InStr(1, value, "\", vbTextCompare) > 0 _
                Or InStr(1, value, "/", vbTextCompare) > 0 _
                Or InStr(1, value, ":", vbTextCompare) > 0)
-End Function
-
-Private Function FileNameFromPath(ByVal value As String) As String
-    Dim slashPos As Long
-    Dim backslashPos As Long
-    Dim pos As Long
-
-    slashPos = InStrRev(value, "/")
-    backslashPos = InStrRev(value, "\")
-    pos = slashPos
-    If backslashPos > pos Then pos = backslashPos
-
-    If pos > 0 Then
-        FileNameFromPath = Mid$(value, pos + 1)
-    Else
-        FileNameFromPath = value
-    End If
 End Function
 
 Private Function UnquoteSheetName(ByVal value As String) As String

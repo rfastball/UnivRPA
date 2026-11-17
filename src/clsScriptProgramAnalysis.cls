@@ -258,8 +258,8 @@ Private Sub BuildSubroutineFlowAnalysis()
                 m_subroutineStartRows(CStr(R)) = True
 
                 Dim endLine As Long
-                ' [D3] 스캔은 Index 소유 - 서식/검증 경계는 표시 깊이 모델로 판정
-                endLine = m_index.FindSubroutineEndAtDepth(R, m_displayDepths)
+                ' 실행 경계와 서식/검증은 같은 종료행을 소비한다.
+                endLine = m_index.SubroutineEndAt(R)
 
                 If endLine > 0 Then
                     m_subroutineEndRows(CStr(endLine)) = True
@@ -463,6 +463,7 @@ Private Sub CollectUserVarsFromText(ByVal text As String, ByVal result As Collec
             Dim j As Long
             Dim found As Long
             depth = 1
+            found = 0
             For j = i + 1 To n
                 Select Case Mid$(text, j, 1)
                     Case "{"

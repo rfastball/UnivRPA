@@ -24,7 +24,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
     Select Case cmd
         Case "FOCUS"
             If Not modActions.Action_FocusWindow(args(3)) Then
-                modContext.SetLastError "FOCUS 라인 " & R & ": 창을 찾지 못했습니다: '" & args(3) & "'"
+                modContext.SetLastError "FOCUS 라인 " & R & ": 창을 찾거나 활성화하지 못했습니다: '" & args(3) & "'"
                 ICommand_Execute = CMD_ERROR
                 GoTo CleanUp
             End If

@@ -123,7 +123,7 @@ End Function
 ' [PUSH] 서브루틴 진입 시 복귀할 줄 번호 저장
 Public Sub PushStack(ByVal returnRow As Long, Optional ByVal loopDepthAtCall As Long = -1)
     If loopDepthAtCall < 0 Then loopDepthAtCall = LoopDepth()
-    CallStack.Add Array(returnRow, loopDepthAtCall)
+    CallStack.Add Array(returnRow, loopDepthAtCall, IfBranchDepth())
 End Sub
 
 ' [POP] 서브루틴 종료(RETURN) 시 복귀할 줄 번호 반환
@@ -147,6 +147,10 @@ Public Function PopStack(Optional ByRef loopDepthRestored As Long = -1) As Long
 
         Do While LoopDepth() > expectedLoopDepth
             LoopPop "return_restore"
+        Loop
+
+        Do While IfBranchDepth() > CLng(frame(2))
+            IfBranchPop
         Loop
 
         loopDepthRestored = LoopDepth()
@@ -204,6 +208,11 @@ End Sub
 ' [깊이] 현재 활성 루프 개수
 Public Function LoopDepth() As Long
     LoopDepth = LoopTop
+End Function
+
+' @desc 현재 CALL에서 시작한 활성 루프 수 반환, 없으면 0 반환
+Public Function LocalLoopDepth() As Long
+    LocalLoopDepth = LoopTop - CallerStackDepth(1)
 End Function
 
 ' [진입] 새 루프 프레임 PUSH (iteration = 1 로 시작)
@@ -358,8 +367,8 @@ Public Function ReconcileLoopStackForJump(ByVal targetLine As Long, ByVal target
     Dim keepDepth As Long
     Dim i As Long
 
-    keepDepth = 0
-    For i = LoopTop To 1 Step -1
+    keepDepth = CallerStackDepth(1)
+    For i = LoopTop To keepDepth + 1 Step -1
         If targetLine >= LoopStack(i).headerLine And targetLine <= LoopStack(i).endLine Then
             keepDepth = i
             Exit For
@@ -400,7 +409,7 @@ Public Sub IfBranchPush(ByVal headerLine As Long, ByVal endIfLine As Long)
 End Sub
 
 Public Sub IfBranchPop()
-    If IfBranchTop <= 0 Then Exit Sub
+    If IfBranchTop <= CallerStackDepth(2) Then Exit Sub
 
     IfBranchTop = IfBranchTop - 1
     If IfBranchTop > 0 Then
@@ -411,15 +420,15 @@ Public Sub IfBranchPop()
 End Sub
 
 Public Function IfBranchPeekEnd() As Long
-    If IfBranchTop > 0 Then IfBranchPeekEnd = IfBranchStack(IfBranchTop).endIfLine
+    If IfBranchTop > CallerStackDepth(2) Then IfBranchPeekEnd = IfBranchStack(IfBranchTop).endIfLine
 End Function
 
 Public Function ReconcileIfBranchStackForJump(ByVal targetLine As Long) As Long
     Dim keepDepth As Long
     Dim i As Long
 
-    keepDepth = 0
-    For i = IfBranchTop To 1 Step -1
+    keepDepth = CallerStackDepth(2)
+    For i = IfBranchTop To keepDepth + 1 Step -1
         If targetLine >= IfBranchStack(i).headerLine And targetLine <= IfBranchStack(i).endIfLine Then
             keepDepth = i
             Exit For
@@ -430,4 +439,12 @@ Public Function ReconcileIfBranchStackForJump(ByVal targetLine As Long) As Long
         IfBranchPop
         ReconcileIfBranchStackForJump = ReconcileIfBranchStackForJump + 1
     Loop
+End Function
+
+' CALL frames below this depth belong to the caller, even at a different source location.
+Private Function CallerStackDepth(ByVal fieldIndex As Long) As Long
+    If GetStackDepth() = 0 Then Exit Function
+    Dim frame As Variant
+    frame = CallStack.item(CallStack.count)
+    CallerStackDepth = CLng(frame(fieldIndex))
 End Function

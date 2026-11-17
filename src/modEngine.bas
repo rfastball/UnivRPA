@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, LogShim
+' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, modCondition, LogShim
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -17,6 +17,7 @@ Option Explicit
 ' [ProgramImage] 로드된 스크립트 프로그램 이미지
 Private m_program As clsScriptProgram
 Private m_lastRuntimeError As String
+Private m_running As Boolean
 
 ' [상수] 디스패치 반환 코드는 modCmdRegistry에 공개 정의 (CMD_NEXT_LINE / CMD_ERROR).
 '   CMD_NOT_HANDLED 폴백은 레지스트리 도입으로 폐기됨.
@@ -33,19 +34,35 @@ Private Enum eControlSignal
 End Enum
 
 Sub RunRPA()
+    If m_running Then Exit Sub
+    RunScriptSheet ActiveSheet
+End Sub
+
+' @desc 시트 검증 후 실행하여 종료 상태 반환, 재진입이면 BUSY 반환
+Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unattended As Boolean = False) As String
+    If m_running Then
+        RunScriptSheet = "BUSY"
+        Exit Function
+    End If
+    m_running = True
     On Error GoTo FatalError
 
     Dim currentLine As Long
     Dim nextLine As Long
-    Dim wsSource As Worksheet
     Dim rngTarget As Range
     Dim totalLines As Long
     Dim pureCmd As String
     Dim finalMessage As String
+    Dim finalStatus As String
+    Dim sourceName As String
     Dim fatalDesc As String
 
-    finalMessage = "매크로가 종료되었습니다."
-    modActions.SetUnattendedMode False   ' 수동 실행 = 대화형 알림
+    finalStatus = "FAILED"
+    m_lastRuntimeError = ""
+    If Not unattended Then LogShim.Reset
+    If Not wsSource Is Nothing Then sourceName = wsSource.name
+    LogShim.LogEvent "run_start", Array("sheet"), Array(sourceName)
+    modActions.SetUnattendedMode unattended
     modActions.ClearAbort                ' 이전 실행의 중단 래치 해제
     modContext.InitContext
     modHelper.SetStatusBar "RPA Ready..."
@@ -54,11 +71,12 @@ Sub RunRPA()
     ' [핵심: 스냅샷] 버튼을 누른 "바로 그 시트"를 고정합니다.
     ' 이후 모든 로직은 ActiveSheet가 아닌 wsSource를 바라봅니다.
     '==========================================================
-    Set wsSource = ActiveSheet
+    If wsSource Is Nothing Then Err.Raise 5, "modEngine.RunScriptSheet", "Script worksheet is required."
     Set rngTarget = ResolveScriptRange(wsSource)
 
     ' 유효성 검사: 데이터가 없거나 헤더만 있는 경우
     If rngTarget Is Nothing Then
+        m_lastRuntimeError = "No script rows."
         modActions.Action_ShowNotification "실행할 데이터가 없습니다. (현재 시트: " & wsSource.name & ")", 3
         GoTo CleanUp
     End If
@@ -72,26 +90,24 @@ Sub RunRPA()
     isProgramValid = m_program.ValidateStructure()
     isProgramValid = m_program.ValidateLabels() And isProgramValid
     If Not isProgramValid Then
+        m_lastRuntimeError = m_program.ValidationErrors()
         modActions.Action_ShowNotification "[에러] 스크립트 구조 오류" & vbCrLf & m_program.ValidationErrors(), 3
         GoTo CleanUp
     End If
 
     ' [UI] 상태 표시 폼 로드
-    modHelper.ShowRpaStatus frmRPAStatus, totalLines
-
-    ' [운용 로그] 세션 시작: 이전 jsonl 비우고 run_start 기록
-    LogShim.Reset
-    LogShim.LogEvent "run_start", _
-        Array("sheet", "total"), Array(wsSource.name, totalLines)
+    If Not unattended Then modHelper.ShowRpaStatus frmRPAStatus, totalLines
 
     modHelper.SetStatusBar "매크로 실행 중..."
     currentLine = 1
 
-    ' [E] UI 갱신 스로틀 기준 시각 (0이면 첫 줄에서 즉시 갱신)
+    ' 첫 갱신 여부를 tick 부호와 분리한다.
     Dim lastUiTick As Long
+    Dim uiStarted As Boolean
 
     Do While currentLine >= 1 And currentLine <= totalLines
         If CheckControlSignals() = ControlAbort Then
+            finalStatus = "ABORTED"
             finalMessage = "매크로가 중단되었습니다."
             LogForeachResumeHint "foreach.interrupted"
             If Len(ForeachResumeHint()) > 0 Then finalMessage = finalMessage & vbCrLf & ForeachResumeHint()
@@ -109,8 +125,9 @@ Sub RunRPA()
         '   SET/IF 위주 데이터 루프에서 매 줄 UI 갱신이 지배 비용이 되는 것을 방지.
         '   ESC/Pause 감지는 CheckControlSignals가 매 줄 GetAsyncKeyState로 수행하므로
         '   DoEvents 펌핑과 무관하다 (B2 래치).
-        If modWinAPI.GetTickCount() - lastUiTick >= UI_THROTTLE_MS Then
+        If Not uiStarted Or modWinAPI.ElapsedMilliseconds(lastUiTick, modWinAPI.GetTickCount()) >= UI_THROTTLE_MS Then
             lastUiTick = modWinAPI.GetTickCount()
+            uiStarted = True
 
             Dim stepInfo As String
             stepInfo = inst.cmd & " " & inst.p1 & " " & inst.p2 & " " & inst.p3
@@ -119,7 +136,7 @@ Sub RunRPA()
             Dim activeRtotal As Long
             activeRidx = modContext.GetActiveForeachOrdinal()
             activeRtotal = modContext.GetActiveForeachTotalRows()
-            modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
+            If Not unattended Then modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
             UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
             DoEvents
         End If
@@ -135,6 +152,7 @@ Sub RunRPA()
         ' [B2] 중단 래치 우선 판정: 액션 내부에서 ESC로 탈출한 경우
         ' cmd_error가 아니라 "사용자 중단"으로 즉시 종료한다
         If modActions.AbortPending() Then
+            finalStatus = "ABORTED"
             finalMessage = "매크로가 중단되었습니다."
             LogForeachResumeHint "foreach.interrupted"
             If Len(ForeachResumeHint()) > 0 Then finalMessage = finalMessage & vbCrLf & ForeachResumeHint()
@@ -146,6 +164,7 @@ Sub RunRPA()
                 currentLine = NextPointer(currentLine, nextLine)
 
             Case CMD_HALT
+                finalStatus = "HALTED"
                 GoTo CleanUp
 
             Case CMD_ERROR
@@ -166,26 +185,37 @@ Sub RunRPA()
                 currentLine = NextPointer(currentLine, nextLine)
 
             Case Else
+                m_lastRuntimeError = "Unknown return code: " & nextLine
                 modActions.Action_ShowNotification "[에러] 알 수 없는 반환 코드: " & nextLine, 3
                 GoTo CleanUp
         End Select
         ' [E] 루프 말미 DoEvents는 위 스로틀 블록으로 통합됨 (매 줄 2회 펌핑 제거)
     Loop
+    finalStatus = "COMPLETED"
 
 CleanUp:
     On Error Resume Next
-    ' [운용 로그] 세션 종료 (finalMessage가 상태를 담음)
-    LogShim.LogEvent "run_end", Array("status"), Array(finalMessage)
-    modHelper.CloseRpaStatus frmRPAStatus
+    Select Case finalStatus
+        Case "COMPLETED": finalMessage = "매크로가 완료되었습니다."
+        Case "HALTED": finalMessage = "EXIT 명령으로 종료되었습니다."
+        Case "FAILED": finalMessage = "매크로 실행에 실패했습니다."
+    End Select
+    LogShim.LogEvent "run_end", Array("status", "message", "line", "reason", "callDepth", "loopDepth"), _
+        Array(finalStatus, finalMessage, currentLine, m_lastRuntimeError, modContext.GetStackDepth(), modContext.LoopDepth())
+    If Not unattended Then modHelper.CloseRpaStatus frmRPAStatus
     modContext.ResetContext
     modHelper.ClearStatusBar
     Set m_program = Nothing
     modActions.Action_ShowNotification finalMessage, 1
+    RunScriptSheet = finalStatus
+    m_running = False
     On Error GoTo 0
-    Exit Sub
+    Exit Function
 
 FatalError:
     fatalDesc = Err.Description
+    m_lastRuntimeError = fatalDesc
+    finalStatus = "FAILED"
     LogShim.LogEvent "fatal_error", _
         Array("line", "cmd", "desc"), _
         Array(currentLine, pureCmd, fatalDesc)
@@ -194,7 +224,7 @@ FatalError:
         "[에러] 라인 " & currentLine & " / " & pureCmd & vbCrLf & fatalDesc & ForeachHintSuffix(), 3
     finalMessage = "매크로가 종료되었습니다."
     Resume CleanUp
-End Sub
+End Function
 
 Private Sub UpdateStatusBarProgress(ByVal curLine As Long, ByVal totalLines As Long, _
                                     ByVal ridx As Long, ByVal rtotal As Long)
@@ -280,6 +310,10 @@ End Sub
 ' @desc 명령어 줄 받아 레지스트리 2단 디스패치로 실행, 미등록 시 CMD_ERROR 반환
 Public Function ExecuteSmartAction(ByVal R As Long) As Long
     On Error GoTo ErrHandler
+    If modActions.AbortPending() Then
+        ExecuteSmartAction = CMD_HALT
+        Exit Function
+    End If
     m_lastRuntimeError = ""
     modContext.ClearLastError
     If m_program Is Nothing Then
@@ -305,12 +339,25 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
      GoTo CleanUp
     End If
 
+    ' A selected IF branch skips later conditions without resolving their operands.
+    If inst.cmd = "ELSE_IF" Then
+        Dim endIfLine As Long
+        endIfLine = m_program.EndIfOf(R)
+        If endIfLine > 0 And modContext.IfBranchPeekEnd() = endIfLine Then
+            ExecuteSmartAction = endIfLine
+            GoTo CleanUp
+        End If
+    End If
+
     ' 3. decode: 슬롯별 ResolveMode(RAW/RESOLVE)로 args 구성 (decode/execute 분리)
     '    RAW 슬롯 4종은 레지스트리가 RawKind로 선언 (연산자/lvalue/점프대상/라벨명)
     Dim args(1 To 3) As String
-    args(1) = DecodeSlot(inst.def.p1, inst.p1)
-    args(2) = DecodeSlot(inst.def.p2, inst.p2)
-    args(3) = DecodeSlot(inst.def.p3, inst.p3)
+    ' Reaching CASE after a selected body only exits SELECT; its value is unused.
+    If inst.cmd <> "CASE" Then
+        args(1) = DecodeSlot(inst.def.p1, inst.p1)
+        args(2) = DecodeSlot(inst.def.p2, inst.p2)
+        args(3) = DecodeSlot(inst.def.p3, inst.p3)
+    End If
 
     ' 3.5 ParamSpec 게이트: 레지스트리가 선언한 Required/DataType을 실행 전 강제 (C1)
     Dim guardMsg As String
@@ -364,6 +411,13 @@ Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args()
             If spec.Required And Len(Trim$(rawVal)) = 0 Then
                 ValidateDecodedSlots = "P" & i & "(" & spec.Meaning & ") 필수값 누락"
                 Exit Function
+            End If
+
+            If spec.RawKind = RK_CONDITION Then
+                If Not modCondition.IsConditionOperator(args(i)) Then
+                    ValidateDecodedSlots = "Invalid condition operator: " & args(i)
+                    Exit Function
+                End If
             End If
 
             If spec.DataType = DT_NUM Then

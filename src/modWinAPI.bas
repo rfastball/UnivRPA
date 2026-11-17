@@ -37,6 +37,7 @@ Public Declare PtrSafe Function GetWindow Lib "user32" (ByVal hwnd As LongPtr, B
 Public Declare PtrSafe Function GetWindowText Lib "user32" Alias "GetWindowTextA" (ByVal hwnd As LongPtr, ByVal lpString As String, ByVal cch As Long) As Long
 Public Declare PtrSafe Function GetWindowTextLength Lib "user32" Alias "GetWindowTextLengthA" (ByVal hwnd As LongPtr) As Long
 Public Declare PtrSafe Function SetForegroundWindow Lib "user32" (ByVal hwnd As LongPtr) As Long
+Public Declare PtrSafe Function GetForegroundWindow Lib "user32" () As LongPtr
 Public Declare PtrSafe Function ShowWindow Lib "user32" (ByVal hwnd As LongPtr, ByVal nCmdShow As Long) As Long
 Public Declare PtrSafe Function IsIconic Lib "user32" (ByVal hwnd As LongPtr) As Long
 Public Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
@@ -50,10 +51,12 @@ Public Declare PtrSafe Function OpenClipboard Lib "user32" (ByVal hwnd As LongPt
 Public Declare PtrSafe Function CloseClipboard Lib "user32" () As Long
 Public Declare PtrSafe Function EmptyClipboard Lib "user32" () As Long
 Public Declare PtrSafe Function GetClipboardData Lib "user32" (ByVal wFormat As Long) As LongPtr
+Public Declare PtrSafe Function IsClipboardFormatAvailable Lib "user32" (ByVal wFormat As Long) As Long
 Public Declare PtrSafe Function SetClipboardData Lib "user32" (ByVal wFormat As Long, ByVal hMem As LongPtr) As LongPtr
 Public Declare PtrSafe Function GlobalAlloc Lib "kernel32" (ByVal wFlags As Long, ByVal dwBytes As LongPtr) As LongPtr
 Public Declare PtrSafe Function GlobalLock Lib "kernel32" (ByVal hMem As LongPtr) As LongPtr
 Public Declare PtrSafe Function GlobalUnlock Lib "kernel32" (ByVal hMem As LongPtr) As Long
+Public Declare PtrSafe Function GlobalFree Lib "kernel32" (ByVal hMem As LongPtr) As LongPtr
 Public Declare PtrSafe Function lstrcpyW Lib "kernel32" (ByVal lpString1 As LongPtr, ByVal lpString2 As LongPtr) As LongPtr
 Public Declare PtrSafe Function lstrlenW Lib "kernel32" (ByVal lpString As LongPtr) As Long
 Public Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As LongPtr)
@@ -155,18 +158,39 @@ Public Function FormatColorHex(ByVal colorValue As Long) As String
 End Function
 
 ' [Vision] 화면의 특정 좌표 색상을 Hex String으로 반환 (DC 관리 포함)
-Public Function GetColorHexAt(x As Long, y As Long) As String
-    GetColorHexAt = FormatColorHex(GetColorAt(x, y))
+Public Function GetColorHexAt(x As Long, y As Long, Optional ByVal inputTestDriver As Object = Nothing) As String
+    GetColorHexAt = FormatColorHex(GetColorAt(x, y, inputTestDriver))
 End Function
 
-Public Function GetColorAt(ByVal x As Long, ByVal y As Long) As Long
+Public Function GetColorAt(ByVal x As Long, ByVal y As Long, Optional ByVal inputTestDriver As Object = Nothing) As Long
     Dim hdc As LongPtr
-    
-    hdc = GetDC(0)
-    GetColorAt = GetPixel(hdc, x, y)
-    ReleaseDC 0, hdc
+    Dim colorValue As Long
+    If inputTestDriver Is Nothing Then
+        hdc = GetDC(0)
+        If hdc = 0 Then Err.Raise 5, "modWinAPI.GetColorAt", "GetDC failed."
+        colorValue = GetPixel(hdc, x, y)
+        ReleaseDC 0, hdc
+    Else
+        colorValue = inputTestDriver.ReadPixel(x, y)
+    End If
+    If colorValue = -1 Then Err.Raise 5, "modWinAPI.GetColorAt", "GetPixel failed at (" & x & "," & y & ")."
+    GetColorAt = colorValue
 End Function
 
+' @desc 창 핸들을 받아 전면화 후 실제 포커스 확인, 실패 시 False 반환
+Public Function ActivateWindow(ByVal hwnd As LongPtr, Optional ByVal inputTestDriver As Object = Nothing) As Boolean
+    If hwnd = 0 Then Exit Function
+    Dim activated As Long, foreground As LongPtr
+    If inputTestDriver Is Nothing Then
+        If IsIconic(hwnd) Then ShowWindow hwnd, SW_RESTORE
+        activated = SetForegroundWindow(hwnd)
+        foreground = GetForegroundWindow()
+    Else
+        activated = inputTestDriver.ActivateWindow(hwnd)
+        foreground = inputTestDriver.ForegroundHandle
+    End If
+    ActivateWindow = (activated <> 0 And foreground = hwnd)
+End Function
 
 ' [Input] 키보드 상태 확인 (GetAsyncKeyState Wrapper)
 Public Function IsKeyDown(ByVal vKey As Long) As Boolean
@@ -178,113 +202,177 @@ Public Function IsToggleKeyOn(ByVal vKey As Long) As Boolean
 End Function
 
 ' [Clipboard] 텍스트 가져오기 (API 방식 - 안정적)
-Public Function GetClipboardText() As String
-    Dim hMem As LongPtr
-    Dim lpData As LongPtr
-    Dim nSize As Long
-    Dim strBuffer As String
-    
-    If OpenClipboard(0) = 0 Then Exit Function
-    
-    hMem = GetClipboardData(CF_UNICODETEXT)
-    If hMem <> 0 Then
-        lpData = GlobalLock(hMem)
-        If lpData <> 0 Then
-            nSize = lstrlenW(lpData)
-            strBuffer = String(nSize, vbNullChar)
-            lstrcpyW StrPtr(strBuffer), lpData
-            GlobalUnlock hMem
-        End If
+Public Function GetClipboardText(Optional ByVal clipboardApi As Object = Nothing) As String
+    Dim hMem As LongPtr, lpData As LongPtr
+    Dim opened As Boolean, result As Long, nSize As Long
+    Dim errorNumber As Long, errorText As String, strBuffer As String
+    On Error GoTo Failed
+    If clipboardApi Is Nothing Then
+        result = OpenClipboard(0)
+    Else
+        result = clipboardApi.OpenClipboard(0)
     End If
-    
-    CloseClipboard
+    If result = 0 Then Err.Raise 5, "modWinAPI.GetClipboardText", "OpenClipboard failed."
+    opened = True
+    If clipboardApi Is Nothing Then
+        result = IsClipboardFormatAvailable(CF_UNICODETEXT)
+    Else
+        result = clipboardApi.IsClipboardFormatAvailable(CF_UNICODETEXT)
+    End If
+    ' No text format is a valid empty value; a failed read is not.
+    If result = 0 Then GoTo CleanUp
+    If clipboardApi Is Nothing Then
+        hMem = GetClipboardData(CF_UNICODETEXT)
+    Else
+        hMem = clipboardApi.GetClipboardData(CF_UNICODETEXT)
+    End If
+    If hMem = 0 Then Err.Raise 5, "modWinAPI.GetClipboardText", "GetClipboardData failed."
+    If clipboardApi Is Nothing Then
+        lpData = GlobalLock(hMem)
+    Else
+        lpData = clipboardApi.GlobalLock(hMem)
+    End If
+    If lpData = 0 Then Err.Raise 5, "modWinAPI.GetClipboardText", "GlobalLock failed."
+    If clipboardApi Is Nothing Then
+        nSize = lstrlenW(lpData)
+        strBuffer = String$(nSize, vbNullChar)
+        If nSize > 0 Then CopyMemory ByVal StrPtr(strBuffer), ByVal lpData, LenB(strBuffer)
+    Else
+        strBuffer = clipboardApi.ReadClipboardText(lpData)
+    End If
     GetClipboardText = strBuffer
+CleanUp:
+    On Error Resume Next
+    If clipboardApi Is Nothing Then
+        If lpData <> 0 Then GlobalUnlock hMem
+        If opened Then CloseClipboard
+    Else
+        If lpData <> 0 Then clipboardApi.GlobalUnlock hMem
+        If opened Then clipboardApi.CloseClipboard
+    End If
+    On Error GoTo 0
+    If errorNumber <> 0 Then Err.Raise errorNumber, "modWinAPI.GetClipboardText", errorText
+    Exit Function
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    Resume CleanUp
 End Function
 
 ' [Clipboard] 텍스트 넣기 (API 방식 - DataObject 대체, 윈도우 10/11 호환성 해결)
-Public Sub SetClipboardText(ByVal text As String)
-    Dim hMem As LongPtr
-    Dim lpData As LongPtr
-    Dim nSize As Long
-    
-    If OpenClipboard(0) = 0 Then Exit Sub
-    EmptyClipboard
-    
-    ' 유니코드 문자열 크기 계산 (Null 종료 문자 포함)
-    nSize = LenB(text) + 2
-    
-    ' 전역 메모리 할당
-    hMem = GlobalAlloc(GMEM_MOVEABLE Or GMEM_ZEROINIT, nSize)
-    If hMem <> 0 Then
-        lpData = GlobalLock(hMem)
-        If lpData <> 0 Then
-            ' 메모리에 문자열 복사
-            CopyMemory ByVal lpData, ByVal StrPtr(text), nSize
-            GlobalUnlock hMem
-            
-            ' 클립보드에 데이터 설정
-            SetClipboardData CF_UNICODETEXT, hMem
-        End If
+Public Sub SetClipboardText(ByVal text As String, Optional ByVal clipboardApi As Object = Nothing)
+    Dim hMem As LongPtr, result As LongPtr, opened As Boolean
+    Dim errorNumber As Long, errorText As String
+    On Error GoTo Failed
+
+    ' Prepare memory before clearing the user's clipboard.
+    If clipboardApi Is Nothing Then
+        hMem = AllocateClipboardText(text)
+        result = OpenClipboard(Application.hwnd)
+    Else
+        hMem = clipboardApi.AllocateClipboardText(text)
+        result = clipboardApi.OpenClipboard(Application.hwnd)
     End If
-    
-    CloseClipboard
+    If result = 0 Then Err.Raise 5, "modWinAPI.SetClipboardText", "OpenClipboard failed."
+    opened = True
+    If clipboardApi Is Nothing Then
+        result = EmptyClipboard()
+    Else
+        result = clipboardApi.EmptyClipboard()
+    End If
+    If result = 0 Then Err.Raise 5, "modWinAPI.SetClipboardText", "EmptyClipboard failed."
+    If clipboardApi Is Nothing Then
+        result = SetClipboardData(CF_UNICODETEXT, hMem)
+    Else
+        result = clipboardApi.SetClipboardData(CF_UNICODETEXT, hMem)
+    End If
+    If result = 0 Then Err.Raise 5, "modWinAPI.SetClipboardText", "SetClipboardData failed."
+    hMem = 0 ' Ownership passes to Windows only after a successful write.
+
+CleanUp:
+    On Error Resume Next
+    If clipboardApi Is Nothing Then
+        If opened Then CloseClipboard
+        If hMem <> 0 Then GlobalFree hMem
+    Else
+        If opened Then clipboardApi.CloseClipboard
+        If hMem <> 0 Then clipboardApi.FreeClipboardMemory hMem
+    End If
+    On Error GoTo 0
+    If errorNumber <> 0 Then Err.Raise errorNumber, "modWinAPI.SetClipboardText", errorText
+    Exit Sub
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    Resume CleanUp
 End Sub
 
+Private Function AllocateClipboardText(ByVal text As String) As LongPtr
+    Dim hMem As LongPtr, lpData As LongPtr
+    hMem = GlobalAlloc(GMEM_MOVEABLE Or GMEM_ZEROINIT, LenB(text) + 2)
+    If hMem = 0 Then Err.Raise 7, "modWinAPI.SetClipboardText", "GlobalAlloc failed."
+    lpData = GlobalLock(hMem)
+    If lpData = 0 Then
+        GlobalFree hMem
+        Err.Raise 5, "modWinAPI.SetClipboardText", "GlobalLock failed."
+    End If
+    If LenB(text) > 0 Then CopyMemory ByVal lpData, ByVal StrPtr(text), LenB(text)
+    GlobalUnlock hMem
+    AllocateClipboardText = hMem
+End Function
 '==============================================================================
 ' 4. SendInput Technical Implementation (64-bit Padding)
 '==============================================================================
 
-' [Public Interface] 단일 키 클릭
-Public Sub SendKey_Click(ByVal vKey As Integer)
-    SendKey_Down vKey
-    SendKey_Up vKey
-End Sub
-
-' [Public Interface] 키 누름 (Down)
-Public Sub SendKey_Down(ByVal vKey As Integer)
-    SendKeyboardInput vKey, 0, 0
-End Sub
-
-' [Public Interface] 키 뗌 (Up)
-Public Sub SendKey_Up(ByVal vKey As Integer)
-    SendKeyboardInput vKey, 0, KEYEVENTF_KEYUP
-End Sub
-
 ' [Internal] 안전한 SendInput 래퍼 (64비트 패딩 자동 계산)
-Public Sub SendKeyboardInput(ByVal wVk As Integer, ByVal wScan As Integer, ByVal dwFlags As Long)
+Public Sub SendKeyboardInput(ByVal wVk As Integer, ByVal wScan As Integer, ByVal dwFlags As Long, Optional ByVal inputTestDriver As Object = Nothing)
+    Dim sent As Long
     Dim inputSize As Long
     Dim buffer() As Byte
     Dim kbInput As KEYBDINPUT
-    
-    ' 데이터 준비
-    kbInput.wVk = wVk
-    kbInput.wScan = wScan
-    kbInput.dwFlags = dwFlags
-    kbInput.time = 0
-    kbInput.dwExtraInfo = 0
-    
-    ' 아키텍처별 메모리 구조 결정
-    #If Win64 Then
-        ' [64비트 환경] Type(4) + Padding(4) + KEYBDINPUT(24) + Padding(8) = 40 bytes
-        inputSize = 40
-        ReDim buffer(0 To 39)
-        
-        Dim dwType As Long: dwType = INPUT_KEYBOARD
-        CopyMemory buffer(0), dwType, 4
-        
-        ' 64비트 정렬을 위한 Offset 8 위치에 데이터 복사
-        CopyMemory buffer(8), kbInput, LenB(kbInput)
-        
-    #Else
-        ' [32비트 환경] Type(4) + KEYBDINPUT(20) = 28 bytes
-        inputSize = 28
-        ReDim buffer(0 To 27)
-        
-        Dim dwType32 As Long: dwType32 = INPUT_KEYBOARD
-        CopyMemory buffer(0), dwType32, 4
-        
-        CopyMemory buffer(4), kbInput, LenB(kbInput)
-    #End If
-    
-    SendInput 1, buffer(0), inputSize
+
+    If inputTestDriver Is Nothing Then
+        ' 데이터 준비
+        kbInput.wVk = wVk
+        kbInput.wScan = wScan
+        kbInput.dwFlags = dwFlags
+        kbInput.time = 0
+        kbInput.dwExtraInfo = 0
+
+        ' 아키텍처별 메모리 구조 결정
+        #If Win64 Then
+            ' [64비트 환경] Type(4) + Padding(4) + KEYBDINPUT(24) + Padding(8) = 40 bytes
+            inputSize = 40
+            ReDim buffer(0 To 39)
+
+            Dim dwType As Long: dwType = INPUT_KEYBOARD
+            CopyMemory buffer(0), dwType, 4
+
+            ' 64비트 정렬을 위한 Offset 8 위치에 데이터 복사
+            CopyMemory buffer(8), kbInput, LenB(kbInput)
+
+        #Else
+            ' [32비트 환경] Type(4) + KEYBDINPUT(20) = 28 bytes
+            inputSize = 28
+            ReDim buffer(0 To 27)
+
+            Dim dwType32 As Long: dwType32 = INPUT_KEYBOARD
+            CopyMemory buffer(0), dwType32, 4
+
+            CopyMemory buffer(4), kbInput, LenB(kbInput)
+        #End If
+
+        sent = SendInput(1, buffer(0), inputSize)
+    Else
+        sent = inputTestDriver.KeyboardInput(wVk, wScan, dwFlags)
+    End If
+    If sent <> 1 Then Err.Raise vbObjectError + 2101, "modWinAPI.SendKeyboardInput", "SendInput failed: inserted " & sent & " of 1 event."
 End Sub
+
+' @desc 두 32비트 tick 받아 경과ms 반환, 한 주기(49.7일) 이내 측정용
+Public Function ElapsedMilliseconds(ByVal startTick As Long, ByVal endTick As Long) As Double
+    Dim startValue As Double, endValue As Double
+    startValue = CDbl(startTick): endValue = CDbl(endTick)
+    If startValue < 0 Then startValue = startValue + 4294967296#
+    If endValue < 0 Then endValue = endValue + 4294967296#
+    ElapsedMilliseconds = endValue - startValue
+    If ElapsedMilliseconds < 0 Then ElapsedMilliseconds = ElapsedMilliseconds + 4294967296#
+End Function

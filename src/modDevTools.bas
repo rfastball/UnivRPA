@@ -1,6 +1,6 @@
 Attribute VB_Name = "modDevTools"
 ' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
-' @depends modCmdRegistry, modParse, clsScriptProgram
+' @depends modCmdRegistry, modParse, clsScriptProgram, modScriptAssist
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -34,6 +34,11 @@ Public Sub FormatRPAScript(Optional ByVal targetSheet As Worksheet = Nothing)
     Dim ws As Worksheet
     If targetSheet Is Nothing Then Set ws = ActiveSheet Else Set ws = targetSheet
 
+    If Not modScriptAssist.IsScriptSheet(ws) Then
+        If Application.CountA(ws.UsedRange) > 0 Then _
+            Err.Raise 5, "modDevTools.FormatRPAScript", "Only script sheets or empty sheets can be formatted."
+    End If
+
     ' 0. 헤더 자동 생성
     Call EnsureHeaders(ws)
 
@@ -41,16 +46,6 @@ Public Sub FormatRPAScript(Optional ByVal targetSheet As Worksheet = Nothing)
     Dim R As Long, pureCmd As String
     Dim program As clsScriptProgram
     Set program = ProgramSnapshotFromSheet(ws, lastRow)
-
-    ' [추가] 번호가 없는 부분(데이터 끝 이후) 서식 및 내용 초기화
-    Dim clearLastRow As Long
-    Dim clearCol As Long
-    For clearCol = 1 To 6
-        clearLastRow = Application.Max(clearLastRow, ws.Cells(ws.rows.count, clearCol).End(xlUp).Row)
-    Next clearCol
-    If clearLastRow > lastRow Then
-        ws.Range(ws.Cells(lastRow + 1, 1), ws.Cells(clearLastRow, 6)).Clear
-    End If
 
     If lastRow < 2 Then GoTo CleanExit
 
