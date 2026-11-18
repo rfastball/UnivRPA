@@ -10,30 +10,30 @@ Public Sub BuildPracticeSheets()
     Dim anchor As Worksheet, firstLesson As Worksheet, tableLesson As Worksheet
     Set anchor = ThisWorkbook.Worksheets(1)
 
-    Set firstLesson = AddLesson(anchor, "연습01 고정 대기 클릭", Array( _
-        "FOCUS|||UnivRPA Lab 01|H2의 연습실 열기로 시작합니다.", _
-        "SLEEP|||1000|1초를 3초로 바꾸고 차이를 확인하세요.", _
-        "CLICK|{버튼X}|{버튼Y}||클릭하기 버튼 중앙을 캡처하세요. 결과: 클릭 1회."))
-    AddLabControls firstLesson, "클릭하기 버튼"
+    Set firstLesson = AddLesson(anchor, "연습01 하나 쏙", Array( _
+        "FOCUS|||UnivRPA Lab 01|H2에서 연습실을 열고 창을 나란히 두세요.", _
+        "SLEEP|||1000|1초 뒤 모모의 바구니를 보세요.", _
+        "CLICK|{간식X}|{간식Y}||간식 주기를 누르면 바나나 1개가 담깁니다."))
+    AddLabControls firstLesson, "간식 주기 버튼"
+    firstLesson.Range("H8").Value2 = "다시 시작을 누르고 CLICK 줄을 주석 처리해 보세요. 모모의 바구니가 비어 있으면 성공입니다."
     Dim entryLesson As Worksheet, waitLesson As Worksheet
-    Set entryLesson = AddLesson(anchor, "연습02 한 건 입력", Array( _
-        "FOCUS|||UnivRPA Lab 02|연습실의 다시 시작을 누른 뒤 실행하세요.", _
-        "CLICK|{품목X}|{품목Y}||품목 칸의 오른쪽 빈 곳을 캡처하세요.", _
-        "COMBO|CTRL|A||기존 품목을 모두 선택합니다.", _
-        "TYPE|30||노트|접수할 품목입니다.", _
-        "KEY|TAB|||다음 수량 칸으로 이동합니다.", _
-        "TYPE|30||2|수량을 입력합니다.", _
-        "KEY|ENTER|||기록에 노트 2개가 보이면 성공입니다."))
-    AddLabControls entryLesson, "품목 입력칸"
-    Set waitLesson = AddLesson(anchor, "연습03 색상 대기", Array( _
-        "FOCUS|||UnivRPA Lab 03|먼저 빠른 준비에서 실행하세요.", _
-        "CLICK|{시작X}|{시작Y}||준비 시작 버튼. 여기서 준비 시간이 시작됩니다.", _
-        "SLEEP|||1000|느린 준비에서 실패한 뒤 이 줄을 주석 처리하세요.", _
-        "# WAIT_APPEAR|{표시등X}|{표시등Y}|408000|초록 표시등을 캡처하고 이 줄의 주석을 해제하세요.", _
-        "CLICK|{접수X}|{접수Y}||접수 버튼. 실행 기록에서 입력 가능과 접수 시점을 비교하세요."))
-    AddLabControls waitLesson, "준비 시작 버튼과 접수 버튼"
-    waitLesson.Range("H8").Value2 = "3강: 준비 시작을 손으로 누른 뒤 초록 표시등 중앙을 좌표/색상 모드로 C5에 캡처하세요."
-    waitLesson.Range("H9").Value2 = "빠른 준비, 느린 준비 순으로 실행한 뒤 B4와 B5의 주석을 각각 전환해 다시 실행하세요."
+    Set entryLesson = AddLesson(anchor, "연습02 파파야 둘", Array( _
+        "FOCUS|||UnivRPA Lab 02|다시 시작하면 바나나 1개가 선택됩니다.", _
+        "CLICK|{파파야X}|{파파야Y}||파파야 그림 버튼 중앙을 캡처하세요.", _
+        "CLICK|{개수X}|{개수Y}||개수 칸을 클릭합니다.", _
+        "COMBO|CTRL|A||기존 숫자 1을 모두 선택합니다.", _
+        "TYPE|30||2|개수를 2로 바꿉니다.", _
+        "KEY|ENTER|||모모의 바구니에 파파야 2개가 담깁니다."))
+    AddLabControls entryLesson, "파파야 버튼과 개수 칸"
+    Set waitLesson = AddLesson(anchor, "연습03 코코 오는 중", Array( _
+        "FOCUS|||UnivRPA Lab 03|빠른 걸음으로 실행한 뒤 느린 걸음으로 바꿔 보세요.", _
+        "CLICK|{부르기X}|{부르기Y}||코코 부르기를 누른 순간 출발합니다.", _
+        "SLEEP|||1000|느린 걸음에서 아직 오는 중!이 뜨면 이 줄을 주석 처리하세요.", _
+        "# WAIT_APPEAR|{초록불X}|{초록불Y}|408000|초록불의 중앙을 캡처하고 이 줄의 주석을 해제하세요.", _
+        "CLICK|{간식X}|{간식Y}||코코의 바구니에 바나나 1개가 담겼는지 확인하세요."))
+    AddLabControls waitLesson, "코코 부르기 버튼과 간식 주기 버튼"
+    waitLesson.Range("H8").Value2 = "코코를 손으로 부르세요. 도착한 뒤 초록불 중앙을 좌표/색상 모드로 C5에 캡처하세요."
+    waitLesson.Range("H9").Value2 = "느린 걸음에서 B4와 B5의 주석을 각각 전환하고 다시 시작한 뒤 실행하세요."
 
     AddLesson anchor, "연습04 시스템", Array( _
         "SLEEP|||500|Ctrl+Shift+W로 실행하세요. 0.5초 후 다음 줄로 이동합니다.", _

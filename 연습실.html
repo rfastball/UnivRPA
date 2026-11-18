@@ -2,113 +2,176 @@
 <html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>UnivRPA 연습실</title>
+<title>원숭이 간식 당번</title>
 <style>
-* {box-sizing:border-box}
-html {scrollbar-gutter:stable;color-scheme:light}
-body {margin:0;background:#f3f5f2;color:#192e2c;font:16px/1.55 "Malgun Gothic",sans-serif}
-main {max-width:820px;margin:auto;padding:24px clamp(16px,4vw,40px)}
-header,nav,.row {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-header {justify-content:space-between;border-bottom:1px solid #c4d0ca;padding-bottom:12px}
-header strong {font-size:18px} nav {gap:6px} nav a {color:#315852;text-decoration:none;padding:4px 8px}
-nav a[aria-current] {color:#12483a;box-shadow:inset 0 -2px #186650;font-weight:bold}
-h1 {font-size:clamp(24px,4vw,34px);margin:20px 0 3px} p {margin:0 0 16px}
-section {background:white;border:1px solid #c4d0ca;padding:clamp(14px,3vw,24px);border-radius:10px}
-button,select,input {font:inherit;border:1px solid #95aaa0;border-radius:5px;padding:6px 10px;background:white;color:inherit}
-button,select {cursor:pointer} :focus-visible {outline:3px solid #2274bb;outline-offset:2px}
-.fields {display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;margin:12px 0}
-label {display:block;font-weight:bold} input {display:block;width:100%;margin-top:4px}
-#send {min-width:136px;background:#155445;color:white;border:0;padding:10px 16px}
-#send.accepted {background:#284b87}
-.reserved {visibility:hidden}
-.controls {min-height:44px} #lamp {display:inline-block;width:32px;height:32px;background:#666;vertical-align:middle}
-#lamp.ready {background:#008040}
-h2 {font-size:17px;margin:18px 0 6px} ol {margin:0;padding:0;list-style:none}
-li {padding:5px 0;border-top:1px solid #dde4de;font-variant-numeric:tabular-nums}
-output {font-weight:bold} .help {color:#40594f;margin-top:12px;font-size:14px}
+*{box-sizing:border-box} html{color-scheme:light;scrollbar-gutter:stable}
+body{margin:0;padding:clamp(8px,3vw,30px);background:#becedc;color:#243c50;font:16px/1.45 "Malgun Gothic",sans-serif}
+main{max-width:840px;margin:auto;background:#fff8de;border:3px solid #324b64;border-radius:8px;overflow:hidden;box-shadow:0 5px #8ba1b2}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#d8edf7;border-bottom:2px solid #648096;padding:12px 18px}
+h1{font:800 clamp(19px,3vw,26px)/1.2 "Malgun Gothic",sans-serif;margin:0;color:#203d58}
+button,a,input,select{font:inherit} button,select,input,a{border:1px solid #728697;border-radius:4px;color:#243c50;background:#fffefa}
+button,a,select{cursor:pointer} button,a{padding:5px 11px;font-weight:700;box-shadow:0 2px #a1aaac}
+button:active,a:active{box-shadow:none} :focus-visible{outline:3px solid #b34c17;outline-offset:2px}
+nav{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px} nav a{color:#3e5364;text-decoration:none;font-size:14px} nav a[aria-current]{background:#385d80;color:white;border-color:#26435c}
+.play{margin:0 16px;background:#d9f1fd;border:2px solid #516b76;border-radius:5px;overflow:hidden}
+canvas{display:block;image-rendering:pixelated}.fruit canvas{width:24px;height:24px} #scene{width:100%;height:auto}
+.baskets{display:grid;grid-template-columns:repeat(3,1fr);background:#f2ebcc;border-top:2px solid #8d854f}
+.basket{text-align:center;font-size:14px;min-width:0;padding:5px 2px;font-variant-numeric:tabular-nums}.basket+.basket{border-left:1px solid #c1bb99}
+.basket strong{display:block}.basket output{display:block;min-height:1.45em}
+.panel{padding:12px 18px 15px} #goal{font-weight:800;margin:0 0 10px;font-size:18px}
+.controls,.arrival{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button.fruit{display:inline-flex;align-items:center;gap:4px}.fruit[aria-pressed=true]{background:#ffe3a0;border-color:#805d23;box-shadow:inset 0 0 0 1px #805d23}
+input{width:3.5em;text-align:center;padding:5px}.action{background:#345f50;color:white;border-color:#284b3f;padding:8px 18px}
+.arrival{margin-top:12px;border-top:1px solid #c9c4a9;padding-top:10px;font-size:14px}
+#lamp{display:inline-block;width:26px;height:26px;border-radius:50%;border:2px solid #334b42;background:#777;flex:none}#lamp.ready{background:#008040}
+#status{min-width:6em}select{padding:4px}
+#feedback{margin:0;padding:8px 18px;min-height:40px;background:#e7f0ef;border-top:1px solid #9aadae;font-weight:700}
+details{padding:6px 18px 10px;font-size:14px;background:#e7f0ef} summary{cursor:pointer}ol{margin:5px 0;padding-left:22px}
+@media(max-width:540px){header,nav,.panel{padding-left:10px;padding-right:10px}.play{margin:0 8px}.basket{font-size:12px}.controls,.arrival,nav{gap:5px}.action{padding:6px 10px}#goal{font-size:16px}}
 </style>
 <main>
-<header><strong>UnivRPA 연습실</strong><nav aria-label="실습 선택">
-<a href="#01">1. 클릭</a><a href="#02">2. 입력</a><a href="#03">3. 대기</a></nav></header>
-<h1 id="title"></h1><p id="goal"></p>
-<section aria-label="주문 접수 연습 화면">
-  <div class="row controls" id="timing">
-    <select id="delay" aria-label="준비 시간"><option value="500">빠른 준비 · 0.5초</option><option value="3000">느린 준비 · 3초</option></select>
-    <button id="start">준비 시작</button><span id="lamp"></span><span id="status" role="status"></span>
-  </div>
-  <form id="order" autocomplete="off">
-    <div class="fields" id="fields"><label>품목<input id="item"></label><label>수량<input id="qty" inputmode="numeric"></label></div>
-    <div class="row"><button id="send" type="submit">접수</button><button type="button" id="reset">다시 시작</button><output id="result"></output></div>
-  </form>
+<header><h1>원숭이 간식 당번</h1><button id="reset">다시 시작</button></header>
+<nav aria-label="연습 메뉴"><a href="#01">1. 하나 쏙!</a><a href="#02">2. 파파야 둘!</a><a href="#03">3. 코코 오는 중…</a></nav>
+<div class="play">
+<canvas id="scene" width="320" height="86" aria-label="모모, 코코, 루루의 숲속 간식 배급대" role="img"></canvas>
+<div class="baskets" aria-label="원숭이별 바구니">
+<div class="basket"><strong>모모의 바구니</strong><output></output></div>
+<div class="basket"><strong>코코의 바구니</strong><output></output></div>
+<div class="basket"><strong>루루의 바구니</strong><output></output></div>
+</div></div>
+<section class="panel" aria-label="간식 배급대">
+<p id="goal"></p>
+<form class="controls" id="feed">
+<button class="fruit" type="button" data-fruit="banana"><canvas width="16" height="16" aria-hidden="true"></canvas>바나나</button>
+<button class="fruit" type="button" data-fruit="papaya"><canvas width="16" height="16" aria-hidden="true"></canvas>파파야</button>
+<label>개수 <input id="qty" value="1" inputmode="numeric" autocomplete="off" maxlength="2"></label>
+<button class="action" type="submit" id="give">간식 주기</button>
+</form>
+<div class="arrival"><span id="lamp" aria-hidden="true"></span><strong id="status"></strong>
+<button id="call">코코 부르기</button>
+<select id="speed" aria-label="코코의 도착 시간"><option value="500">빠른 걸음 · 0.5초</option><option value="3000">느린 걸음 · 3초</option></select></div>
 </section>
-<p id="hint" class="help"></p>
-<h2>실행 기록</h2><ol id="history" role="log" aria-live="polite"></ol>
+<p id="feedback" role="status"></p><details><summary>배급 기록</summary><ol id="log"></ol></details>
 </main>
 <script>
 'use strict';
-const el = id => document.getElementById(id);
-const lessons = {
-  '01': ['1초 뒤 버튼 클릭', '버튼을 한 번 눌러 보고 초기화한 뒤, 같은 동작을 엑셀에서 실행하세요.', '클릭 줄을 주석 처리하고 다시 시작하면 클릭 횟수가 0으로 남습니다.'],
-  '02': ['품목과 수량 입력', '기존 품목을 노트로 바꾸고 수량 2를 입력한 뒤 Enter로 접수하세요.', '품목 → Tab → 수량 → Enter 순서입니다. 접수한 값은 실행 기록에 남습니다.'],
-  '03': ['준비 신호 기다리기', '준비 시작을 누르고 표시등이 초록색이 된 뒤 접수하세요.', '준비 시간을 바꾸고 같은 스크립트를 실행하세요. HUD는 글자가 없는 표시등 중앙에 맞춥니다.']
+const $ = id => document.getElementById(id);
+const names = ['모모','코코','루루'];
+const goals = {'01':'모모에게 바나나 하나를 주세요.','02':'모모에게 파파야 두 개를 주세요.','03':'코코를 부르고, 초록불이 켜지면 바나나 하나를 주세요.'};
+const fruits = {banana:'바나나',papaya:'파파야'};
+const baskets = Array.from(document.querySelectorAll('.basket output'));
+const fruitButtons = Array.from(document.querySelectorAll('.fruit'));
+const scene = $('scene').getContext('2d');
+const palette = {K:'#483436',B:'#9a6042',b:'#bd8054',F:'#f2bd88',f:'#ffdaa3',P:'#e99a80',W:'#fff4d9',Y:'#ffda56',y:'#dc9b39',O:'#f49c51',o:'#da673f',G:'#45774c'};
+const monkey = [
+'......KKKKK......','....KKbbbbbKK....','...KbbBbbBbbbK...','..KbbbFFFFFbbbK..',
+'.KKbbFffFffFbbKK.','KFbBFfKfffKfFBbFK','KFbBFfffffffFBbFK','.KKbbFFffFFbbKK..',
+'...KbFffKKffFbK..','....KFFffffFFK...','.....KKFFFFKK....','....KbbKKKKbbK...',
+'....KbbFFFFbbK...','....KbFffffFbK...','....KbFffffFbK...','.....KbFFFFbK....',
+'....KbbKKKKbbK...','...KFFFK..KFFFK..'];
+const fruitSprites = {
+ banana:['..........KK....','..........KYK...','..........KYK...','.........KYYK...','..KK....KYYyK...','..KYKKKKYYYyK...','..KYYYYYYYyK....','...KYYYYyyK.....','....KKyyKK......','......KK........'],
+ papaya:['.......GKK......','......GGGK......','......KOKK......','.....KOyyOK.....','....KOYyyyOK....','...KOYyyKyyOK...','...KOYyKKyyOK...','...KOYyyKyyOK...','....KOyyyyoK....','.....KoooKK.....','......KKK.......']
 };
-let lesson, timer, ready, count, began;
-function log(message) {
-  const line = document.createElement('li');
-  line.textContent = ((performance.now()-began)/1000).toFixed(1) + '초 · ' + message;
-  el('history').prepend(line);
+function sprite(ctx,rows,x,y,colors=palette){
+ rows.forEach((row,dy)=>{for(let dx=0;dx<row.length;dx++){const color=colors[row[dx]];if(color){ctx.fillStyle=color;ctx.fillRect(x+dx,y+dy,1,1);}}});
 }
-function setReady(value, message) {
-  ready = value;
-  el('lamp').classList.toggle('ready', value);
-  el('status').textContent = message;
-  el('item').readOnly = el('qty').readOnly = !value;
+for(const button of fruitButtons){
+ const ctx=button.querySelector('canvas').getContext('2d');
+ sprite(ctx,fruitSprites[button.dataset.fruit],0,2);
 }
-function reset() {
-  clearTimeout(timer);
-  began = performance.now();
-  count = 0;
-  el('history').replaceChildren();
-  el('item').value = lesson === '03' ? '노트' : '기존 품목';
-  el('qty').value = lesson === '03' ? '2' : '';
-  el('send').classList.remove('accepted');
-  el('result').textContent = lesson === '01' ? '클릭 0회' : '접수 0건';
-  setReady(lesson !== '03', '시작 전');
+function rect(color,x,y,w,h){scene.fillStyle=color;scene.fillRect(Math.round(x),Math.round(y),w,h);}
+function cloud(x,y){rect('#edfcff',x,y+4,27,4);rect('#edfcff',x+4,y+2,18,3);rect('#edfcff',x+9,y,9,4);}
+function tree(x,y){
+ rect('#956e4c',x+8,y+8,4,22);rect('#b7895d',x+9,y+12,2,16);
+ for(const [dx,dy,w] of [[5,0,10],[1,3,18],[-2,7,24],[0,12,20],[3,15,14]])rect('#4e9569',x+dx,y+dy,w,4);
+ rect('#87c47b',x+4,y+4,9,3);rect('#add98a',x+8,y+1,5,2);
 }
-function openLesson() {
-  const hash = location.hash.slice(1);
-  lesson = Object.hasOwn(lessons, hash) ? hash : '01';
-  document.title = 'UnivRPA Lab ' + lesson + ' · 연습실';
-  [el('title').textContent, el('goal').textContent, el('hint').textContent] = lessons[lesson];
-  el('timing').classList.toggle('reserved', lesson !== '03');
-  el('fields').classList.toggle('reserved', lesson === '01');
-  el('send').textContent = lesson === '01' ? '클릭하기' : '접수';
-  for (const a of document.querySelectorAll('nav a')) {
-    if (a.hash === '#' + lesson) a.setAttribute('aria-current','step');
-    else a.removeAttribute('aria-current');
+const coats=[palette,{...palette,b:'#86554b',B:'#694440'},{...palette,b:'#d9a459',B:'#b78048'}];
+let lesson,fruit,receiver,ready,counts,arrivalTimer,walkStart,walkTime,animation,delivery,began;
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+function paint(now=performance.now()){
+ scene.clearRect(0,0,320,86);
+ rect('#a6dff2',0,0,320,86);cloud(30,9);cloud(129,6);cloud(245,13);
+ for(let x=0;x<320;x+=3){const h=7+Math.round(4*Math.cos(x*.052)+2*Math.sin(x*.094));rect('#94cbb6',x,49-h,3,h+4);}
+ rect('#afd688',0,49,320,37);rect('#cce499',0,54,320,19);
+ tree(-3,25);tree(300,22);tree(280,30);
+ rect('#c59b66',0,73,320,13);rect('#f1ca89',0,73,320,3);
+ for(let i=0;i<23;i++)rect('#96bf72',i*14+2,59+(i*7)%12,3,1);
+ const progress=walkStart===null?(ready?1:0):Math.min(1,(now-walkStart)/walkTime);
+ const elapsed=delivery?now-delivery.at:Infinity;
+ const flying=delivery&&elapsed<760;
+ for(let i=0;i<3;i++){
+  const home=[52,158,264][i];
+  const walking=lesson==='03'&&i===1&&!ready;
+  const x=home+(walking?Math.round(37*(1-(reduced.matches?0:progress))):0);
+  const y=32+(walking&&walkStart!==null&&!reduced.matches?Math.round(2*Math.sin(progress*28)):0);
+  rect('#99bb76',x-17,66,37,3);
+  scene.save();scene.translate(x-16,y);scene.scale(2,2);
+  // Curled tail, drawn behind the body.
+  rect('#734a3a',15,13,4,2);rect('#734a3a',18,10,2,4);rect('#734a3a',16,9,3,2);
+  rect('#734a3a',15,10,2,2);rect('#d19968',16,13,2,1);
+  sprite(scene,monkey,0,0,coats[i]);
+  const clap=flying&&!reduced.matches&&delivery.to===i&&Math.floor(elapsed/130)%2===0&&elapsed<520;
+  for(const side of [-1,1]){
+   const shoulder=side<0?3:12;
+   rect('#734a3a',shoulder,11,2,3);
+   rect('#e2a579',clap?(side<0?4:10):(side<0?1:13),clap?12:13,3,2);
+   rect('#ffd5a1',clap?(side<0?6:9):(side<0?0:15),clap?11:14,2,2);
   }
-  el('delay').value = '500';
-  reset();
+  scene.restore();
+  const bx=home+18;
+  rect('#795637',bx,68,13,3);rect('#b87d48',bx+1,71,11,4);rect('#e4ad65',bx+2,71,2,3);rect('#e4ad65',bx+7,71,2,3);
+  if(counts[i].banana+counts[i].papaya>0)sprite(scene,fruitSprites[counts[i].papaya?'papaya':'banana'],bx,60);
+  if(flying&&delivery.to===i&&!reduced.matches){
+   for(let n=0;n<Math.min(delivery.qty,2);n++){
+    const t=(elapsed-n*160)/560;
+    if(t>=0&&t<=1)sprite(scene,fruitSprites[delivery.fruit],Math.round(bx-32*(1-t)),Math.round(59-22*Math.sin(t*Math.PI)));
+   }
+  }
+ }
+ animation=(!reduced.matches&&(flying||walkStart!==null))?requestAnimationFrame(paint):0;
 }
-el('start').onclick = () => {
-  reset();
-  setReady(false, '준비 중');
-  log('준비 시작');
-  timer = setTimeout(() => {setReady(true,'입력 가능'); log('입력 가능');}, Number(el('delay').value));
+function redraw(){cancelAnimationFrame(animation);paint();}
+function record(message){
+ $('feedback').textContent=message;
+ const line=document.createElement('li');line.textContent=((performance.now()-began)/1000).toFixed(1)+'초 · '+message;$('log').prepend(line);
+}
+function updateBaskets(){
+ baskets.forEach((box,i)=>{box.textContent=Object.keys(fruits).filter(f=>counts[i][f]).map(f=>fruits[f]+' '+counts[i][f]+'개').join(' · ')||'비어 있음';});
+}
+function choose(value){fruit=value;for(const b of fruitButtons)b.setAttribute('aria-pressed',String(b.dataset.fruit===fruit));}
+function setReady(value,text){ready=value;$('lamp').classList.toggle('ready',value);$('status').textContent=text;}
+function reset(){
+ clearTimeout(arrivalTimer);walkStart=null;delivery=null;began=performance.now();
+ counts=names.map(()=>({banana:0,papaya:0}));receiver=lesson==='03'?1:0;
+ choose('banana');$('qty').value='1';$('log').replaceChildren();updateBaskets();
+ setReady(lesson!=='03',lesson==='03'?'코코 대기 중':'모모 준비 완료');
+ $('feedback').textContent=lesson==='03'?'코코 부르기를 누르세요.':'모모가 기다리고 있어요.';
+ redraw();
+}
+function openLesson(){
+ const key=location.hash.slice(1);lesson=Object.hasOwn(goals,key)?key:'01';
+ document.title='UnivRPA Lab '+lesson+' · 원숭이 간식 당번';
+ $('goal').textContent=goals[lesson];
+ for(const a of document.querySelectorAll('nav a')){if(a.hash==='#'+lesson)a.setAttribute('aria-current','step');else a.removeAttribute('aria-current');}
+ $('call').disabled=$('speed').disabled=lesson!=='03';$('speed').value='500';reset();
+}
+$('reset').onclick=reset;$('speed').onchange=reset;
+for(const button of fruitButtons)button.onclick=()=>choose(button.dataset.fruit);
+$('call').onclick=()=>{
+ clearTimeout(arrivalTimer);delivery=null;walkStart=performance.now();walkTime=Number($('speed').value);
+ setReady(false,'오는 중');record('코코가 출발했어요.');redraw();
+ arrivalTimer=setTimeout(()=>{walkStart=null;setReady(true,'코코 준비 완료');record('코코가 도착했어요.');redraw();},walkTime);
 };
-el('delay').onchange = reset;
-el('reset').onclick = reset;
-el('order').onsubmit = event => {
-  event.preventDefault();
-  if (!ready) {log('접수 시도 · 아직 준비되지 않았습니다'); return;}
-  const item = el('item').value.trim(), qty = el('qty').value.trim();
-  if (lesson !== '01' && (!item || !/^[1-9]\d*$/.test(qty))) {log('품목과 1 이상의 정수 수량을 입력하세요'); return;}
-  count++;
-  el('send').classList.add('accepted');
-  el('result').textContent = lesson === '01' ? '클릭 ' + count + '회' : '접수 ' + count + '건';
-  log(lesson === '01' ? '버튼 클릭' : item + ' · ' + qty + '개 접수');
+$('feed').onsubmit=event=>{
+ event.preventDefault();
+ if(!ready){record(walkStart===null?'코코를 먼저 불러 주세요.':'아직 오는 중!');return;}
+ const raw=$('qty').value.trim();
+ if(!/^[1-9]\d?$/.test(raw)){record('개수는 1부터 99까지 입력하세요.');return;}
+ const qty=Number(raw);counts[receiver][fruit]+=qty;delivery={at:performance.now(),to:receiver,fruit,qty};
+ updateBaskets();record(names[receiver]+'에게 '+fruits[fruit]+' '+qty+'개를 줬어요!');redraw();
 };
-window.addEventListener('hashchange',openLesson);
-openLesson();
+window.addEventListener('hashchange',openLesson);openLesson();
 </script>
 </html>
