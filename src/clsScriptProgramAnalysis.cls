@@ -10,7 +10,7 @@ Attribute VB_Exposed = False
 ' @internal ScriptProgram implementation detail.
 ' @access Only clsScriptProgram should create or call this class.
 ' @desc ScriptProgram flow, variable, and validation analysis.
-' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex, modStringDistance, modParse, modCondition
+' @depends modCmdRegistry, CmdDef, ParamSpec, clsScriptProgramSource, clsScriptProgramIndex, modStringDistance, modParse, clsInstruction
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -27,6 +27,7 @@ Private m_flowBlockingErrors As Object
 Private m_variableErrors As Object
 Private m_variableWarnings As Object
 Private m_validationErrors As Collection
+Private m_instructionErrors As Collection
 Private m_displayDepths() As Long
 Private m_styleDepths() As Long
 Private m_subDepths() As Long
@@ -66,7 +67,7 @@ Public Sub BuildStaticAnalysis()
 
     BuildDisplayDepths
     MarkIfStructureRows
-    ScanElseIfParams False
+    CollectInstructionErrors
     BuildSubroutineFlowAnalysis
     BuildVariableAnalysis
     m_staticBuilt = True
@@ -80,13 +81,18 @@ Private Sub MarkIfStructureRows()
     Next key
 End Sub
 
-' [D3] ELSE_IF 파라미터 검사 (라인 로컬 - 스택 불필요, IF 구조 스캔에서 분리)
-Private Sub ScanElseIfParams(ByVal reportValidation As Boolean)
-    Dim R As Long
+Private Sub CollectInstructionErrors()
+    Set m_instructionErrors = New Collection
+    Dim R As Long, inst As clsInstruction, message As String
     For R = 1 To m_source.totalLines
-        If m_source.IsSkippable(R) Then GoTo NextRow
-        If m_source.CmdAt(R) = "ELSE_IF" Then ValidateElseIfParams R, reportValidation
-NextRow:
+        If Not m_source.IsSkippable(R) Then
+            Set inst = m_source.InstructionAt(R)
+            message = inst.RawSyntaxError()
+            If Len(message) > 0 Then
+                m_flowInvalidRows(CStr(R)) = True
+                m_instructionErrors.Add "line " & R & " (시트 행 " & inst.sheetRow & "): " & message
+            End If
+        End If
     Next R
 End Sub
 
@@ -134,7 +140,10 @@ Public Function ValidateStructure() As Boolean
     For Each ifKey In m_index.IfStructureErrors.keys
         AddValidationError CStr(m_index.IfStructureErrors(ifKey))
     Next ifKey
-    ScanElseIfParams True
+    Dim message As Variant
+    For Each message In m_instructionErrors
+        AddValidationError CStr(message)
+    Next message
 
     Dim blocks As Object
     Set blocks = m_index.SelectBlocks
@@ -204,25 +213,6 @@ Public Function ValidationErrors() As String
         ValidationErrors = ValidationErrors & CStr(m_validationErrors.item(i))
     Next i
 End Function
-
-Private Sub ValidateElseIfParams(ByVal lineNo As Long, ByVal reportValidation As Boolean)
-    If Len(Trim$(m_source.P1At(lineNo))) = 0 Then
-        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P1.", reportValidation
-    End If
-    If Len(Trim$(m_source.P2At(lineNo))) = 0 Then
-        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P2.", reportValidation
-    ElseIf Not modCondition.IsConditionOperator(m_source.P2At(lineNo)) Then
-        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has invalid condition operator: " & m_source.P2At(lineNo), reportValidation
-    End If
-    If Len(Trim$(m_source.P3At(lineNo))) = 0 Then
-        MarkIfStructureIssue lineNo, "ELSE_IF line " & lineNo & " has empty P3.", reportValidation
-    End If
-End Sub
-
-Private Sub MarkIfStructureIssue(ByVal lineNo As Long, ByVal message As String, ByVal reportValidation As Boolean)
-    If lineNo > 0 Then m_flowInvalidRows(CStr(lineNo)) = True
-    If reportValidation Then AddValidationError message
-End Sub
 
 Private Sub BuildDisplayDepths()
     Dim depth As Long

@@ -71,8 +71,8 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
     Dim strInfo As String
     Dim isRecorded As Boolean
 
+    isRecorded = modWinAPI.IsToggleKeyOn(modWinAPI.VK_CAPITAL)
     view.Prepare
-    isRecorded = False
 
     Do While IsFormVisible(view)
         DoEvents
@@ -86,7 +86,7 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
                 strInfo = CaptureSnippet(view, pt.x, pt.y, hexColor)
 
                 If view.IsAutoMode Then
-                    FillActiveCell view, pt.x, pt.y, hexColor
+                    FillCaptureCells ActiveCell, view.IsPixelIfMode, pt.x, pt.y, hexColor
                     view.RenderAutoFilled pt.x, pt.y, hexColor
                 Else
                     modWinAPI.SetClipboardText strInfo
@@ -128,9 +128,11 @@ Private Function CaptureSnippet(ByVal view As frmCapture, ByVal x As Long, ByVal
     End If
 End Function
 
-Private Sub FillActiveCell(ByVal view As frmCapture, ByVal x As Long, ByVal y As Long, ByVal hexColor As String)
-    With ActiveCell
-        If view.IsPixelIfMode Then
+' @desc 대상 셀부터 캡처 결과를 기록하고 다음 행으로 이동함
+Public Sub FillCaptureCells(ByVal target As Range, ByVal pixelIfMode As Boolean, ByVal x As Long, ByVal y As Long, ByVal hexColor As String)
+    With target
+        .offset(0, 2).NumberFormat = "@"
+        If pixelIfMode Then
             .value = "{$PIXEL:" & x & "," & y & "}"
             .offset(0, 1).value = "EQ"
             .offset(0, 2).value = hexColor

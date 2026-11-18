@@ -1,6 +1,6 @@
 Attribute VB_Name = "modEngine"
 ' @desc 시트 명령어를 해석해 레지스트리 2단 디스패처로 실행 조립 담당
-' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, modCondition, LogShim
+' @depends modCmdRegistry, modContext, modActions, modTokenResolver, modHelper, modWinAPI, modParse, LogShim
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -92,7 +92,7 @@ Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unatt
     isProgramValid = m_program.ValidateLabels() And isProgramValid
     If Not isProgramValid Then
         m_lastRuntimeError = m_program.ValidationErrors()
-        modActions.Action_ShowNotification "[에러] 스크립트 구조 오류" & vbCrLf & m_program.ValidationErrors(), 3
+        modActions.Action_ShowNotification "[에러] 스크립트 검증 오류" & vbCrLf & m_lastRuntimeError, 3
         GoTo CleanUp
     End If
 
@@ -332,13 +332,9 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
      GoTo CleanUp
     End If
 
-    ' 2. 레지스트리 게이트 조회 (모든 디스패치의 단일 통로)
-    If inst.def Is Nothing Then
-        ' 미등록 명령어: 사유만 기록, 알림은 호출자(RunRPA)가 1회 조립
-        m_lastRuntimeError = "알 수 없는 명령어: " & inst.cmd
-        ExecuteSmartAction = CMD_ERROR
-     GoTo CleanUp
-    End If
+    Dim guardMsg As String
+    guardMsg = inst.RawSyntaxError()
+    If Len(guardMsg) > 0 Then GoTo InvalidParameters
 
     ' A selected IF branch skips later conditions without resolving their operands.
     If inst.cmd = "ELSE_IF" Then
@@ -360,17 +356,8 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
         args(3) = DecodeSlot(inst.def.p3, inst.p3)
     End If
 
-    ' 3.5 ParamSpec 게이트: 레지스트리가 선언한 Required/DataType을 실행 전 강제 (C1)
-    Dim guardMsg As String
     guardMsg = ValidateDecodedSlots(inst, args)
-    If Len(guardMsg) > 0 Then
-        m_lastRuntimeError = guardMsg
-        LogShim.LogEvent "param_guard", _
-            Array("line", "sheetRow", "cmd", "reason"), _
-            Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, guardMsg)
-        ExecuteSmartAction = CMD_ERROR
-        GoTo CleanUp
-    End If
+    If Len(guardMsg) > 0 Then GoTo InvalidParameters
 
     ' 4. 2단 디스패치: 카테고리 -> 핸들러 클래스 -> 내부 명령어 분기
     Dim handler As ICommand
@@ -384,43 +371,28 @@ Public Function ExecuteSmartAction(ByVal R As Long) As Long
 
 CleanUp:
     Exit Function
+InvalidParameters:
+    m_lastRuntimeError = guardMsg
+    LogShim.LogEvent "param_guard", _
+        Array("line", "sheetRow", "cmd", "reason"), _
+        Array(inst.RuntimeLine, inst.sheetRow, inst.cmd, guardMsg)
+    ExecuteSmartAction = CMD_ERROR
+    Exit Function
 ErrHandler:
     m_lastRuntimeError = Err.Description
     ExecuteSmartAction = CMD_ERROR
     Resume CleanUp
 End Function
 
-' [Helper] ParamSpec 게이트 (C1). Required는 원문 기준으로 판정해
-'   {$BLANK} 등 "의도적으로 빈 값" 작성을 허용하고, DT_NUM은 핸들러가
-'   실제로 소비할 해석값 기준으로 판정한다.
-' @desc 명령줄과 해석된 args 받아 첫 위반 메시지 반환, 통과 시 빈 문자열 반환
+' @desc 해석된 숫자 슬롯을 검사해 첫 오류를 반환함
 Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args() As String) As String
     Dim i As Long
     Dim spec As ParamSpec
-    Dim rawVal As String
     Dim numCheck As Double
 
     For i = 1 To 3
         Set spec = inst.def.Param(i)
         If Not spec Is Nothing Then
-            Select Case i
-                Case 1: rawVal = inst.p1
-                Case 2: rawVal = inst.p2
-                Case 3: rawVal = inst.p3
-            End Select
-
-            If spec.Required And Len(Trim$(rawVal)) = 0 Then
-                ValidateDecodedSlots = "P" & i & "(" & spec.Meaning & ") 필수값 누락"
-                Exit Function
-            End If
-
-            If spec.RawKind = RK_CONDITION Then
-                If Not modCondition.IsConditionOperator(args(i)) Then
-                    ValidateDecodedSlots = "Invalid condition operator: " & args(i)
-                    Exit Function
-                End If
-            End If
-
             If spec.DataType = DT_NUM Then
                 ' 판정은 핸들러가 소비할 파서(modParse)와 동일해야 한다
                 If Len(Trim$(args(i))) > 0 And Not modParse.TryParseDoubleStrict(args(i), numCheck) Then
@@ -433,11 +405,10 @@ Private Function ValidateDecodedSlots(ByVal inst As clsInstruction, ByRef args()
 End Function
 
 ' [Helper] 슬롯 ResolveMode에 따라 RAW(원본) / RESOLVE(토큰치환) 디코드.
-'   슬롯 미정의(Nothing)는 RESOLVE 기본.
+'   미사용 슬롯은 원문 검사를 통과한 빈값이다.
 Private Function DecodeSlot(ByVal spec As ParamSpec, ByVal rawVal As String) As String
-    If spec Is Nothing Then
-        DecodeSlot = modTokenResolver.ResolveParam(rawVal)
-    ElseIf spec.IsRaw Then
+    If spec Is Nothing Then Exit Function
+    If spec.IsRaw Then
         DecodeSlot = rawVal
     Else
         DecodeSlot = modTokenResolver.ResolveParam(rawVal)

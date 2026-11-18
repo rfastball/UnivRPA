@@ -440,6 +440,12 @@ Private Function FindSubroutineEnd(ByVal startLine As Long) As Long
         If m_structureDepths(R) < labelDepth Then Exit Function
 
         If m_structureDepths(R) = labelDepth Then
+            Dim def As CmdDef
+            Set def = m_source.InstructionAt(R).def
+            If Not def Is Nothing Then
+                ' A sibling ELSE_IF, ELSE or CASE ends the branch containing the LABEL.
+                If def.BlockRole = MIDBLOCK Then Exit Function
+            End If
             Select Case cmd
                 Case "RETURN"
                     FindSubroutineEnd = R

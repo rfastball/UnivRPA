@@ -9,7 +9,8 @@ visible = true
 root = "src"
 
 [dist]
-version = "1.0.1"
+version = "1.0.0"
+bootstrap = "modPractice.BuildPracticeSheets"
 exclude = ["modTester", "SmokeTest"]
 
 [vbaloop]

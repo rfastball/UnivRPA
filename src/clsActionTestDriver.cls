@@ -14,6 +14,13 @@ Option Explicit
 
 Public SleepTotal As Long
 Public SleepCalls As Long
+Public TickMilliseconds As Long
+Public EscapeOnPoll As Long
+Public PauseAtTick As Long
+Public ResumeAtTick As Long
+Private m_pauseState As Long
+Private m_cursorX As Long, m_cursorY As Long
+Public CursorShiftX As Long
 Public MoveCalls As Long
 Public MoveResult As Long
 Public MouseEvents As String
@@ -30,6 +37,8 @@ Public ForegroundHandle As LongPtr
 Public FocusResult As Long
 Public FocusCalls As Long
 Public PixelColor As Long
+Public PixelReads As Long
+Public ChangePixelOnRead As Long
 Public ChangePixelAfterClick As Boolean
 Public ClipboardFailure As String
 Public ClipboardContents As String
@@ -46,6 +55,9 @@ Public FailOpen As Boolean
 ' @desc 호출 기록과 주입 조건 및 중단 래치를 초기화함
 Public Sub Reset()
     SleepTotal = 0: SleepCalls = 0: MoveCalls = 0: KeyCalls = 0
+    EscapeOnPoll = 0
+    TickMilliseconds = 0: PauseAtTick = 0: ResumeAtTick = 0: m_pauseState = 0
+    CursorShiftX = 0
     MoveResult = 1: FocusCalls = 0
     MouseEvents = "": KeyEvents = ""
     AbortOnSleep = 0: FailOnSleep = 0: FailOnKey = 0
@@ -53,6 +65,7 @@ Public Sub Reset()
     ReentryStatus = "": AttemptReentry = False
     WindowHandle = 123: ForegroundHandle = 123: FocusResult = 1
     PixelColor = &HFFFFFF
+    PixelReads = 0: ChangePixelOnRead = 0
     ChangePixelAfterClick = False
     ClipboardFailure = "": ClipboardContents = "old": m_clipboardText = ""
     ClipboardClosed = False: ClipboardFreed = False: ClipboardOwner = 0
@@ -64,6 +77,7 @@ End Sub
 ' @desc 실제 대기 없이 요청 시간 기록하고 지정 호출에서 중단 또는 오류 주입함
 Public Sub SleepMilliseconds(ByVal milliseconds As Long)
     SleepTotal = SleepTotal + milliseconds
+    TickMilliseconds = TickMilliseconds + milliseconds
     SleepCalls = SleepCalls + 1
     If AttemptReentry Then
         AttemptReentry = False
@@ -73,10 +87,34 @@ Public Sub SleepMilliseconds(ByVal milliseconds As Long)
     If SleepCalls = FailOnSleep Then Err.Raise 5, "clsActionTestDriver", "Injected wait failure."
 End Sub
 
+Public Function EscapeKeyDown() As Boolean
+    If EscapeOnPoll <= 0 Then Exit Function
+    EscapeOnPoll = EscapeOnPoll - 1
+    EscapeKeyDown = (EscapeOnPoll = 0)
+End Function
+
+' @desc 지정한 가상 시각에 Pause와 재개 키 누름을 각 1회 반환
+Public Function PauseKeyDown() As Boolean
+    If m_pauseState = 0 And PauseAtTick > 0 And TickMilliseconds >= PauseAtTick Then
+        m_pauseState = 1
+        PauseKeyDown = True
+    ElseIf m_pauseState = 1 And TickMilliseconds >= ResumeAtTick Then
+        m_pauseState = 2
+        PauseKeyDown = True
+    End If
+End Function
+
 ' @desc 커서 이동 요청 횟수를 기록하고 지정한 성공 여부 반환
 Public Function MoveCursor(ByVal x As Long, ByVal y As Long) As Long
     MoveCalls = MoveCalls + 1
+    m_cursorX = x: m_cursorY = y
     MoveCursor = MoveResult
+End Function
+
+Public Function ReadCursorPos(ByRef x As Long, ByRef y As Long) As Long
+    x = m_cursorX + CursorShiftX
+    y = m_cursorY
+    ReadCursorPos = 1
 End Function
 
 ' @desc 마우스 버튼 플래그 순서를 기록함
@@ -99,8 +137,10 @@ End Function
 
 ' @desc 지정한 픽셀 판독값 또는 실패값을 반환함
 Public Function ReadPixel(ByVal x As Long, ByVal y As Long) As Long
+    PixelReads = PixelReads + 1
     ReadPixel = PixelColor
     If ChangePixelAfterClick And Len(MouseEvents) > 0 Then ReadPixel = PixelColor Xor &HFFFFFF
+    If ChangePixelOnRead > 0 And PixelReads >= ChangePixelOnRead Then ReadPixel = PixelColor Xor &HFFFFFF
 End Function
 
 ' @desc 가상 클립보드의 텍스트 형식 존재 여부 반환

@@ -1,6 +1,6 @@
 Attribute VB_Name = "modActions"
 ' @desc 클릭/입력/대기 등 구체 동작 수행 담당
-' @depends modWinAPI, LogShim
+' @depends modWinAPI, modParse, LogShim
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -55,6 +55,22 @@ Private Sub SleepSlice(ByVal milliseconds As Long)
     End If
 End Sub
 
+Private Function ActionTickCount() As Long
+    If m_inputTestDriver Is Nothing Then
+        ActionTickCount = modWinAPI.GetTickCount()
+    Else
+        ActionTickCount = m_inputTestDriver.TickMilliseconds
+    End If
+End Function
+
+Private Function PauseKeyDown() As Boolean
+    If m_inputTestDriver Is Nothing Then
+        PauseKeyDown = modWinAPI.IsKeyDown(VK_PAUSE_RESUME)
+    Else
+        PauseKeyDown = m_inputTestDriver.PauseKeyDown()
+    End If
+End Function
+
 Private Sub SendMouseButton(ByVal flags As Long)
     If m_inputTestDriver Is Nothing Then
         modWinAPI.mouse_event flags, 0, 0, 0, 0
@@ -101,41 +117,45 @@ Public Function AbortPending() As Boolean
         AbortPending = True
         Exit Function
     End If
-    If Not m_inputTestDriver Is Nothing Then Exit Function
-    If IsKeyDown(VK_ESCAPE) Then
-        m_abortRequested = True
-        AbortPending = True
+    If m_inputTestDriver Is Nothing Then
+        m_abortRequested = IsKeyDown(VK_ESCAPE)
+    Else
+        m_abortRequested = m_inputTestDriver.EscapeKeyDown()
     End If
+    AbortPending = m_abortRequested
 End Function
 
 ' @desc Pause 해제까지 대기하고 ESC 중단 시 True 반환함
-Public Function WaitIfPaused(Optional ByRef resumed As Boolean = False) As Boolean
+Public Function WaitIfPaused(Optional ByRef resumed As Boolean = False, Optional ByRef pausedMs As Double = 0) As Boolean
     resumed = False
+    pausedMs = 0
     If AbortPending() Then
         WaitIfPaused = True
         Exit Function
     End If
-    If m_unattended Then Exit Function
-    If Not IsKeyDown(VK_PAUSE_RESUME) Then Exit Function
+    If m_unattended And m_inputTestDriver Is Nothing Then Exit Function
+    If Not PauseKeyDown() Then Exit Function
 
+    Dim pauseStarted As Long
+    pauseStarted = ActionTickCount()
     Action_ShowNotification "일시정지됨. [Pause] 재개, [ESC] 종료", 3
-    Sleep 500
+    SleepSlice 500
 
     Do
         If AbortPending() Then
             WaitIfPaused = True
-            Exit Function
+            Exit Do
         End If
 
-        If IsKeyDown(VK_PAUSE_RESUME) Then
-            Sleep 200
+        If PauseKeyDown() Then
+            SleepSlice 200
             resumed = True
-            Exit Function
+            Exit Do
         End If
 
-        DoEvents
-        Sleep DELAY_MICRO
+        SleepSlice DELAY_MICRO
     Loop
+    pausedMs = modWinAPI.ElapsedMilliseconds(pauseStarted, ActionTickCount())
 End Function
 
 '==============================================================================
@@ -143,12 +163,14 @@ End Function
 '==============================================================================
 
 ' [스마트 대기] Sleep 대신 사용. 엑셀 응답없음 방지 + ESC 비상종료 감지
-Public Sub BetterWait(ByVal totalWait As Long)
+Public Sub BetterWait(ByVal totalWait As Long, Optional ByRef pausedMs As Double = 0)
     If totalWait < 0 Then Err.Raise 5, "modActions.BetterWait", "Wait milliseconds must not be negative."
     Dim remaining As Long, slice As Long
+    Dim thisPause As Double
     remaining = totalWait
     Do
-        If WaitIfPaused() Then Exit Sub
+        If WaitIfPaused(pausedMs:=thisPause) Then Exit Sub
+        pausedMs = pausedMs + thisPause
         slice = remaining
         If slice > DELAY_MICRO Then slice = DELAY_MICRO
         SleepSlice slice
@@ -256,15 +278,14 @@ End Sub
 
 ' [내부 함수] 키 코드 파싱 (숫자 or 텍스트 -> Virtual Key Code)
 Private Function ParseKeyCode(ByVal vKey As Variant) As Long
-    If IsNumeric(vKey) Then
-        ParseKeyCode = CLng(vKey)
-        If ParseKeyCode <= 0 Or ParseKeyCode > 254 Then Err.Raise 5, "modActions.ParseKeyCode", "잘못된 키 코드: " & CStr(vKey)
+    Dim sKey As String
+    sKey = UCase$(Trim$(CStr(vKey)))
+    If Len(sKey) > 0 And Not sKey Like "*[!0-9]*" Then
+        ParseKeyCode = modParse.ParseLongStrict(sKey)
+        If ParseKeyCode < 1 Or ParseKeyCode > 254 Then Err.Raise 5, "modActions.ParseKeyCode", "잘못된 키 코드: " & sKey
         Exit Function
     End If
-    
-    Dim sKey As String
-    sKey = UCase(Trim(CStr(vKey)))
-    
+
     Select Case sKey
         Case "ENTER", "RETURN": ParseKeyCode = 13
         Case "ESC", "ESCAPE":   ParseKeyCode = 27
@@ -349,12 +370,26 @@ Failed:
     Err.Raise errorNumber, "modActions.FireClick", errorText
 End Sub
 
+Private Sub FireClickAt(ByVal x As Long, ByVal y As Long, ByVal isRightClick As Boolean)
+    Dim actual As POINTAPI, readOK As Long
+    If AbortPending() Then Exit Sub
+    If m_inputTestDriver Is Nothing Then
+        readOK = modWinAPI.GetCursorPos(actual)
+    Else
+        readOK = m_inputTestDriver.ReadCursorPos(actual.x, actual.y)
+    End If
+    If readOK = 0 Then Err.Raise 5, "modActions.FireClickAt", "GetCursorPos failed."
+    If actual.x <> x Or actual.y <> y Then _
+        Err.Raise 5, "modActions.FireClickAt", "Cursor moved before click. Expected (" & x & "," & y & "), found (" & actual.x & "," & actual.y & ")."
+    FireClick isRightClick
+End Sub
+
 ' [마우스 클릭] 이동 -> 안정화 -> 클릭 -> 안정화 (CLICK/RCLICK = fire-and-forget)
 Public Sub Action_MouseClick(ByVal x As Long, ByVal y As Long, Optional ByVal isRightClick As Boolean = False)
     On Error GoTo ErrHandler
     MoveAndSettle x, y
     If AbortPending() Then Exit Sub
-    FireClick isRightClick
+    FireClickAt x, y, isRightClick
     BetterWait DELAY_SHORT
 
 CleanUp:
@@ -382,6 +417,7 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
     On Error GoTo ErrHandler
     Dim baseColor As String
     Dim startTime As Long
+    Dim pausedMs As Double
 
     ' 1. 이동 -> 호버 전이가 끝난 뒤 기준색 캡처 (호버색을 기준선에 포함 = 빼버림)
     MoveAndSettle x, y
@@ -390,18 +426,18 @@ Public Function Action_ClickSync(ByVal x As Long, ByVal y As Long) As Boolean
     baseColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
 
     ' 2. 좌클릭 발사
-    FireClick False
+    FireClickAt x, y, False
 
     ' 3. (x,y) 색이 기준색에서 벗어날 때까지 폴링. 동일점 가드(누른 곳=확인 곳).
-    startTime = modWinAPI.GetTickCount()
+    startTime = ActionTickCount()
     Do
         If AbortPending() Then Action_ClickSync = False: Exit Function
         If modWinAPI.GetColorHexAt(x, y, m_inputTestDriver) <> baseColor Then Action_ClickSync = True: Exit Function
-        If modWinAPI.ElapsedMilliseconds(startTime, modWinAPI.GetTickCount()) > TIMEOUT_DEFAULT Then
+        If modWinAPI.ElapsedMilliseconds(startTime, ActionTickCount()) - pausedMs > TIMEOUT_DEFAULT Then
             Action_ClickSync = False    ' 조용히 실패 (모달 금지)
             Exit Function
         End If
-        BetterWait DELAY_SHORT
+        BetterWait DELAY_SHORT, pausedMs
     Loop
 
 CleanUp:
@@ -419,6 +455,7 @@ End Function
 Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As String) As Boolean
     On Error GoTo ErrHandler
     Dim startTime As Long
+    Dim pausedMs As Double
     Dim timeLimit As Long: timeLimit = TIMEOUT_DEFAULT ' 30초 제한
     Dim isVanish As Boolean: isVanish = (sType = "WAIT_VANISH")
     Dim curColor As String
@@ -426,7 +463,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
     
     If AbortPending() Then Exit Function
     targetColor = NormalizeHexColor(hexColor)
-    startTime = modWinAPI.GetTickCount()
+    startTime = ActionTickCount()
     
     Do
         curColor = modWinAPI.GetColorHexAt(x, y, m_inputTestDriver)
@@ -439,7 +476,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         End If
         
         ' 타임아웃 (무인 환경: 모달 금지, 조용히 실패 반환 → 알림 여부는 엔진이 결정)
-        If modWinAPI.ElapsedMilliseconds(startTime, modWinAPI.GetTickCount()) > timeLimit Then
+        If modWinAPI.ElapsedMilliseconds(startTime, ActionTickCount()) - pausedMs > timeLimit Then
             Action_Wait = False
             Exit Function
         End If
@@ -447,7 +484,7 @@ Public Function Action_Wait(sType As String, x As Long, y As Long, hexColor As S
         ' 비상 탈출 (래치: 감지 시 실행 전체가 중단 경로로 수렴)
         If AbortPending() Then Action_Wait = False: Exit Function
         
-        BetterWait DELAY_SHORT
+        BetterWait DELAY_SHORT, pausedMs
     Loop
 
 CleanUp:

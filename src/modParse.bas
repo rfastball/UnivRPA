@@ -31,11 +31,13 @@ Public Function TryParseLongStrict(ByVal text As String, ByRef result As Long) A
     TryParseLongStrict = True
 End Function
 
-' @desc 숫자 문자열 받아 Long 반환, 파싱 실패 시 기본값 반환
+' @desc 숫자 받아 Long 반환, 비숫자는 기본값, 범위 초과는 오류
 Public Function ParseLongOrDefault(ByVal text As String, ByVal defaultValue As Long) As Long
     Dim n As Long
     If TryParseLongStrict(text, n) Then
         ParseLongOrDefault = n
+    ElseIf IsStrictNumberSyntax(Trim$(text)) Then
+        Err.Raise 6, "modParse.ParseLongOrDefault", "Integer out of range: '" & text & "'"
     Else
         ParseLongOrDefault = defaultValue
     End If
@@ -50,7 +52,8 @@ Public Function ParseLongStrict(ByVal text As String) As Long
     ParseLongStrict = n
 End Function
 
-Private Function IsStrictNumberSyntax(ByVal s As String) As Boolean
+' @desc 부호와 소수점을 포함한 숫자 문법을 검사함
+Public Function IsStrictNumberSyntax(ByVal s As String) As Boolean
     Dim total As Long
     total = Len(s)
     If total = 0 Then Exit Function

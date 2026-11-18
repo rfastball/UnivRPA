@@ -279,17 +279,12 @@ Sub Run_System_SelfDiagnosis()
     Dim nextLine As Long
 
     ' 1. 테스트 환경 준비
+    Dim savedUpdating As Boolean, failure As String
+    savedUpdating = Application.ScreenUpdating
+    On Error GoTo DiagnosisFailed
     Application.ScreenUpdating = False
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    Sheets("RPA_TEST_SUITE").Delete
-    Application.DisplayAlerts = True
-    On Error GoTo 0
+    Set wsTest = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
 
-    Set wsTest = Sheets.Add
-    wsTest.name = "RPA_TEST_SUITE"
-
-    ' 컨텍스트 및 변수 초기화
     modContext.InitContext
     failCount = 0
 
@@ -302,7 +297,7 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 1] Memory (SET / $BLANK) ---"
 
-    Call MakeCmd(arrCmd, 1, "SET", "{score}", 0, "10")
+    Call MakeCmd(arrCmd, 1, "SET", "{score}", "", "10")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("score") = "10" Then
@@ -311,7 +306,7 @@ Sub Run_System_SelfDiagnosis()
         LogFail "SET", "10", modContext.GetVar("score"): failCount = failCount + 1
     End If
 
-    Call MakeCmd(arrCmd, 1, "SET", "{score}", 0, "{$BLANK}")
+    Call MakeCmd(arrCmd, 1, "SET", "{score}", "", "{$BLANK}")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("score") = "" Then
@@ -325,9 +320,9 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 2] Tokenizer (interp + literal) ---"
 
-    Call MakeCmd(arrCmd, 1, "SET", "{a}", 0, "hello")
+    Call MakeCmd(arrCmd, 1, "SET", "{a}", "", "hello")
     ExecuteArrayLine arrCmd, 1
-    Call MakeCmd(arrCmd, 1, "SET", "{b}", 0, "{a}_world")
+    Call MakeCmd(arrCmd, 1, "SET", "{b}", "", "{a}_world")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("b") = "hello_world" Then
@@ -336,7 +331,7 @@ Sub Run_System_SelfDiagnosis()
         LogFail "Interpolation", "hello_world", modContext.GetVar("b"): failCount = failCount + 1
     End If
 
-    Call MakeCmd(arrCmd, 1, "SET", "{t}", 0, "A{$TAB}B")
+    Call MakeCmd(arrCmd, 1, "SET", "{t}", "", "A{$TAB}B")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("t") = "A" & vbTab & "B" Then
@@ -350,7 +345,7 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 3] {$LOOP} outside loop = 0 ---"
 
-    Call MakeCmd(arrCmd, 1, "SET", "{L}", 0, "{$LOOP}")
+    Call MakeCmd(arrCmd, 1, "SET", "{L}", "", "{$LOOP}")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("L") = "0" Then
@@ -365,10 +360,10 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 4] System tokens ($CLIP / $PIXEL) ---"
 
     ' 쓰기: SET {$CLIP} 값  -> 읽기: SET {c} {$CLIP}
-    Call MakeCmd(arrCmd, 1, "SET", "{$CLIP}", 0, "CLIP_RT")
+    Call MakeCmd(arrCmd, 1, "SET", "{$CLIP}", "", "CLIP_RT")
     ExecuteArrayLine arrCmd, 1
     modActions.BetterWait 80
-    Call MakeCmd(arrCmd, 1, "SET", "{c}", 0, "{$CLIP}")
+    Call MakeCmd(arrCmd, 1, "SET", "{c}", "", "{$CLIP}")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("c") = "CLIP_RT" Then
@@ -382,7 +377,7 @@ Sub Run_System_SelfDiagnosis()
     Dim actualColor As String
     actualColor = modWinAPI.GetColorHexAt(screenX, screenY)
 
-    Call MakeCmd(arrCmd, 1, "SET", "{px}", 0, "{$PIXEL:" & screenX & "," & screenY & "}")
+    Call MakeCmd(arrCmd, 1, "SET", "{px}", "", "{$PIXEL:" & screenX & "," & screenY & "}")
     ExecuteArrayLine arrCmd, 1
 
     If modContext.GetVar("px") = actualColor Then
@@ -405,9 +400,9 @@ Sub Run_System_SelfDiagnosis()
     wsTest.Range("A1").ClearContents
     wsTest.Range("A1").Select
 
-    Call MakeCmd(arrCmd, 1, "TYPE", 10, 0, "HelloRPA") ' P1=딜레이10ms, P3=텍스트
+    Call MakeCmd(arrCmd, 1, "TYPE", 10, "", "HelloRPA") ' P1=딜레이10ms, P3=텍스트
     ExecuteArrayLine arrCmd, 1
-    Call MakeCmd(arrCmd, 1, "KEY", 13, 0, "")
+    Call MakeCmd(arrCmd, 1, "KEY", 13, "", "")
     ExecuteArrayLine arrCmd, 1
 
     DoEvents
@@ -422,13 +417,13 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 6] TYPE {name} ---"
 
-    Call MakeCmd(arrCmd, 1, "SET", "{dyn}", 0, "DynamicValue")
+    Call MakeCmd(arrCmd, 1, "SET", "{dyn}", "", "DynamicValue")
     ExecuteArrayLine arrCmd, 1
 
     wsTest.Range("A2").Select
-    Call MakeCmd(arrCmd, 1, "TYPE", 10, 0, "{dyn}")
+    Call MakeCmd(arrCmd, 1, "TYPE", 10, "", "{dyn}")
     ExecuteArrayLine arrCmd, 1
-    Call MakeCmd(arrCmd, 1, "KEY", 13, 0, "")
+    Call MakeCmd(arrCmd, 1, "KEY", 13, "", "")
     ExecuteArrayLine arrCmd, 1
 
     DoEvents
@@ -443,10 +438,10 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 7] Flow (CALL/RETURN) ---"
 
-    Call MakeCmd(arrCmd, 1, "CALL", 0, 0, "SUB_TEST")
-    Call MakeCmd(arrCmd, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(arrCmd, 3, "LABEL", 0, 0, "SUB_TEST")
-    Call MakeCmd(arrCmd, 4, "RETURN", 0, 0, "")
+    Call MakeCmd(arrCmd, 1, "CALL", "", "", "SUB_TEST")
+    Call MakeCmd(arrCmd, 2, "EXIT", "", "", "")
+    Call MakeCmd(arrCmd, 3, "LABEL", "", "", "SUB_TEST")
+    Call MakeCmd(arrCmd, 4, "RETURN", "", "", "")
     nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine = 3 And modContext.GetStackDepth() = 1 Then
@@ -470,7 +465,7 @@ Sub Run_System_SelfDiagnosis()
     Debug.Print "--- [Test 8] IF (true branch) ---"
 
     Call MakeCmd(arrCmd, 1, "IF", "{$PIXEL:" & screenX & "," & screenY & "}", "EQ", actualColor)
-    Call MakeCmd(arrCmd, 2, "END_IF", 0, 0, "")
+    Call MakeCmd(arrCmd, 2, "END_IF", "", "", "")
     nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine = 0 Then
@@ -515,7 +510,7 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     Debug.Print "--- [Test 10] FOCUS ---"
 
-    Call MakeCmd(arrCmd, 1, "FOCUS", 0, 0, "Excel")
+    Call MakeCmd(arrCmd, 1, "FOCUS", "", "", "Excel")
     nextLine = ExecuteArrayLine(arrCmd, 1)
 
     If nextLine <> -1 Then
@@ -567,7 +562,7 @@ Sub Run_System_SelfDiagnosis()
 
     ' 미정의 변수 INC -> 오류
     Dim incMissing As Long
-    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", "", "")
     incMissing = ExecuteArrayLine(arrCmd, 1)
     If incMissing = -1 Then
         LogPass "INC (undefined -> ERROR)"
@@ -575,9 +570,9 @@ Sub Run_System_SelfDiagnosis()
         LogFail "INC undef", "-1", CStr(incMissing): failCount = failCount + 1
     End If
 
-    Call MakeCmd(arrCmd, 1, "SET", "{n}", 0, "0")
+    Call MakeCmd(arrCmd, 1, "SET", "{n}", "", "0")
     ExecuteArrayLine arrCmd, 1
-    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "")
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", "", "")
     ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "1" Then
         LogPass "INC (defined 0 -> 1)"
@@ -586,7 +581,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     ' INC {n} 5 -> 6 (P3 RESOLVE)
-    Call MakeCmd(arrCmd, 1, "INC", "{n}", 0, "5")
+    Call MakeCmd(arrCmd, 1, "INC", "{n}", "", "5")
     ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "6" Then
         LogPass "INC (+5 -> 6)"
@@ -595,7 +590,7 @@ Sub Run_System_SelfDiagnosis()
     End If
 
     ' DEC {n} -> 5 (기본 1 감분)
-    Call MakeCmd(arrCmd, 1, "DEC", "{n}", 0, "")
+    Call MakeCmd(arrCmd, 1, "DEC", "{n}", "", "")
     ExecuteArrayLine arrCmd, 1
     If modContext.GetVar("n") = "5" Then
         LogPass "DEC (-1 -> 5)"
@@ -605,7 +600,7 @@ Sub Run_System_SelfDiagnosis()
 
     ' 읽기전용 좌변 INC {$LOOP} -> CMD_ERROR(-1)
     Dim incErr As Long
-    Call MakeCmd(arrCmd, 1, "INC", "{$LOOP}", 0, "")
+    Call MakeCmd(arrCmd, 1, "INC", "{$LOOP}", "", "")
     incErr = ExecuteArrayLine(arrCmd, 1)
     If incErr = -1 Then
         LogPass "INC {$LOOP} (read-only -> ERROR)"
@@ -619,16 +614,36 @@ Sub Run_System_SelfDiagnosis()
     '==========================================================================
     ' 종료 처리
     '==========================================================================
-    Application.ScreenUpdating = True
+FinishDiagnosis:
+    DeleteDiagnosticSheet wsTest
+    Application.ScreenUpdating = savedUpdating
 
     Dim resMsg As String
-    If failCount = 0 Then
+    If Len(failure) > 0 Then
+        resMsg = failure
+    ElseIf failCount = 0 Then
         resMsg = "[OK] 모든 시스템 검증 통과 (All Systems Go)"
     Else
         resMsg = "[FAIL] " & failCount & "개 항목 실패. Immediate 창을 확인하세요."
     End If
 
     MsgBox resMsg, IIf(failCount = 0, vbInformation, vbCritical), "Self Diagnosis (v2)"
+    Exit Sub
+DiagnosisFailed:
+    failCount = failCount + 1
+    failure = Err.Description
+    Resume FinishDiagnosis
+End Sub
+
+Private Sub DeleteDiagnosticSheet(ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+    Dim alerts As Boolean
+    alerts = Application.DisplayAlerts
+    On Error GoTo RestoreAlerts
+    Application.DisplayAlerts = False
+    ws.Delete
+RestoreAlerts:
+    Application.DisplayAlerts = alerts
 End Sub
 
 ' @desc 등록 명령어 전수 순회로 레지스트리<->핸들러 라우팅 동기화 검증, 실패 개수 반환
@@ -816,11 +831,11 @@ Private Sub AssertElseIfOperator(ByVal name As String, ByVal v1 As String, ByVal
     Dim result As eRunResult
 
     Call MakeCmd(arr, 1, "IF", "never", "EQ", "match")
-    Call MakeCmd(arr, 2, "SET", "{elseif_op_hit}", 0, "bad")
+    Call MakeCmd(arr, 2, "SET", "{elseif_op_hit}", "", "bad")
     Call MakeCmd(arr, 3, "ELSE_IF", v1, op, v2)
-    Call MakeCmd(arr, 4, "SET", "{elseif_op_hit}", 0, name)
-    Call MakeCmd(arr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 4, "SET", "{elseif_op_hit}", "", name)
+    Call MakeCmd(arr, 5, "END_IF", "", "", "")
+    Call MakeCmd(arr, 6, "EXIT", "", "", "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, failCount
@@ -838,9 +853,9 @@ Private Function TC_RunProgramSmoke() As Long
     Dim result As eRunResult
 
     Debug.Print "--- [Flow 1] RunProgram smoke ---"
-    Call MakeCmd(arr, 1, "SET", "{a}", 0, "alpha")
-    Call MakeCmd(arr, 2, "SET", "{b}", 0, "{a}_beta")
-    Call MakeCmd(arr, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 1, "SET", "{a}", "", "alpha")
+    Call MakeCmd(arr, 2, "SET", "{b}", "", "{a}_beta")
+    Call MakeCmd(arr, 3, "EXIT", "", "", "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
@@ -863,12 +878,12 @@ Private Function TC_FlowHappyPaths() As Long
     Debug.Print "--- [Flow 2] Happy paths ---"
 
     Dim gotoArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(gotoArr, 1, "LABEL", 0, 0, "START")
-    Call MakeCmd(gotoArr, 2, "SET", "{mark}", 0, "before")
-    Call MakeCmd(gotoArr, 3, "GOTO", 0, 0, "DONE")
-    Call MakeCmd(gotoArr, 4, "SET", "{mark}", 0, "bad")
-    Call MakeCmd(gotoArr, 5, "LABEL", 0, 0, "DONE")
-    Call MakeCmd(gotoArr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(gotoArr, 1, "LABEL", "", "", "START")
+    Call MakeCmd(gotoArr, 2, "SET", "{mark}", "", "before")
+    Call MakeCmd(gotoArr, 3, "GOTO", "", "", "DONE")
+    Call MakeCmd(gotoArr, 4, "SET", "{mark}", "", "bad")
+    Call MakeCmd(gotoArr, 5, "LABEL", "", "", "DONE")
+    Call MakeCmd(gotoArr, 6, "EXIT", "", "", "")
     result = RunProgram(gotoArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "mark", "before", fails
@@ -876,14 +891,14 @@ Private Function TC_FlowHappyPaths() As Long
     ExpectTrace trace, Array(1, 2, 3, 5, 6), fails
 
     Dim gotoLoopExitArr(1 To 8, 1 To 5) As Variant
-    Call MakeCmd(gotoLoopExitArr, 1, "REPEAT", "5", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 2, "SET", "{loop_before_goto}", 0, "0")
-    Call MakeCmd(gotoLoopExitArr, 3, "INC", "{loop_before_goto}", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 4, "GOTO", 0, 0, "OUT")
-    Call MakeCmd(gotoLoopExitArr, 5, "INC", "{loop_after_goto}", 0, "")
-    Call MakeCmd(gotoLoopExitArr, 6, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(gotoLoopExitArr, 7, "LABEL", 0, 0, "OUT")
-    Call MakeCmd(gotoLoopExitArr, 8, "EXIT", 0, 0, "")
+    Call MakeCmd(gotoLoopExitArr, 1, "REPEAT", "5", "", "")
+    Call MakeCmd(gotoLoopExitArr, 2, "SET", "{loop_before_goto}", "", "0")
+    Call MakeCmd(gotoLoopExitArr, 3, "INC", "{loop_before_goto}", "", "")
+    Call MakeCmd(gotoLoopExitArr, 4, "GOTO", "", "", "OUT")
+    Call MakeCmd(gotoLoopExitArr, 5, "INC", "{loop_after_goto}", "", "")
+    Call MakeCmd(gotoLoopExitArr, 6, "END_REPEAT", "", "", "")
+    Call MakeCmd(gotoLoopExitArr, 7, "LABEL", "", "", "OUT")
+    Call MakeCmd(gotoLoopExitArr, 8, "EXIT", "", "", "")
     result = RunProgram(gotoLoopExitArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "loop_before_goto", "1", fails
@@ -891,12 +906,12 @@ Private Function TC_FlowHappyPaths() As Long
     ExpectLoopDepth 0, fails
 
     Dim callArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(callArr, 1, "CALL", 0, 0, "SUB1")
-    Call MakeCmd(callArr, 2, "SET", "{after}", 0, "yes")
-    Call MakeCmd(callArr, 3, "EXIT", 0, 0, "")
-    Call MakeCmd(callArr, 4, "LABEL", 0, 0, "SUB1")
-    Call MakeCmd(callArr, 5, "SET", "{sub}", 0, "ran")
-    Call MakeCmd(callArr, 6, "RETURN", 0, 0, "")
+    Call MakeCmd(callArr, 1, "CALL", "", "", "SUB1")
+    Call MakeCmd(callArr, 2, "SET", "{after}", "", "yes")
+    Call MakeCmd(callArr, 3, "EXIT", "", "", "")
+    Call MakeCmd(callArr, 4, "LABEL", "", "", "SUB1")
+    Call MakeCmd(callArr, 5, "SET", "{sub}", "", "ran")
+    Call MakeCmd(callArr, 6, "RETURN", "", "", "")
     result = RunProgram(callArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "sub", "ran", fails
@@ -906,11 +921,11 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim ifTrueArr(1 To 6, 1 To 5) As Variant
     Call MakeCmd(ifTrueArr, 1, "IF", "1", "EQ", "1")
-    Call MakeCmd(ifTrueArr, 2, "SET", "{if_true}", 0, "yes")
-    Call MakeCmd(ifTrueArr, 3, "ELSE", 0, 0, "")
-    Call MakeCmd(ifTrueArr, 4, "SET", "{if_else}", 0, "bad")
-    Call MakeCmd(ifTrueArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(ifTrueArr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(ifTrueArr, 2, "SET", "{if_true}", "", "yes")
+    Call MakeCmd(ifTrueArr, 3, "ELSE", "", "", "")
+    Call MakeCmd(ifTrueArr, 4, "SET", "{if_else}", "", "bad")
+    Call MakeCmd(ifTrueArr, 5, "END_IF", "", "", "")
+    Call MakeCmd(ifTrueArr, 6, "EXIT", "", "", "")
     result = RunProgram(ifTrueArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 2, 1, fails
@@ -919,11 +934,11 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim ifFalseArr(1 To 6, 1 To 5) As Variant
     Call MakeCmd(ifFalseArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(ifFalseArr, 2, "SET", "{if_body}", 0, "bad")
-    Call MakeCmd(ifFalseArr, 3, "ELSE", 0, 0, "")
-    Call MakeCmd(ifFalseArr, 4, "SET", "{else_body}", 0, "yes")
-    Call MakeCmd(ifFalseArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(ifFalseArr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(ifFalseArr, 2, "SET", "{if_body}", "", "bad")
+    Call MakeCmd(ifFalseArr, 3, "ELSE", "", "", "")
+    Call MakeCmd(ifFalseArr, 4, "SET", "{else_body}", "", "yes")
+    Call MakeCmd(ifFalseArr, 5, "END_IF", "", "", "")
+    Call MakeCmd(ifFalseArr, 6, "EXIT", "", "", "")
     result = RunProgram(ifFalseArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 2, 0, fails
@@ -932,11 +947,11 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim elseIfNoElseArr(1 To 6, 1 To 5) As Variant
     Call MakeCmd(elseIfNoElseArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(elseIfNoElseArr, 2, "SET", "{elseif_if_body}", 0, "bad")
+    Call MakeCmd(elseIfNoElseArr, 2, "SET", "{elseif_if_body}", "", "bad")
     Call MakeCmd(elseIfNoElseArr, 3, "ELSE_IF", "2", "EQ", "0")
-    Call MakeCmd(elseIfNoElseArr, 4, "SET", "{elseif_body}", 0, "bad")
-    Call MakeCmd(elseIfNoElseArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(elseIfNoElseArr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(elseIfNoElseArr, 4, "SET", "{elseif_body}", "", "bad")
+    Call MakeCmd(elseIfNoElseArr, 5, "END_IF", "", "", "")
+    Call MakeCmd(elseIfNoElseArr, 6, "EXIT", "", "", "")
     result = RunProgram(elseIfNoElseArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 2, 0, fails
@@ -945,13 +960,13 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim elseIfElseArr(1 To 8, 1 To 5) As Variant
     Call MakeCmd(elseIfElseArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(elseIfElseArr, 2, "SET", "{elseif_first}", 0, "bad")
+    Call MakeCmd(elseIfElseArr, 2, "SET", "{elseif_first}", "", "bad")
     Call MakeCmd(elseIfElseArr, 3, "ELSE_IF", "2", "EQ", "0")
-    Call MakeCmd(elseIfElseArr, 4, "SET", "{elseif_second}", 0, "bad")
-    Call MakeCmd(elseIfElseArr, 5, "ELSE", 0, 0, "")
-    Call MakeCmd(elseIfElseArr, 6, "SET", "{elseif_else}", 0, "yes")
-    Call MakeCmd(elseIfElseArr, 7, "END_IF", 0, 0, "")
-    Call MakeCmd(elseIfElseArr, 8, "EXIT", 0, 0, "")
+    Call MakeCmd(elseIfElseArr, 4, "SET", "{elseif_second}", "", "bad")
+    Call MakeCmd(elseIfElseArr, 5, "ELSE", "", "", "")
+    Call MakeCmd(elseIfElseArr, 6, "SET", "{elseif_else}", "", "yes")
+    Call MakeCmd(elseIfElseArr, 7, "END_IF", "", "", "")
+    Call MakeCmd(elseIfElseArr, 8, "EXIT", "", "", "")
     result = RunProgram(elseIfElseArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 2, 0, fails
@@ -962,15 +977,15 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim elseIfChainArr(1 To 10, 1 To 5) As Variant
     Call MakeCmd(elseIfChainArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(elseIfChainArr, 2, "SET", "{elseif_chain_if}", 0, "bad")
+    Call MakeCmd(elseIfChainArr, 2, "SET", "{elseif_chain_if}", "", "bad")
     Call MakeCmd(elseIfChainArr, 3, "ELSE_IF", "2", "EQ", "2")
-    Call MakeCmd(elseIfChainArr, 4, "SET", "{elseif_chain_hit}", 0, "yes")
+    Call MakeCmd(elseIfChainArr, 4, "SET", "{elseif_chain_hit}", "", "yes")
     Call MakeCmd(elseIfChainArr, 5, "ELSE_IF", "3", "EQ", "3")
-    Call MakeCmd(elseIfChainArr, 6, "SET", "{elseif_chain_late}", 0, "bad")
-    Call MakeCmd(elseIfChainArr, 7, "ELSE", 0, 0, "")
-    Call MakeCmd(elseIfChainArr, 8, "SET", "{elseif_chain_else}", 0, "bad")
-    Call MakeCmd(elseIfChainArr, 9, "END_IF", 0, 0, "")
-    Call MakeCmd(elseIfChainArr, 10, "EXIT", 0, 0, "")
+    Call MakeCmd(elseIfChainArr, 6, "SET", "{elseif_chain_late}", "", "bad")
+    Call MakeCmd(elseIfChainArr, 7, "ELSE", "", "", "")
+    Call MakeCmd(elseIfChainArr, 8, "SET", "{elseif_chain_else}", "", "bad")
+    Call MakeCmd(elseIfChainArr, 9, "END_IF", "", "", "")
+    Call MakeCmd(elseIfChainArr, 10, "EXIT", "", "", "")
     result = RunProgram(elseIfChainArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 4, 1, fails
@@ -997,19 +1012,19 @@ Private Function TC_FlowHappyPaths() As Long
     ExpectVisits trace, 4, 0, fails
 
     Dim whileArr(1 To 13, 1 To 5) As Variant
-    Call MakeCmd(whileArr, 1, "SET", "{i}", 0, "0")
+    Call MakeCmd(whileArr, 1, "SET", "{i}", "", "0")
     Call MakeCmd(whileArr, 2, "WHILE", "{i}", "<", "3")
-    Call MakeCmd(whileArr, 3, "INC", "{i}", 0, "")
-    Call MakeCmd(whileArr, 4, "SELECT", "{$LOOP}", 0, "")
-    Call MakeCmd(whileArr, 5, "CASE", "1", 0, "")
-    Call MakeCmd(whileArr, 6, "SET", "{L1}", 0, "{$LOOP}")
-    Call MakeCmd(whileArr, 7, "CASE", "2", 0, "")
-    Call MakeCmd(whileArr, 8, "SET", "{L2}", 0, "{$LOOP}")
-    Call MakeCmd(whileArr, 9, "CASE", "3", 0, "")
-    Call MakeCmd(whileArr, 10, "SET", "{L3}", 0, "{$LOOP}")
-    Call MakeCmd(whileArr, 11, "END_SELECT", 0, 0, "")
-    Call MakeCmd(whileArr, 12, "END_WHILE", 0, 0, "")
-    Call MakeCmd(whileArr, 13, "EXIT", 0, 0, "")
+    Call MakeCmd(whileArr, 3, "INC", "{i}", "", "")
+    Call MakeCmd(whileArr, 4, "SELECT", "{$LOOP}", "", "")
+    Call MakeCmd(whileArr, 5, "CASE", "1", "", "")
+    Call MakeCmd(whileArr, 6, "SET", "{L1}", "", "{$LOOP}")
+    Call MakeCmd(whileArr, 7, "CASE", "2", "", "")
+    Call MakeCmd(whileArr, 8, "SET", "{L2}", "", "{$LOOP}")
+    Call MakeCmd(whileArr, 9, "CASE", "3", "", "")
+    Call MakeCmd(whileArr, 10, "SET", "{L3}", "", "{$LOOP}")
+    Call MakeCmd(whileArr, 11, "END_SELECT", "", "", "")
+    Call MakeCmd(whileArr, 12, "END_WHILE", "", "", "")
+    Call MakeCmd(whileArr, 13, "EXIT", "", "", "")
     result = RunProgram(whileArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 3, 3, fails
@@ -1021,20 +1036,20 @@ Private Function TC_FlowHappyPaths() As Long
 
     Dim zeroWhileArr(1 To 4, 1 To 5) As Variant
     Call MakeCmd(zeroWhileArr, 1, "WHILE", "1", "EQ", "0")
-    Call MakeCmd(zeroWhileArr, 2, "SET", "{body}", 0, "bad")
-    Call MakeCmd(zeroWhileArr, 3, "END_WHILE", 0, 0, "")
-    Call MakeCmd(zeroWhileArr, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(zeroWhileArr, 2, "SET", "{body}", "", "bad")
+    Call MakeCmd(zeroWhileArr, 3, "END_WHILE", "", "", "")
+    Call MakeCmd(zeroWhileArr, 4, "EXIT", "", "", "")
     result = RunProgram(zeroWhileArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 2, 0, fails
     ExpectLoopDepth 0, fails
 
     Dim repeatArr(1 To 5, 1 To 5) As Variant
-    Call MakeCmd(repeatArr, 1, "SET", "{r}", 0, "0")
-    Call MakeCmd(repeatArr, 2, "REPEAT", "3", 0, "")
-    Call MakeCmd(repeatArr, 3, "INC", "{r}", 0, "")
-    Call MakeCmd(repeatArr, 4, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(repeatArr, 5, "EXIT", 0, 0, "")
+    Call MakeCmd(repeatArr, 1, "SET", "{r}", "", "0")
+    Call MakeCmd(repeatArr, 2, "REPEAT", "3", "", "")
+    Call MakeCmd(repeatArr, 3, "INC", "{r}", "", "")
+    Call MakeCmd(repeatArr, 4, "END_REPEAT", "", "", "")
+    Call MakeCmd(repeatArr, 5, "EXIT", "", "", "")
     result = RunProgram(repeatArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 3, 3, fails
@@ -1042,15 +1057,15 @@ Private Function TC_FlowHappyPaths() As Long
     ExpectLoopDepth 0, fails
 
     Dim selectArr(1 To 9, 1 To 5) As Variant
-    Call MakeCmd(selectArr, 1, "SELECT", "B", 0, "")
-    Call MakeCmd(selectArr, 2, "CASE", "A", 0, "")
-    Call MakeCmd(selectArr, 3, "SET", "{caseA}", 0, "bad")
-    Call MakeCmd(selectArr, 4, "CASE", "B", 0, "")
-    Call MakeCmd(selectArr, 5, "SET", "{caseB}", 0, "yes")
-    Call MakeCmd(selectArr, 6, "CASE", "ELSE", 0, "")
-    Call MakeCmd(selectArr, 7, "SET", "{fallback}", 0, "yes")
-    Call MakeCmd(selectArr, 8, "END_SELECT", 0, 0, "")
-    Call MakeCmd(selectArr, 9, "EXIT", 0, 0, "")
+    Call MakeCmd(selectArr, 1, "SELECT", "B", "", "")
+    Call MakeCmd(selectArr, 2, "CASE", "A", "", "")
+    Call MakeCmd(selectArr, 3, "SET", "{caseA}", "", "bad")
+    Call MakeCmd(selectArr, 4, "CASE", "B", "", "")
+    Call MakeCmd(selectArr, 5, "SET", "{caseB}", "", "yes")
+    Call MakeCmd(selectArr, 6, "CASE", "ELSE", "", "")
+    Call MakeCmd(selectArr, 7, "SET", "{fallback}", "", "yes")
+    Call MakeCmd(selectArr, 8, "END_SELECT", "", "", "")
+    Call MakeCmd(selectArr, 9, "EXIT", "", "", "")
     result = RunProgram(selectArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 3, 0, fails
@@ -1149,15 +1164,8 @@ Private Function TC_ForeachRowExecution() As Long
 
     Debug.Print "--- [Flow 2B] FOREACH_ROW table iteration ---"
 
-    sheetName = "FOREACH_DATA_TEST"
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Worksheets(sheetName).Delete
-    On Error GoTo ErrHandler
-    Application.DisplayAlerts = True
-
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.name = sheetName
+    sheetName = ws.name
     ws.Range("A1:D1").value = Array("Code", "Rounded", "DateNarrow", "Note")
     ws.Range("A2").NumberFormat = "@"
     ws.Range("A2").value = "007"
@@ -1171,29 +1179,29 @@ Private Function TC_ForeachRowExecution() As Long
     ws.Range("A4:D4").value = Array("C", 30, DateSerial(2024, 2, 3), " break ")
 
     Dim arr(1 To 23, 1 To 5) As Variant
-    Call MakeCmd(arr, 1, "SET", "{processed}", 0, "0")
+    Call MakeCmd(arr, 1, "SET", "{processed}", "", "0")
     Call MakeCmd(arr, 2, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
     Call MakeCmd(arr, 3, "IF", "{$RIDX}", "EQ", "1")
-    Call MakeCmd(arr, 4, "SET", "{first_code}", 0, "{$ROW.Code}")
-    Call MakeCmd(arr, 5, "SET", "{first_rounded}", 0, "{$ROW.Rounded}")
-    Call MakeCmd(arr, 6, "SET", "{first_date}", 0, "{$ROW.DateNarrow}")
-    Call MakeCmd(arr, 7, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 8, "SET", "{last_code}", 0, "{$ROW.Code}|{$ROW.Note}")
-    Call MakeCmd(arr, 9, "SET", "{last_idx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 10, "SET", "{last_total}", 0, "{$RTOTAL}")
+    Call MakeCmd(arr, 4, "SET", "{first_code}", "", "{$ROW.Code}")
+    Call MakeCmd(arr, 5, "SET", "{first_rounded}", "", "{$ROW.Rounded}")
+    Call MakeCmd(arr, 6, "SET", "{first_date}", "", "{$ROW.DateNarrow}")
+    Call MakeCmd(arr, 7, "END_IF", "", "", "")
+    Call MakeCmd(arr, 8, "SET", "{last_code}", "", "{$ROW.Code}|{$ROW.Note}")
+    Call MakeCmd(arr, 9, "SET", "{last_idx}", "", "{$RIDX}")
+    Call MakeCmd(arr, 10, "SET", "{last_total}", "", "{$RTOTAL}")
     Call MakeCmd(arr, 11, "IF", "{$ROW.Code}", "EQ", "B")
-    Call MakeCmd(arr, 12, "CONTINUE", 0, 0, "")
-    Call MakeCmd(arr, 13, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 14, "INC", "{processed}", 0, "")
-    Call MakeCmd(arr, 15, "REPEAT", "2", 0, "")
-    Call MakeCmd(arr, 16, "SET", "{nested_ridx}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 17, "SET", "{nested_total}", 0, "{$RTOTAL}")
-    Call MakeCmd(arr, 18, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(arr, 12, "CONTINUE", "", "", "")
+    Call MakeCmd(arr, 13, "END_IF", "", "", "")
+    Call MakeCmd(arr, 14, "INC", "{processed}", "", "")
+    Call MakeCmd(arr, 15, "REPEAT", "2", "", "")
+    Call MakeCmd(arr, 16, "SET", "{nested_ridx}", "", "{$RIDX}")
+    Call MakeCmd(arr, 17, "SET", "{nested_total}", "", "{$RTOTAL}")
+    Call MakeCmd(arr, 18, "END_REPEAT", "", "", "")
     Call MakeCmd(arr, 19, "IF", "{$ROW.Code}", "EQ", "C")
-    Call MakeCmd(arr, 20, "BREAK", 0, 0, "")
-    Call MakeCmd(arr, 21, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 22, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(arr, 23, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 20, "BREAK", "", "", "")
+    Call MakeCmd(arr, 21, "END_IF", "", "", "")
+    Call MakeCmd(arr, 22, "END_FOREACH", "", "", "")
+    Call MakeCmd(arr, 23, "EXIT", "", "", "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
@@ -1211,16 +1219,16 @@ Private Function TC_ForeachRowExecution() As Long
     ws.Range("A1:D4").AutoFilter Field:=1, Criteria1:="<>B"
     Dim visibleArr(1 To 11, 1 To 5) As Variant
     Call MakeCmd(visibleArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE_ROWS")
-    Call MakeCmd(visibleArr, 2, "SET", "{visible_last_idx}", 0, "{$RIDX}")
-    Call MakeCmd(visibleArr, 3, "SET", "{visible_total}", 0, "{$RTOTAL}")
+    Call MakeCmd(visibleArr, 2, "SET", "{visible_last_idx}", "", "{$RIDX}")
+    Call MakeCmd(visibleArr, 3, "SET", "{visible_total}", "", "{$RTOTAL}")
     Call MakeCmd(visibleArr, 4, "IF", "{$RIDX}", "EQ", "1")
-    Call MakeCmd(visibleArr, 5, "SET", "{visible1}", 0, "{$ROW.Code}")
-    Call MakeCmd(visibleArr, 6, "END_IF", 0, 0, "")
+    Call MakeCmd(visibleArr, 5, "SET", "{visible1}", "", "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 6, "END_IF", "", "", "")
     Call MakeCmd(visibleArr, 7, "IF", "{$RIDX}", "EQ", "2")
-    Call MakeCmd(visibleArr, 8, "SET", "{visible2}", 0, "{$ROW.Code}")
-    Call MakeCmd(visibleArr, 9, "END_IF", 0, 0, "")
-    Call MakeCmd(visibleArr, 10, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(visibleArr, 11, "EXIT", 0, 0, "")
+    Call MakeCmd(visibleArr, 8, "SET", "{visible2}", "", "{$ROW.Code}")
+    Call MakeCmd(visibleArr, 9, "END_IF", "", "", "")
+    Call MakeCmd(visibleArr, 10, "END_FOREACH", "", "", "")
+    Call MakeCmd(visibleArr, 11, "EXIT", "", "", "")
     result = RunProgram(visibleArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "visible_last_idx", "2", fails
@@ -1233,12 +1241,12 @@ Private Function TC_ForeachRowExecution() As Long
     ws.Range("A1:D4").AutoFilter Field:=1, Criteria1:="<>C"
     Dim visibleTailArr(1 To 7, 1 To 5) As Variant
     Call MakeCmd(visibleTailArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "VISIBLE_ROWS")
-    Call MakeCmd(visibleTailArr, 2, "SET", "{visible_tail_last_idx}", 0, "{$RIDX}")
+    Call MakeCmd(visibleTailArr, 2, "SET", "{visible_tail_last_idx}", "", "{$RIDX}")
     Call MakeCmd(visibleTailArr, 3, "IF", "{$RIDX}", "EQ", "2")
-    Call MakeCmd(visibleTailArr, 4, "SET", "{visible_tail2}", 0, "{$ROW.Code}")
-    Call MakeCmd(visibleTailArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(visibleTailArr, 6, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(visibleTailArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(visibleTailArr, 4, "SET", "{visible_tail2}", "", "{$ROW.Code}")
+    Call MakeCmd(visibleTailArr, 5, "END_IF", "", "", "")
+    Call MakeCmd(visibleTailArr, 6, "END_FOREACH", "", "", "")
+    Call MakeCmd(visibleTailArr, 7, "EXIT", "", "", "")
     result = RunProgram(visibleTailArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "visible_tail_last_idx", "2", fails
@@ -1249,9 +1257,9 @@ Private Function TC_ForeachRowExecution() As Long
     ' [행 토큰 대칭] 오타난 컬럼은 {name}처럼 시끄럽게 실패 + 추천 (조용한 빈값 금지)
     Dim badColArr(1 To 4, 1 To 5) As Variant
     Call MakeCmd(badColArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
-    Call MakeCmd(badColArr, 2, "SET", "{bad_col}", 0, "{$ROW.Cod}")
-    Call MakeCmd(badColArr, 3, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(badColArr, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(badColArr, 2, "SET", "{bad_col}", "", "{$ROW.Cod}")
+    Call MakeCmd(badColArr, 3, "END_FOREACH", "", "", "")
+    Call MakeCmd(badColArr, 4, "EXIT", "", "", "")
     result = RunProgram(badColArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ExpectBool "bad row column errors loudly", True, _
@@ -1262,10 +1270,10 @@ Private Function TC_ForeachRowExecution() As Long
     ws.Range("A2:D4").ClearContents
     Dim emptyArr(1 To 5, 1 To 5) As Variant
     Call MakeCmd(emptyArr, 1, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
-    Call MakeCmd(emptyArr, 2, "SET", "{empty_body}", 0, "bad")
-    Call MakeCmd(emptyArr, 3, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(emptyArr, 4, "SET", "{empty_after}", 0, "yes")
-    Call MakeCmd(emptyArr, 5, "EXIT", 0, 0, "")
+    Call MakeCmd(emptyArr, 2, "SET", "{empty_body}", "", "bad")
+    Call MakeCmd(emptyArr, 3, "END_FOREACH", "", "", "")
+    Call MakeCmd(emptyArr, 4, "SET", "{empty_after}", "", "yes")
+    Call MakeCmd(emptyArr, 5, "EXIT", "", "", "")
     result = RunProgram(emptyArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "empty_body", "", fails
@@ -1284,6 +1292,34 @@ Private Function TC_ForeachRowExecution() As Long
     ExpectBool "Currency: narrow fixture needs fallback", True, Len(ws.Range("E2").text) = 0 Or Left$(ws.Range("E2").text, 1) = "#", fails
     Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!E1:E2")
     ExpectText "Currency: narrow column retains precision", "1.234567", Right$(CStr(precisionTable.GetValue(2, "Amount")), 8), fails
+
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!A1:XFD1048576")
+    ExpectLong "Full worksheet address clips to used columns", 5, precisionTable.ColCount, fails
+    ExpectText "Full worksheet address retains amount", "1.234567", Right$(CStr(precisionTable.GetValue(2, "Amount")), 8), fails
+
+    ws.Range("D1:E1").NumberFormat = "$#,##0.000000"
+    ws.Range("D1").Value2 = 1.234561
+    ws.Range("E1").Value2 = 1.234562
+    ws.Range("D2").value = "left"
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!D1:E2")
+    ExpectText "First precise header selects its column", "left", CStr(precisionTable.GetValue(2, CStr(1.234561))), fails
+    ExpectText "Second precise header selects its column", "1.234567", Right$(CStr(precisionTable.GetValue(2, CStr(1.234562))), 8), fails
+
+    Dim snapshotDriver As New clsActionTestDriver, cancelled As Long
+    snapshotDriver.Reset
+    modActions.SetUnattendedMode True
+    modActions.SetInputTestDriver snapshotDriver
+    snapshotDriver.EscapeOnPoll = 3
+    Set precisionTable = Nothing
+    On Error Resume Next
+    Set precisionTable = modTableSource.SnapshotSource(ThisWorkbook.FullName, sheetName & "!A1:E4")
+    cancelled = Err.Number
+    On Error GoTo ErrHandler
+    ExpectLong "Snapshot interrupted during scan", 18, cancelled, fails
+    ExpectBool "Cancelled snapshot never published", True, precisionTable Is Nothing, fails
+    ExpectBool "Snapshot preserves abort latch", True, modActions.AbortPending(), fails
+    modActions.SetInputTestDriver Nothing
+    modActions.ClearAbort
 
     ws.Range("A2").value = "first"
     ws.Range("A4").value = "last"
@@ -1328,11 +1364,11 @@ Private Function TC_ForeachRowExecution() As Long
 
 CleanUp:
     On Error Resume Next
+    modActions.SetInputTestDriver Nothing
+    modActions.ClearAbort
     Application.AutomationSecurity = previousSecurity
     Application.EnableEvents = previousEvents
-    Application.DisplayAlerts = False
-    If Not ws Is Nothing Then ws.Delete
-    Application.DisplayAlerts = True
+    DeleteDiagnosticSheet ws
     On Error GoTo 0
     TC_ForeachRowExecution = fails
     Exit Function
@@ -1364,15 +1400,8 @@ Private Function TC_DemoForeachJudgeDispatch() As Long
 
     Debug.Print "--- [Demo] FOREACH + CALL 판단 서브루틴 분기 ---"
 
-    sheetName = "DEMO_JUDGE_DATA"
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Worksheets(sheetName).Delete
-    On Error GoTo ErrHandler
-    Application.DisplayAlerts = True
-
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.name = sheetName
+    sheetName = ws.name
     ws.Range("A1:C1").value = Array("신청자", "금액", "상태")
     ws.Range("A2:C2").value = Array("김철수", 500000, "정상")     ' 정상+소액  -> 승인
     ws.Range("A3:C3").value = Array("이영희", 1500000, "정상")    ' 정상+고액  -> 보류
@@ -1381,24 +1410,24 @@ Private Function TC_DemoForeachJudgeDispatch() As Long
 
     '--- 스크립트 (6열 명령어 테이블) ------------------------------------------
     Dim arr(1 To 17, 1 To 5) As Variant
-    Call MakeCmd(arr, 1, "SET", "{승인}", 0, "0")
-    Call MakeCmd(arr, 2, "SET", "{보류}", 0, "0")
-    Call MakeCmd(arr, 3, "SET", "{반려}", 0, "0")
+    Call MakeCmd(arr, 1, "SET", "{승인}", "", "0")
+    Call MakeCmd(arr, 2, "SET", "{보류}", "", "0")
+    Call MakeCmd(arr, 3, "SET", "{반려}", "", "0")
     Call MakeCmd(arr, 4, "FOREACH_ROW", ThisWorkbook.FullName, sheetName, "")
-    Call MakeCmd(arr, 5, "CALL", 0, 0, "판정")
-    Call MakeCmd(arr, 6, "END_FOREACH", 0, 0, "")
-    Call MakeCmd(arr, 7, "SET", "{요약}", 0, "승인 {승인} / 보류 {보류} / 반려 {반려}")
-    Call MakeCmd(arr, 8, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 5, "CALL", "", "", "판정")
+    Call MakeCmd(arr, 6, "END_FOREACH", "", "", "")
+    Call MakeCmd(arr, 7, "SET", "{요약}", "", "승인 {승인} / 보류 {보류} / 반려 {반려}")
+    Call MakeCmd(arr, 8, "EXIT", "", "", "")
     '--- 판단 서브루틴 (루프 밖 depth-0) - {$ROW.*}는 살아있는 FOREACH 커서를 읽는다
-    Call MakeCmd(arr, 9, "LABEL", 0, 0, "판정")
+    Call MakeCmd(arr, 9, "LABEL", "", "", "판정")
     Call MakeCmd(arr, 10, "IF", "{$ROW.상태}", "EQ", "미비")
-    Call MakeCmd(arr, 11, "INC", "{반려}", 0, "")
+    Call MakeCmd(arr, 11, "INC", "{반려}", "", "")
     Call MakeCmd(arr, 12, "ELSE_IF", "{$ROW.금액}", ">", "1000000")
-    Call MakeCmd(arr, 13, "INC", "{보류}", 0, "")
-    Call MakeCmd(arr, 14, "ELSE", 0, 0, "")
-    Call MakeCmd(arr, 15, "INC", "{승인}", 0, "")
-    Call MakeCmd(arr, 16, "END_IF", 0, 0, "")
-    Call MakeCmd(arr, 17, "RETURN", 0, 0, "")
+    Call MakeCmd(arr, 13, "INC", "{보류}", "", "")
+    Call MakeCmd(arr, 14, "ELSE", "", "", "")
+    Call MakeCmd(arr, 15, "INC", "{승인}", "", "")
+    Call MakeCmd(arr, 16, "END_IF", "", "", "")
+    Call MakeCmd(arr, 17, "RETURN", "", "", "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
 
@@ -1412,9 +1441,7 @@ Private Function TC_DemoForeachJudgeDispatch() As Long
 
 CleanUp:
     On Error Resume Next
-    Application.DisplayAlerts = False
-    If Not ws Is Nothing Then ws.Delete
-    Application.DisplayAlerts = True
+    DeleteDiagnosticSheet ws
     On Error GoTo 0
     TC_DemoForeachJudgeDispatch = fails
     Exit Function
@@ -1435,13 +1462,13 @@ Private Function TC_FlowNestedInteractions() As Long
     Debug.Print "--- [Flow 3] Nested and interaction paths ---"
 
     Dim breakArr(1 To 7, 1 To 5) As Variant
-    Call MakeCmd(breakArr, 1, "SET", "{before_break}", 0, "0")
-    Call MakeCmd(breakArr, 2, "REPEAT", "5", 0, "")
-    Call MakeCmd(breakArr, 3, "INC", "{before_break}", 0, "")
-    Call MakeCmd(breakArr, 4, "BREAK", 0, 0, "")
-    Call MakeCmd(breakArr, 5, "INC", "{after_break}", 0, "")
-    Call MakeCmd(breakArr, 6, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(breakArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(breakArr, 1, "SET", "{before_break}", "", "0")
+    Call MakeCmd(breakArr, 2, "REPEAT", "5", "", "")
+    Call MakeCmd(breakArr, 3, "INC", "{before_break}", "", "")
+    Call MakeCmd(breakArr, 4, "BREAK", "", "", "")
+    Call MakeCmd(breakArr, 5, "INC", "{after_break}", "", "")
+    Call MakeCmd(breakArr, 6, "END_REPEAT", "", "", "")
+    Call MakeCmd(breakArr, 7, "EXIT", "", "", "")
     result = RunProgram(breakArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "before_break", "1", fails
@@ -1450,13 +1477,13 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectLoopDepth 0, fails
 
     Dim continueArr(1 To 7, 1 To 5) As Variant
-    Call MakeCmd(continueArr, 1, "SET", "{continue_hits}", 0, "0")
-    Call MakeCmd(continueArr, 2, "REPEAT", "3", 0, "")
-    Call MakeCmd(continueArr, 3, "INC", "{continue_hits}", 0, "")
-    Call MakeCmd(continueArr, 4, "CONTINUE", 0, 0, "")
-    Call MakeCmd(continueArr, 5, "INC", "{continue_skipped}", 0, "")
-    Call MakeCmd(continueArr, 6, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(continueArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(continueArr, 1, "SET", "{continue_hits}", "", "0")
+    Call MakeCmd(continueArr, 2, "REPEAT", "3", "", "")
+    Call MakeCmd(continueArr, 3, "INC", "{continue_hits}", "", "")
+    Call MakeCmd(continueArr, 4, "CONTINUE", "", "", "")
+    Call MakeCmd(continueArr, 5, "INC", "{continue_skipped}", "", "")
+    Call MakeCmd(continueArr, 6, "END_REPEAT", "", "", "")
+    Call MakeCmd(continueArr, 7, "EXIT", "", "", "")
     result = RunProgram(continueArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "continue_hits", "3", fails
@@ -1465,32 +1492,32 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectLoopDepth 0, fails
 
     Dim peakArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(peakArr, 1, "REPEAT", "2", 0, "")
-    Call MakeCmd(peakArr, 2, "REPEAT", "2", 0, "")
-    Call MakeCmd(peakArr, 3, "SET", "{inner_loop}", 0, "{$LOOP}")
-    Call MakeCmd(peakArr, 4, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(peakArr, 5, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(peakArr, 6, "EXIT", 0, 0, "")
+    Call MakeCmd(peakArr, 1, "REPEAT", "2", "", "")
+    Call MakeCmd(peakArr, 2, "REPEAT", "2", "", "")
+    Call MakeCmd(peakArr, 3, "SET", "{inner_loop}", "", "{$LOOP}")
+    Call MakeCmd(peakArr, 4, "END_REPEAT", "", "", "")
+    Call MakeCmd(peakArr, 5, "END_REPEAT", "", "", "")
+    Call MakeCmd(peakArr, 6, "EXIT", "", "", "")
     result = RunProgram(peakArr, 1, 3, trace, lastCode, lastLine)
     ExpectTerminal rrExhausted, result, fails
     ExpectLoopDepth 2, fails
 
     Dim nestedArr(1 To 15, 1 To 5) As Variant
-    Call MakeCmd(nestedArr, 1, "SET", "{outer1}", 0, "0")
-    Call MakeCmd(nestedArr, 2, "SET", "{outer2}", 0, "0")
-    Call MakeCmd(nestedArr, 3, "SET", "{inner_hits}", 0, "0")
-    Call MakeCmd(nestedArr, 4, "REPEAT", "2", 0, "")
-    Call MakeCmd(nestedArr, 5, "SELECT", "{$LOOP}", 0, "")
-    Call MakeCmd(nestedArr, 6, "CASE", "1", 0, "")
-    Call MakeCmd(nestedArr, 7, "INC", "{outer1}", 0, "")
-    Call MakeCmd(nestedArr, 8, "CASE", "2", 0, "")
-    Call MakeCmd(nestedArr, 9, "INC", "{outer2}", 0, "")
-    Call MakeCmd(nestedArr, 10, "END_SELECT", 0, 0, "")
-    Call MakeCmd(nestedArr, 11, "REPEAT", "2", 0, "")
-    Call MakeCmd(nestedArr, 12, "INC", "{inner_hits}", 0, "")
-    Call MakeCmd(nestedArr, 13, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(nestedArr, 14, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(nestedArr, 15, "EXIT", 0, 0, "")
+    Call MakeCmd(nestedArr, 1, "SET", "{outer1}", "", "0")
+    Call MakeCmd(nestedArr, 2, "SET", "{outer2}", "", "0")
+    Call MakeCmd(nestedArr, 3, "SET", "{inner_hits}", "", "0")
+    Call MakeCmd(nestedArr, 4, "REPEAT", "2", "", "")
+    Call MakeCmd(nestedArr, 5, "SELECT", "{$LOOP}", "", "")
+    Call MakeCmd(nestedArr, 6, "CASE", "1", "", "")
+    Call MakeCmd(nestedArr, 7, "INC", "{outer1}", "", "")
+    Call MakeCmd(nestedArr, 8, "CASE", "2", "", "")
+    Call MakeCmd(nestedArr, 9, "INC", "{outer2}", "", "")
+    Call MakeCmd(nestedArr, 10, "END_SELECT", "", "", "")
+    Call MakeCmd(nestedArr, 11, "REPEAT", "2", "", "")
+    Call MakeCmd(nestedArr, 12, "INC", "{inner_hits}", "", "")
+    Call MakeCmd(nestedArr, 13, "END_REPEAT", "", "", "")
+    Call MakeCmd(nestedArr, 14, "END_REPEAT", "", "", "")
+    Call MakeCmd(nestedArr, 15, "EXIT", "", "", "")
     result = RunProgram(nestedArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "outer1", "1", fails
@@ -1499,14 +1526,14 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectLoopDepth 0, fails
 
     Dim callLoopArr(1 To 8, 1 To 5) As Variant
-    Call MakeCmd(callLoopArr, 1, "SET", "{call_loop_hits}", 0, "0")
-    Call MakeCmd(callLoopArr, 2, "REPEAT", "2", 0, "")
-    Call MakeCmd(callLoopArr, 3, "CALL", 0, 0, "SUB")
-    Call MakeCmd(callLoopArr, 4, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(callLoopArr, 5, "EXIT", 0, 0, "")
-    Call MakeCmd(callLoopArr, 6, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(callLoopArr, 7, "INC", "{call_loop_hits}", 0, "")
-    Call MakeCmd(callLoopArr, 8, "RETURN", 0, 0, "")
+    Call MakeCmd(callLoopArr, 1, "SET", "{call_loop_hits}", "", "0")
+    Call MakeCmd(callLoopArr, 2, "REPEAT", "2", "", "")
+    Call MakeCmd(callLoopArr, 3, "CALL", "", "", "SUB")
+    Call MakeCmd(callLoopArr, 4, "END_REPEAT", "", "", "")
+    Call MakeCmd(callLoopArr, 5, "EXIT", "", "", "")
+    Call MakeCmd(callLoopArr, 6, "LABEL", "", "", "SUB")
+    Call MakeCmd(callLoopArr, 7, "INC", "{call_loop_hits}", "", "")
+    Call MakeCmd(callLoopArr, 8, "RETURN", "", "", "")
     result = RunProgram(callLoopArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "call_loop_hits", "2", fails
@@ -1514,16 +1541,16 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectLoopDepth 0, fails
 
     Dim nestedCallArr(1 To 10, 1 To 5) As Variant
-    Call MakeCmd(nestedCallArr, 1, "CALL", 0, 0, "A")
-    Call MakeCmd(nestedCallArr, 2, "SET", "{done}", 0, "yes")
-    Call MakeCmd(nestedCallArr, 3, "EXIT", 0, 0, "")
-    Call MakeCmd(nestedCallArr, 4, "LABEL", 0, 0, "A")
-    Call MakeCmd(nestedCallArr, 5, "CALL", 0, 0, "B")
-    Call MakeCmd(nestedCallArr, 6, "SET", "{after_b}", 0, "yes")
-    Call MakeCmd(nestedCallArr, 7, "RETURN", 0, 0, "")
-    Call MakeCmd(nestedCallArr, 8, "LABEL", 0, 0, "B")
-    Call MakeCmd(nestedCallArr, 9, "SET", "{in_b}", 0, "yes")
-    Call MakeCmd(nestedCallArr, 10, "RETURN", 0, 0, "")
+    Call MakeCmd(nestedCallArr, 1, "CALL", "", "", "A")
+    Call MakeCmd(nestedCallArr, 2, "SET", "{done}", "", "yes")
+    Call MakeCmd(nestedCallArr, 3, "EXIT", "", "", "")
+    Call MakeCmd(nestedCallArr, 4, "LABEL", "", "", "A")
+    Call MakeCmd(nestedCallArr, 5, "CALL", "", "", "B")
+    Call MakeCmd(nestedCallArr, 6, "SET", "{after_b}", "", "yes")
+    Call MakeCmd(nestedCallArr, 7, "RETURN", "", "", "")
+    Call MakeCmd(nestedCallArr, 8, "LABEL", "", "", "B")
+    Call MakeCmd(nestedCallArr, 9, "SET", "{in_b}", "", "yes")
+    Call MakeCmd(nestedCallArr, 10, "RETURN", "", "", "")
     result = RunProgram(nestedCallArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVar "in_b", "yes", fails
@@ -1535,14 +1562,14 @@ Private Function TC_FlowNestedInteractions() As Long
     Dim nestedElseIfArr(1 To 10, 1 To 5) As Variant
     Call MakeCmd(nestedElseIfArr, 1, "IF", "outer", "EQ", "outer")
     Call MakeCmd(nestedElseIfArr, 2, "IF", "inner", "EQ", "miss")
-    Call MakeCmd(nestedElseIfArr, 3, "SET", "{nested_inner_if}", 0, "bad")
+    Call MakeCmd(nestedElseIfArr, 3, "SET", "{nested_inner_if}", "", "bad")
     Call MakeCmd(nestedElseIfArr, 4, "ELSE_IF", "inner", "EQ", "inner")
-    Call MakeCmd(nestedElseIfArr, 5, "SET", "{nested_inner_hit}", 0, "yes")
-    Call MakeCmd(nestedElseIfArr, 6, "END_IF", 0, 0, "")
+    Call MakeCmd(nestedElseIfArr, 5, "SET", "{nested_inner_hit}", "", "yes")
+    Call MakeCmd(nestedElseIfArr, 6, "END_IF", "", "", "")
     Call MakeCmd(nestedElseIfArr, 7, "ELSE_IF", "outer2", "EQ", "outer2")
-    Call MakeCmd(nestedElseIfArr, 8, "SET", "{nested_outer_late}", 0, "bad")
-    Call MakeCmd(nestedElseIfArr, 9, "END_IF", 0, 0, "")
-    Call MakeCmd(nestedElseIfArr, 10, "EXIT", 0, 0, "")
+    Call MakeCmd(nestedElseIfArr, 8, "SET", "{nested_outer_late}", "", "bad")
+    Call MakeCmd(nestedElseIfArr, 9, "END_IF", "", "", "")
+    Call MakeCmd(nestedElseIfArr, 10, "EXIT", "", "", "")
     result = RunProgram(nestedElseIfArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 5, 1, fails
@@ -1567,25 +1594,25 @@ Private Function TC_FlowNestedInteractions() As Long
 
     Dim gotoIfArr(1 To 7, 1 To 5) As Variant
     Call MakeCmd(gotoIfArr, 1, "IF", "1", "EQ", "1")
-    Call MakeCmd(gotoIfArr, 2, "GOTO", 0, 0, "OUT_IF")
+    Call MakeCmd(gotoIfArr, 2, "GOTO", "", "", "OUT_IF")
     Call MakeCmd(gotoIfArr, 3, "ELSE_IF", "1", "EQ", "1")
-    Call MakeCmd(gotoIfArr, 4, "SET", "{goto_if_bad}", 0, "bad")
-    Call MakeCmd(gotoIfArr, 5, "END_IF", 0, 0, "")
-    Call MakeCmd(gotoIfArr, 6, "LABEL", 0, 0, "OUT_IF")
-    Call MakeCmd(gotoIfArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(gotoIfArr, 4, "SET", "{goto_if_bad}", "", "bad")
+    Call MakeCmd(gotoIfArr, 5, "END_IF", "", "", "")
+    Call MakeCmd(gotoIfArr, 6, "LABEL", "", "", "OUT_IF")
+    Call MakeCmd(gotoIfArr, 7, "EXIT", "", "", "")
     result = RunProgram(gotoIfArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 4, 0, fails
     ExpectIfBranchDepth 0, fails
 
     Dim breakIfArr(1 To 7, 1 To 5) As Variant
-    Call MakeCmd(breakIfArr, 1, "REPEAT", "3", 0, "")
+    Call MakeCmd(breakIfArr, 1, "REPEAT", "3", "", "")
     Call MakeCmd(breakIfArr, 2, "IF", "1", "EQ", "1")
-    Call MakeCmd(breakIfArr, 3, "BREAK", 0, 0, "")
-    Call MakeCmd(breakIfArr, 4, "END_IF", 0, 0, "")
-    Call MakeCmd(breakIfArr, 5, "INC", "{break_if_bad}", 0, "")
-    Call MakeCmd(breakIfArr, 6, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(breakIfArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(breakIfArr, 3, "BREAK", "", "", "")
+    Call MakeCmd(breakIfArr, 4, "END_IF", "", "", "")
+    Call MakeCmd(breakIfArr, 5, "INC", "{break_if_bad}", "", "")
+    Call MakeCmd(breakIfArr, 6, "END_REPEAT", "", "", "")
+    Call MakeCmd(breakIfArr, 7, "EXIT", "", "", "")
     result = RunProgram(breakIfArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 5, 0, fails
@@ -1593,13 +1620,13 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectIfBranchDepth 0, fails
 
     Dim continueIfArr(1 To 7, 1 To 5) As Variant
-    Call MakeCmd(continueIfArr, 1, "REPEAT", "1", 0, "")
+    Call MakeCmd(continueIfArr, 1, "REPEAT", "1", "", "")
     Call MakeCmd(continueIfArr, 2, "IF", "1", "EQ", "1")
-    Call MakeCmd(continueIfArr, 3, "CONTINUE", 0, 0, "")
-    Call MakeCmd(continueIfArr, 4, "END_IF", 0, 0, "")
-    Call MakeCmd(continueIfArr, 5, "INC", "{continue_if_bad}", 0, "")
-    Call MakeCmd(continueIfArr, 6, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(continueIfArr, 7, "EXIT", 0, 0, "")
+    Call MakeCmd(continueIfArr, 3, "CONTINUE", "", "", "")
+    Call MakeCmd(continueIfArr, 4, "END_IF", "", "", "")
+    Call MakeCmd(continueIfArr, 5, "INC", "{continue_if_bad}", "", "")
+    Call MakeCmd(continueIfArr, 6, "END_REPEAT", "", "", "")
+    Call MakeCmd(continueIfArr, 7, "EXIT", "", "", "")
     result = RunProgram(continueIfArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 5, 0, fails
@@ -1607,14 +1634,14 @@ Private Function TC_FlowNestedInteractions() As Long
     ExpectIfBranchDepth 0, fails
 
     Dim returnIfArr(1 To 8, 1 To 5) As Variant
-    Call MakeCmd(returnIfArr, 1, "CALL", 0, 0, "SUB_IF")
-    Call MakeCmd(returnIfArr, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(returnIfArr, 3, "LABEL", 0, 0, "SUB_IF")
+    Call MakeCmd(returnIfArr, 1, "CALL", "", "", "SUB_IF")
+    Call MakeCmd(returnIfArr, 2, "EXIT", "", "", "")
+    Call MakeCmd(returnIfArr, 3, "LABEL", "", "", "SUB_IF")
     Call MakeCmd(returnIfArr, 4, "IF", "1", "EQ", "1")
-    Call MakeCmd(returnIfArr, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(returnIfArr, 5, "RETURN", "", "", "")
     Call MakeCmd(returnIfArr, 6, "ELSE_IF", "1", "EQ", "1")
-    Call MakeCmd(returnIfArr, 7, "SET", "{return_if_bad}", 0, "bad")
-    Call MakeCmd(returnIfArr, 8, "END_IF", 0, 0, "")
+    Call MakeCmd(returnIfArr, 7, "SET", "{return_if_bad}", "", "bad")
+    Call MakeCmd(returnIfArr, 8, "END_IF", "", "", "")
     result = RunProgram(returnIfArr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectVisits trace, 7, 0, fails
@@ -1739,104 +1766,104 @@ Private Function TC_FlowNegativePaths() As Long
     Debug.Print "--- [Flow 4] Negative paths ---"
 
     Dim arr1(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr1, 1, "GOTO", 0, 0, "MISSING")
+    Call MakeCmd(arr1, 1, "GOTO", "", "", "MISSING")
     result = RunProgram(arr1, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr2(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr2, 1, "CALL", 0, 0, "MISSING")
+    Call MakeCmd(arr2, 1, "CALL", "", "", "MISSING")
     result = RunProgram(arr2, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ' [B1] 엔진 헬퍼(ResolveCallTarget) 실패 사유가 LastRuntimeError로 전달
     ExpectBool "CALL missing label reason", True, (InStr(1, modEngine.LastRuntimeError(), "CALL", vbTextCompare) > 0), fails
 
     Dim arr3(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr3, 1, "RETURN", 0, 0, "")
+    Call MakeCmd(arr3, 1, "RETURN", "", "", "")
     result = RunProgram(arr3, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr4(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr4, 1, "BREAK", 0, 0, "")
+    Call MakeCmd(arr4, 1, "BREAK", "", "", "")
     result = RunProgram(arr4, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ' [B1] 핸들러 논리 실패 사유가 modContext.SetLastError 경유로 합류
     ExpectBool "BREAK no-loop reason", True, (InStr(1, modEngine.LastRuntimeError(), "활성 루프", vbTextCompare) > 0), fails
 
     Dim arr5(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr5, 1, "CONTINUE", 0, 0, "")
+    Call MakeCmd(arr5, 1, "CONTINUE", "", "", "")
     result = RunProgram(arr5, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr6(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr6, 1, "SELECT", "A", 0, "")
+    Call MakeCmd(arr6, 1, "SELECT", "A", "", "")
     result = RunProgram(arr6, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr7(1 To 2, 1 To 5) As Variant
     Call MakeCmd(arr7, 1, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(arr7, 2, "END_WHILE", 0, 0, "")
+    Call MakeCmd(arr7, 2, "END_WHILE", "", "", "")
     result = RunProgram(arr7, 1, 5, trace, lastCode, lastLine)
     ExpectTerminal rrExhausted, result, fails
     ExpectVisits trace, 1, 3, fails
 
     Dim arr8(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr8, 1, "SET", "{$LOOP}", 0, "bad")
+    Call MakeCmd(arr8, 1, "SET", "{$LOOP}", "", "bad")
     result = RunProgram(arr8, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ' [B1] MEMORY 핸들러 lvalue 거부 사유 전달
     ExpectBool "SET readonly lvalue reason", True, (InStr(1, modEngine.LastRuntimeError(), "쓰기 가능", vbTextCompare) > 0), fails
 
     Dim arr9(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr9, 1, "SET", "LOOP", 0, "bad")
+    Call MakeCmd(arr9, 1, "SET", "LOOP", "", "bad")
     result = RunProgram(arr9, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr10(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr10, 1, "GOTO", 0, 0, "1")
+    Call MakeCmd(arr10, 1, "GOTO", "", "", "1")
     result = RunProgram(arr10, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr11(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr11, 1, "GOTO", 0, 0, "{target}")
+    Call MakeCmd(arr11, 1, "GOTO", "", "", "{target}")
     result = RunProgram(arr11, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr12(1 To 5, 1 To 5) As Variant
-    Call MakeCmd(arr12, 1, "GOTO", 0, 0, "INSIDE")
-    Call MakeCmd(arr12, 2, "REPEAT", "1", 0, "")
-    Call MakeCmd(arr12, 3, "LABEL", 0, 0, "INSIDE")
-    Call MakeCmd(arr12, 4, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(arr12, 5, "EXIT", 0, 0, "")
+    Call MakeCmd(arr12, 1, "GOTO", "", "", "INSIDE")
+    Call MakeCmd(arr12, 2, "REPEAT", "1", "", "")
+    Call MakeCmd(arr12, 3, "LABEL", "", "", "INSIDE")
+    Call MakeCmd(arr12, 4, "END_REPEAT", "", "", "")
+    Call MakeCmd(arr12, 5, "EXIT", "", "", "")
     result = RunProgram(arr12, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr13(1 To 8, 1 To 5) As Variant
-    Call MakeCmd(arr13, 1, "CALL", 0, 0, "SUB")
-    Call MakeCmd(arr13, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(arr13, 3, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(arr13, 4, "GOTO", 0, 0, "OUTSIDE")
-    Call MakeCmd(arr13, 5, "RETURN", 0, 0, "")
-    Call MakeCmd(arr13, 6, "LABEL", 0, 0, "OUTSIDE")
-    Call MakeCmd(arr13, 7, "SET", "{bad_sub_goto}", 0, "bad")
-    Call MakeCmd(arr13, 8, "EXIT", 0, 0, "")
+    Call MakeCmd(arr13, 1, "CALL", "", "", "SUB")
+    Call MakeCmd(arr13, 2, "EXIT", "", "", "")
+    Call MakeCmd(arr13, 3, "LABEL", "", "", "SUB")
+    Call MakeCmd(arr13, 4, "GOTO", "", "", "OUTSIDE")
+    Call MakeCmd(arr13, 5, "RETURN", "", "", "")
+    Call MakeCmd(arr13, 6, "LABEL", "", "", "OUTSIDE")
+    Call MakeCmd(arr13, 7, "SET", "{bad_sub_goto}", "", "bad")
+    Call MakeCmd(arr13, 8, "EXIT", "", "", "")
     result = RunProgram(arr13, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr14(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr14, 1, "SET", "{out}", 0, "{missing}")
+    Call MakeCmd(arr14, 1, "SET", "{out}", "", "{missing}")
     result = RunProgram(arr14, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     Dim arr15(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(arr15, 1, "INC", "{n}", 0, "")
+    Call MakeCmd(arr15, 1, "INC", "{n}", "", "")
     result = RunProgram(arr15, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ' [B1] 핸들러 예외(ErrHandler) 경로의 사유 전달 (구 이중 알림 제거 회귀 가드)
     ExpectBool "INC undefined var reason", True, (InStr(1, modEngine.LastRuntimeError(), "Undefined variable", vbTextCompare) > 0), fails
 
     Dim arr16(1 To 2, 1 To 5) As Variant
-    Call MakeCmd(arr16, 1, "SET", "{score}", 0, "1")
-    Call MakeCmd(arr16, 2, "SET", "{out}", 0, "{scroe}")
+    Call MakeCmd(arr16, 1, "SET", "{score}", "", "1")
+    Call MakeCmd(arr16, 2, "SET", "{out}", "", "{scroe}")
     result = RunProgram(arr16, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ExpectBool "Undefined var suggestion", True, (InStr(1, modEngine.LastRuntimeError(), "{score}", vbTextCompare) > 0), fails
@@ -1851,30 +1878,30 @@ Private Function TC_FlowNegativePaths() As Long
     ' [#2] GOTO/CALL P3 RAW 계약: 변수에 담긴 라벨명은 런타임에 치환되지 않음
     ' (구 RESOLVE면 {jt}->DEST로 점프해 rrHalted, RAW면 토큰 거부로 rrErrored)
     Dim arr18(1 To 4, 1 To 5) As Variant
-    Call MakeCmd(arr18, 1, "SET", "{jt}", 0, "DEST")
-    Call MakeCmd(arr18, 2, "GOTO", 0, 0, "{jt}")
-    Call MakeCmd(arr18, 3, "LABEL", 0, 0, "DEST")
-    Call MakeCmd(arr18, 4, "EXIT", 0, 0, "")
+    Call MakeCmd(arr18, 1, "SET", "{jt}", "", "DEST")
+    Call MakeCmd(arr18, 2, "GOTO", "", "", "{jt}")
+    Call MakeCmd(arr18, 3, "LABEL", "", "", "DEST")
+    Call MakeCmd(arr18, 4, "EXIT", "", "", "")
     result = RunProgram(arr18, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
 
     ' 정적 라벨 GOTO는 정상 점프 (회귀 가드)
     Dim arr19(1 To 3, 1 To 5) As Variant
-    Call MakeCmd(arr19, 1, "GOTO", 0, 0, "DEST")
-    Call MakeCmd(arr19, 2, "LABEL", 0, 0, "DEST")
-    Call MakeCmd(arr19, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(arr19, 1, "GOTO", "", "", "DEST")
+    Call MakeCmd(arr19, 2, "LABEL", "", "", "DEST")
+    Call MakeCmd(arr19, 3, "EXIT", "", "", "")
     result = RunProgram(arr19, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
 
     ' [CALL 경계] 루프 본문 내부 LABEL을 밖에서 CALL -> 런타임 차단 (2026-07-10 버그)
     ' (구현 전에는 END_WHILE 무조건 백점프로 원인에서 먼 곳에서 터지거나 무한루프)
     Dim arr20(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(arr20, 1, "CALL", 0, 0, "INSIDE")
-    Call MakeCmd(arr20, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(arr20, 1, "CALL", "", "", "INSIDE")
+    Call MakeCmd(arr20, 2, "EXIT", "", "", "")
     Call MakeCmd(arr20, 3, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(arr20, 4, "LABEL", 0, 0, "INSIDE")
-    Call MakeCmd(arr20, 5, "RETURN", 0, 0, "")
-    Call MakeCmd(arr20, 6, "END_WHILE", 0, 0, "")
+    Call MakeCmd(arr20, 4, "LABEL", "", "", "INSIDE")
+    Call MakeCmd(arr20, 5, "RETURN", "", "", "")
+    Call MakeCmd(arr20, 6, "END_WHILE", "", "", "")
     result = RunProgram(arr20, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ExpectVisits trace, 1, 1, fails   ' CALL 지점에서 즉시 차단 (본문 진입 없음)
@@ -1882,15 +1909,25 @@ Private Function TC_FlowNegativePaths() As Long
 
     ' CALL의 sub-area 교차는 런타임에서도 허용 유지 (루프 안 -> 밖 서브루틴)
     Dim arr21(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(arr21, 1, "REPEAT", "1", 0, "")
-    Call MakeCmd(arr21, 2, "CALL", 0, 0, "SUB")
-    Call MakeCmd(arr21, 3, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(arr21, 4, "EXIT", 0, 0, "")
-    Call MakeCmd(arr21, 5, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(arr21, 6, "RETURN", 0, 0, "")
+    Call MakeCmd(arr21, 1, "REPEAT", "1", "", "")
+    Call MakeCmd(arr21, 2, "CALL", "", "", "SUB")
+    Call MakeCmd(arr21, 3, "END_REPEAT", "", "", "")
+    Call MakeCmd(arr21, 4, "EXIT", "", "", "")
+    Call MakeCmd(arr21, 5, "LABEL", "", "", "SUB")
+    Call MakeCmd(arr21, 6, "RETURN", "", "", "")
     result = RunProgram(arr21, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
 
+    Dim badRepeat As Variant, repeatCountArr(1 To 3, 1 To 5) As Variant
+    MakeCmd repeatCountArr, 2, "SET", "{body}", "", "entered"
+    MakeCmd repeatCountArr, 3, "END_REPEAT", "", "", ""
+    For Each badRepeat In Array("-1", "-0.1", "0.1")
+        MakeCmd repeatCountArr, 1, "REPEAT", CStr(badRepeat), "", ""
+        result = RunProgram(repeatCountArr, 1, 4, trace, lastCode, lastLine)
+        ExpectTerminal rrErrored, result, fails
+        ExpectLong "Invalid REPEAT stops on header", 1, lastLine, fails
+        ExpectLoopDepth 0, fails
+    Next badRepeat
     TC_FlowNegativePaths = fails
 End Function
 
@@ -1904,28 +1941,28 @@ Private Function TC_MemoryResolverHeadless() As Long
     Dim pxExpected As String
 
     Debug.Print "--- [Flow 5] Memory and resolver ---"
-    Call MakeCmd(arr, 1, "SET", "{a}", 0, "hello")
-    Call MakeCmd(arr, 2, "SET", "{b}", 0, "{a}_world")
-    Call MakeCmd(arr, 3, "SET", "{a}", 0, "overwritten")
-    Call MakeCmd(arr, 4, "SET", "{a}", 0, "{$BLANK}")
-    Call MakeCmd(arr, 5, "SET", "{empty_copy}", 0, "{a}")
-    Call MakeCmd(arr, 6, "SET", "{cr}", 0, "A{$CR}B")
-    Call MakeCmd(arr, 7, "SET", "{lf}", 0, "A{$LF}B")
-    Call MakeCmd(arr, 8, "SET", "{sp}", 0, "A{$SPACE}B")
-    Call MakeCmd(arr, 9, "SET", "{unknown}", 0, "{$XXX}")
-    Call MakeCmd(arr, 10, "SET", "{ridx_out}", 0, "{$RIDX}")
-    Call MakeCmd(arr, 11, "SET", "{rtotal_out}", 0, "{$RTOTAL}")
-    Call MakeCmd(arr, 12, "SET", "{row_out}", 0, "{$ROW.Code}")
-    Call MakeCmd(arr, 13, "SET", "{open}", 0, "A{broken")
-    Call MakeCmd(arr, 14, "SET", "{x}", 0, "300")
-    Call MakeCmd(arr, 15, "SET", "{y}", 0, "300")
-    Call MakeCmd(arr, 16, "SET", "{px}", 0, "{$PIXEL:{x},{y}}")
-    Call MakeCmd(arr, 17, "SET", "{delta}", 0, "-2")
-    Call MakeCmd(arr, 18, "SET", "{n}", 0, "0")
-    Call MakeCmd(arr, 19, "INC", "{n}", 0, "")
-    Call MakeCmd(arr, 20, "INC", "{n}", 0, "{delta}")
-    Call MakeCmd(arr, 21, "DEC", "{n}", 0, "-3")
-    Call MakeCmd(arr, 22, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 1, "SET", "{a}", "", "hello")
+    Call MakeCmd(arr, 2, "SET", "{b}", "", "{a}_world")
+    Call MakeCmd(arr, 3, "SET", "{a}", "", "overwritten")
+    Call MakeCmd(arr, 4, "SET", "{a}", "", "{$BLANK}")
+    Call MakeCmd(arr, 5, "SET", "{empty_copy}", "", "{a}")
+    Call MakeCmd(arr, 6, "SET", "{cr}", "", "A{$CR}B")
+    Call MakeCmd(arr, 7, "SET", "{lf}", "", "A{$LF}B")
+    Call MakeCmd(arr, 8, "SET", "{sp}", "", "A{$SPACE}B")
+    Call MakeCmd(arr, 9, "SET", "{unknown}", "", "{$XXX}")
+    Call MakeCmd(arr, 10, "SET", "{ridx_out}", "", "{$RIDX}")
+    Call MakeCmd(arr, 11, "SET", "{rtotal_out}", "", "{$RTOTAL}")
+    Call MakeCmd(arr, 12, "SET", "{row_out}", "", "{$ROW.Code}")
+    Call MakeCmd(arr, 13, "SET", "{open}", "", "A{broken")
+    Call MakeCmd(arr, 14, "SET", "{x}", "", "300")
+    Call MakeCmd(arr, 15, "SET", "{y}", "", "300")
+    Call MakeCmd(arr, 16, "SET", "{px}", "", "{$PIXEL:{x},{y}}")
+    Call MakeCmd(arr, 17, "SET", "{delta}", "", "-2")
+    Call MakeCmd(arr, 18, "SET", "{n}", "", "0")
+    Call MakeCmd(arr, 19, "INC", "{n}", "", "")
+    Call MakeCmd(arr, 20, "INC", "{n}", "", "{delta}")
+    Call MakeCmd(arr, 21, "DEC", "{n}", "", "-3")
+    Call MakeCmd(arr, 22, "EXIT", "", "", "")
 
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     pxExpected = modWinAPI.GetColorHexAt(300, 300)
@@ -1955,6 +1992,26 @@ Private Function TC_MemoryResolverHeadless() As Long
         ExpectLong "Pixel token rejects " & invalidPixel, CMD_ERROR, ExecuteArrayLine(badPixelArr, 1), fails
     Next invalidPixel
     ExpectBool "Pixel token failure never stores a color", False, modContext.HasVar("invalid_pixel"), fails
+
+    Dim counterValue As Variant, counterArr(1 To 3, 1 To 5) As Variant
+    MakeCmd counterArr, 2, "DEC", "{counter}", "", "1"
+    MakeCmd counterArr, 3, "EXIT", "", "", ""
+    For Each counterValue In Array("2147483648", "-2147483649")
+        MakeCmd counterArr, 1, "SET", "{counter}", "", CStr(counterValue)
+        result = RunProgram(counterArr, 1, 0, trace, lastCode, lastLine)
+        ExpectTerminal rrErrored, result, fails
+        ExpectLong "Counter overflow stops at DEC", 2, lastLine, fails
+        ExpectVar "counter", CStr(counterValue), fails
+        ExpectBool "Counter overflow reason", True, InStr(modEngine.LastRuntimeError(), "out of range") > 0, fails
+    Next counterValue
+    MakeCmd counterArr, 1, "SET", "{counter}", "", "2147483647"
+    result = RunProgram(counterArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "counter", "2147483646", fails
+    MakeCmd counterArr, 1, "SET", "{counter}", "", "text"
+    result = RunProgram(counterArr, 1, 0, trace, lastCode, lastLine)
+    ExpectTerminal rrHalted, result, fails
+    ExpectVar "counter", "-1", fails
 
     TC_MemoryResolverHeadless = fails
 End Function
@@ -2000,18 +2057,18 @@ Private Function TC_ParamGuardRuntime() As Long
     modContext.InitContext
 
     ' 필수 누락: SET P3(값) 원문 공백 -> 게이트 차단
-    Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "")
+    Call MakeCmd(arrCmd, 1, "SET", "{pg}", "", "")
     code = ExecuteArrayLine(arrCmd, 1)
     ExpectLong "Guard: SET empty P3", CMD_ERROR, code, fails
     ExpectBool "Guard: required reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "필수값 누락", vbTextCompare) > 0), fails
 
     ' 의도된 빈 값: {$BLANK}는 원문이 비어있지 않으므로 통과 (회귀 가드)
-    Call MakeCmd(arrCmd, 1, "SET", "{pg}", 0, "{$BLANK}")
+    Call MakeCmd(arrCmd, 1, "SET", "{pg}", "", "{$BLANK}")
     code = ExecuteArrayLine(arrCmd, 1)
     ExpectLong "Guard: SET {$BLANK} passes", CMD_NEXT_LINE, code, fails
     ExpectVar "pg", "", fails
 
-    Call MakeCmd(arrCmd, 1, "SET", "{ }", 0, "value")
+    Call MakeCmd(arrCmd, 1, "SET", "{ }", "", "value")
     ExpectLong "Guard: empty memory lvalue", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
     ExpectBool "Guard: empty memory not created", False, modContext.HasVar(""), fails
 
@@ -2025,14 +2082,14 @@ Private Function TC_ParamGuardRuntime() As Long
     ExpectBool "Guard: malformed variable never created", False, modContext.HasVar("a}{b"), fails
 
     ' 필수 숫자 슬롯: SLEEP P3 비숫자 차단 / 숫자 통과
-    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "abc")
+    Call MakeCmd(arrCmd, 1, "SLEEP", "", "", "abc")
     ExpectLong "Guard: SLEEP non-numeric P3", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
     ExpectBool "Guard: numeric reason kept", True, (InStr(1, modEngine.LastRuntimeError(), "숫자 아님", vbTextCompare) > 0), fails
-    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "10")
+    Call MakeCmd(arrCmd, 1, "SLEEP", "", "", "10")
     ExpectLong "Guard: SLEEP numeric P3", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
 
     ' 엄격 파서 회귀: "1,000"은 IsNumeric 통과+Val=1로 1ms 오동작하던 입력 -> 게이트 차단
-    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "1,000")
+    Call MakeCmd(arrCmd, 1, "SLEEP", "", "", "1,000")
     ExpectLong "Guard: SLEEP comma blocked", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
 
     ' 좌표 슬롯: CLICK P1 비숫자 / P2 공백 -> 핸들러 진입 전 차단 (마우스 미동작)
@@ -2042,26 +2099,26 @@ Private Function TC_ParamGuardRuntime() As Long
     ExpectLong "Guard: CLICK empty P2", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
 
     ' 선택 숫자 슬롯: INC 빈 P3 허용(기본 1) / 비숫자 P3 차단
-    Call MakeCmd(arrCmd, 1, "SET", "{pgn}", 0, "1")
+    Call MakeCmd(arrCmd, 1, "SET", "{pgn}", "", "1")
     ExpectLong "Guard: SET pgn=1", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
-    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", 0, "")
+    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", "", "")
     ExpectLong "Guard: INC empty P3 allowed", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
     ExpectVar "pgn", "2", fails
-    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", 0, "xyz")
+    Call MakeCmd(arrCmd, 1, "INC", "{pgn}", "", "xyz")
     ExpectLong "Guard: INC non-numeric P3", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
 
     ' 토큰 해석 후 숫자 판정: {n}이 숫자면 통과, 비숫자면 차단
-    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", 0, "250")
+    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", "", "250")
     ExpectLong "Guard: SET pgv=250", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
-    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "{pgv}")
+    Call MakeCmd(arrCmd, 1, "SLEEP", "", "", "{pgv}")
     ExpectLong "Guard: SLEEP {token} numeric", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
-    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", 0, "not_a_number")
+    Call MakeCmd(arrCmd, 1, "SET", "{pgv}", "", "not_a_number")
     ExpectLong "Guard: SET pgv=text", CMD_NEXT_LINE, ExecuteArrayLine(arrCmd, 1), fails
-    Call MakeCmd(arrCmd, 1, "SLEEP", 0, 0, "{pgv}")
+    Call MakeCmd(arrCmd, 1, "SLEEP", "", "", "{pgv}")
     ExpectLong "Guard: SLEEP {token} non-numeric", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
 
     ' [#3] 잘못된 키 이름은 VK 0으로 조용히 발사되지 않고 명시 오류 (발사 전 raise)
-    Call MakeCmd(arrCmd, 1, "KEY", "NOT_A_KEY", 0, "")
+    Call MakeCmd(arrCmd, 1, "KEY", "NOT_A_KEY", "", "")
     ExpectLong "Guard: KEY unknown name errors", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
     Call MakeCmd(arrCmd, 1, "COMBO", "CTRL", "NOT_A_KEY", "")
     ExpectLong "Guard: COMBO unknown key errors", CMD_ERROR, ExecuteArrayLine(arrCmd, 1), fails
@@ -2073,8 +2130,8 @@ Private Function TC_ParamGuardRuntime() As Long
     Dim lastLine As Long
     Dim result As eRunResult
     Call MakeCmd(arr3, 1, "IF", "1", "", "1")
-    Call MakeCmd(arr3, 2, "END_IF", 0, 0, "")
-    Call MakeCmd(arr3, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(arr3, 2, "END_IF", "", "", "")
+    Call MakeCmd(arr3, 3, "EXIT", "", "", "")
     result = RunProgram(arr3, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrErrored, result, fails
     ExpectLong "Guard: IF empty operator line", 1, lastLine, fails
@@ -2156,16 +2213,18 @@ Private Function TC_AbortLatch() As Long
     code = ExecuteArrayLine(arr, 1)
     ExpectLong "Combo: bad key rejected", CMD_ERROR, code, fails
     ExpectText "Combo: validate both keys before Down", "", driver.KeyEvents, fails
-    Dim inputCmd As Variant
+    Dim inputCmd As Variant, invalidKey As Variant
     For Each inputCmd In Array("KEY", "COMBO")
-        driver.Reset
-        If inputCmd = "KEY" Then
-            MakeCmd arr, 1, "KEY", ".", "", ""
-        Else
-            MakeCmd arr, 1, "COMBO", "CTRL", ".", ""
-        End If
-        ExpectLong "Punctuation rejected by " & inputCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
-        ExpectText "Punctuation never sends keys", "", driver.KeyEvents, fails
+        For Each invalidKey In Array(".", "45.6", "1E2", "&H2E", "0", "255")
+            driver.Reset
+            If inputCmd = "KEY" Then
+                MakeCmd arr, 1, "KEY", CStr(invalidKey), "", ""
+            Else
+                MakeCmd arr, 1, "COMBO", "CTRL", CStr(invalidKey), ""
+            End If
+            ExpectLong inputCmd & " rejects " & invalidKey, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+            ExpectText "Invalid key never sends Down", "", driver.KeyEvents, fails
+        Next invalidKey
     Next inputCmd
     driver.Reset
     MakeCmd arr, 1, "KEY", "46", "", ""
@@ -2199,6 +2258,41 @@ Private Function TC_AbortLatch() As Long
     ExpectBool "Clock: negative interval", True, modWinAPI.ElapsedMilliseconds(-200, -100) = 100, fails
     ExpectBool "Clock: positive interval", True, modWinAPI.ElapsedMilliseconds(100, 175) = 75, fails
 
+    Dim pauseCmd As Variant, pauseColor As String
+    For Each pauseCmd In Array("WAIT_APPEAR", "WAIT_VANISH", "CLICK_SYNC")
+        driver.Reset
+        driver.PauseAtTick = 50
+        driver.ChangePixelOnRead = 3
+        pauseColor = "000000"
+        If pauseCmd = "WAIT_VANISH" Then pauseColor = "FFFFFF"
+        If pauseCmd = "CLICK_SYNC" Then
+            driver.PauseAtTick = 350
+            driver.ChangePixelOnRead = 4
+            pauseColor = ""
+        End If
+        driver.ResumeAtTick = driver.PauseAtTick + 60000
+        MakeCmd arr, 1, CStr(pauseCmd), "0", "0", pauseColor
+        ExpectLong "Vision resumes after long Pause: " & pauseCmd, CMD_NEXT_LINE, ExecuteArrayLine(arr, 1), fails
+        ExpectBool "Vision exercised 60s virtual Pause: " & pauseCmd, True, driver.TickMilliseconds >= 60000, fails
+
+        driver.Reset
+        ExpectLong "Vision still times out without a change: " & pauseCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectBool "Vision timeout keeps 30s budget: " & pauseCmd, True, _
+            driver.TickMilliseconds > 30000 And driver.TickMilliseconds < 31000, fails
+    Next pauseCmd
+    driver.Reset
+    driver.PauseAtTick = 50: driver.ResumeAtTick = 60050
+    driver.AbortOnSleep = 2
+    MakeCmd arr, 1, "WAIT_APPEAR", "0", "0", "000000"
+    ExpectLong "Vision abort during Pause returns", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    ExpectBool "Vision Pause preserves abort latch", True, modActions.AbortPending(), fails
+    ExpectBool "Vision Pause abort does not await resume", True, driver.TickMilliseconds < driver.ResumeAtTick, fails
+
+    driver.Reset
+    MakeCmd arr, 1, "TYPE", "2147483648", "", "A"
+    ExpectLong "Type rejects delay overflow", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    ExpectText "Type overflow never sends keys", "", driver.KeyEvents, fails
+
     driver.Reset
     MakeCmd arr, 1, "FOCUS", "", "", "test window"
     driver.FocusResult = 0
@@ -2225,13 +2319,34 @@ Private Function TC_AbortLatch() As Long
         ExpectLong "Move failure stops " & mouseCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
         ExpectBool "Move failure reason", True, InStr(modEngine.LastRuntimeError(), "SetCursorPos failed") > 0, fails
         ExpectText "Move failure sends no button events", "", driver.MouseEvents, fails
+        If mouseCmd <> "MOVE" Then
+            driver.Reset
+            driver.CursorShiftX = 1
+            ExpectLong "Cursor drift stops " & mouseCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+            ExpectText "Cursor drift sends no Down", "", driver.MouseEvents, fails
+        End If
     Next mouseCmd
+
+    Dim badWait As Variant
+    For Each badWait In Array("-1", "2147483648")
+        driver.Reset
+        MakeCmd arr, 1, "CLICK", "10", "20", CStr(badWait)
+        ExpectLong "Invalid post-action delay", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+        ExpectLong "Invalid delay stops before movement", 0, driver.MoveCalls, fails
+        ExpectText "Invalid delay sends no click", "", driver.MouseEvents, fails
+    Next badWait
+
+    driver.Reset
+    MakeCmd arr, 1, "KEY", "ENTER", "{undefined}", ""
+    ExpectLong "Unused KEY P2 rejected", CMD_ERROR, ExecuteArrayLine(arr, 1), fails
+    ExpectBool "Unused slot rejected before token resolution", True, InStr(modEngine.LastRuntimeError(), "does not use P2") > 0, fails
+    ExpectLong "Unused slot sends no key", 0, driver.KeyCalls, fails
 
     driver.Reset
     driver.PixelColor = -1
     Dim visionCmd As Variant
     For Each visionCmd In Array("WAIT_APPEAR", "WAIT_VANISH", "ASSERT", "CLICK_SYNC")
-        MakeCmd arr, 1, CStr(visionCmd), "0", "0", "FFFFFF"
+        MakeCmd arr, 1, CStr(visionCmd), "0", "0", IIf(visionCmd = "CLICK_SYNC", "", "FFFFFF")
         ExpectLong "Pixel: invalid read stops " & visionCmd, CMD_ERROR, ExecuteArrayLine(arr, 1), fails
         ExpectBool "Pixel: failure reason retained", True, InStr(modEngine.LastRuntimeError(), "GetPixel failed") > 0, fails
     Next visionCmd
@@ -2333,19 +2448,10 @@ Private Function TC_StaticVariableAnalysis() As Long
 
     Dim fails As Long
     Dim ws As Worksheet
-    Dim sheetName As String
 
     Debug.Print "--- [Flow 6A] Static variable analysis ---"
 
-    sheetName = "RPA_VAR_ANALYSIS_TEST"
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Worksheets(sheetName).Delete
-    On Error GoTo ErrHandler
-    Application.DisplayAlerts = True
-
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.name = sheetName
     modDevTools.EnsureHeaders ws
 
     ws.Cells(2, 2).value = "SET"
@@ -2374,9 +2480,7 @@ Private Function TC_StaticVariableAnalysis() As Long
 
 CleanUp:
     On Error Resume Next
-    Application.DisplayAlerts = False
-    If Not ws Is Nothing Then ws.Delete
-    Application.DisplayAlerts = True
+    DeleteDiagnosticSheet ws
     On Error GoTo 0
     TC_StaticVariableAnalysis = fails
     Exit Function
@@ -2392,22 +2496,12 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
 
     Dim fails As Long
     Dim ws As Worksheet
-    Dim sheetName As String
     Dim previousEvents As Boolean
     previousEvents = Application.EnableEvents
 
     Debug.Print "--- [Flow 6B] Script Assist formatter comments ---"
 
-    sheetName = "RPA_FORMAT_COMMENT_TEST"
-
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Worksheets(sheetName).Delete
-    On Error GoTo ErrHandler
-    Application.DisplayAlerts = True
-
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.name = sheetName
     ws.Range("A1:B2").value = Array("customer", "name")
     Dim formatError As Long
     On Error Resume Next
@@ -2431,6 +2525,44 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
     Application.StatusBar = "hint probe"
     modScriptAssist.ShowParamHint ws.Cells
     ExpectBool "Whole-sheet hint clears safely", True, Application.StatusBar = False, fails
+
+    Application.EnableEvents = False
+    Dim capturedColor As Variant
+    For Each capturedColor In Array("000000", "1E0040")
+        ws.Range("C2:E2").NumberFormat = "General"
+        modHelper.FillCaptureCells ws.Range("C2"), capturedColor = "1E0040", 10, 20, CStr(capturedColor)
+        ExpectText "HUD preserves captured color " & capturedColor, CStr(capturedColor), CStr(ws.Range("E2").Value2), fails
+        ExpectLong "HUD stores color as text", vbString, VarType(ws.Range("E2").Value2), fails
+    Next capturedColor
+    ws.Range("A2:F4").Clear
+    ws.Range("B2").value = "EXIT"
+    ws.Range("B3").Formula = "=IF(H1=1,""CLICK"",""MOVE"")"
+    modDevTools.FormatRPAScript ws
+    ExpectBool "Formatter preserves COMMAND formula", True, ws.Range("B3").HasFormula, fails
+    modScriptAssist.ToggleSelectedCommandComment ws.Range("B2:B3")
+    ExpectText "Comment toggle refuses mixed formula selection before edits", "EXIT", CStr(ws.Range("B2").value), fails
+    ExpectBool "Comment toggle preserves formula", True, ws.Range("B3").HasFormula, fails
+    ws.Range("A2:F4").Clear
+    ws.Range("B2").value = "SET"
+    ws.Range("C2").value = "{draft}"
+    ws.Range("E2").Formula = "=1/0"
+    ws.Range("E2").Calculate
+    Application.EnableEvents = True
+    ws.Range("C2").value = "{edited}"
+    ExpectBool "Editor catches snapshot error from change event", True, _
+        InStr(CStr(Application.StatusBar), "Excel error at E2") > 0, fails
+    ws.Range("B3").value = "GOTO"
+    ws.Range("E3").value = "DEST"
+    ws.Range("B4").value = "LABEL"
+    ws.Range("E4").value = "DEST"
+    ExpectBool "Navigation consumes click on invalid draft", True, modScriptAssist.HandleBeforeDoubleClick(ws.Range("E3")), fails
+    ExpectBool "Navigation reports draft error address", True, InStr(CStr(Application.StatusBar), "Excel error at E2") > 0, fails
+    ws.Range("E2").value = "fixed"
+    ExpectBool "Editor recovers after formula repair", True, _
+        InStr(CStr(Application.StatusBar), "Excel error") = 0, fails
+    Application.EnableEvents = False
+    ws.Range("A2:F4").Clear
+    Application.EnableEvents = previousEvents
 
     ws.Cells(2, 2).value = "IF"
     ws.Cells(2, 3).value = "1"
@@ -2469,9 +2601,7 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
 CleanUp:
     On Error Resume Next
     Application.EnableEvents = previousEvents
-    Application.DisplayAlerts = False
-    If Not ws Is Nothing Then ws.Delete
-    Application.DisplayAlerts = True
+    DeleteDiagnosticSheet ws
     Application.StatusBar = False
     On Error GoTo 0
     TC_ScriptAssistFormatterRegression = fails
@@ -2561,6 +2691,10 @@ Private Function TC_ParseStrict() As Long
     ExpectBool "Cond: exponent now string", False, modCondition.EvaluateCondition("1e3", "EQ", "1000"), fails
     ExpectBool "Cond: comma now string", False, modCondition.EvaluateCondition("1,000", "EQ", "1"), fails
 
+    ExpectBool "Adjacent long IDs differ", False, modCondition.EvaluateCondition("9007199254740992", "EQ", "9007199254740993"), fails
+    ExpectBool "Long negative integer ordering", True, modCondition.EvaluateCondition("-10000000000000000", "<", "-9999999999999999"), fails
+    ExpectBool "Exact decimal equality", True, modCondition.EvaluateCondition("+9007199254740993.00", "==", "9007199254740993"), fails
+    ExpectBool "Signed zero equality", True, modCondition.EvaluateCondition("-.0", "EQ", "0"), fails
     TC_ParseStrict = fails
 End Function
 
@@ -2586,13 +2720,26 @@ Private Function TC_EngineLifecycle() As Long
     ws.Range("A2:E2").ClearContents
     modDevTools.EnsureHeaders ws
     ExpectSheetRun ws, "FAILED", fails
-    MakeCmd singleArr, 1, "SET", "{value}", 0, "1"
+    MakeCmd singleArr, 1, "SET", "{value}", "", "1"
     ws.Range("A2:E2").value = singleArr
     ExpectSheetRun ws, "COMPLETED", fails
-    MakeCmd singleArr, 1, "EXIT", 0, 0, ""
+
+    Dim valueProgram As New clsScriptProgram
+    ws.Range("E2").NumberFormat = "$#,##0.000000"
+    ws.Range("E2").Value2 = 1.234567
+    ExpectLong "Script currency fixture uses Currency", vbCurrency, VarType(ws.Range("E2").value), fails
+    valueProgram.LoadFromRange ws.Range("A2:F2")
+    ExpectText "Script currency retains original digits", "1.234567", valueProgram.P3At(1), fails
+    ws.Range("E2").NumberFormat = "yyyy-mm-dd"
+    ws.Range("E2").value = DateSerial(2024, 2, 1)
+    valueProgram.LoadFromRange ws.Range("A2:F2")
+    ExpectText "Script date conversion remains compatible", CStr(DateSerial(2024, 2, 1)), valueProgram.P3At(1), fails
+    ws.Range("E2").NumberFormat = "General"
+
+    MakeCmd singleArr, 1, "EXIT", "", "", ""
     ws.Range("A2:E2").value = singleArr
     ExpectSheetRun ws, "HALTED", fails
-    MakeCmd singleArr, 1, "SLEEP", 0, 0, "-1"
+    MakeCmd singleArr, 1, "SLEEP", "", "", "-1"
     ws.Range("A2:E2").value = singleArr
     ExpectSheetRun ws, "FAILED", fails
     ExpectBool "Engine: negative wait reason", True, InStr(modEngine.LastRuntimeError(), "negative") > 0, fails
@@ -2614,26 +2761,46 @@ Private Function TC_EngineLifecycle() As Long
         ExpectLong "Engine: rejects error cell before input", 0, driver.KeyCalls, fails
     Next errorCell
 
-    MakeCmd badArr, 1, "KEY", "ENTER", 0, ""
+    MakeCmd badArr, 2, "EXIT", "", "", ""
+    MakeCmd badArr, 3, "SLEP", "", "", ""
+    MakeCmd badArr, 4, "KEY", "ENTER", "unused", ""
+    MakeCmd badArr, 5, "TYPE", "", "", ""
+    ws.Range("A2:E6").value = badArr
+    ExpectSheetRun ws, "FAILED", fails
+    Dim syntaxErrors As String
+    syntaxErrors = modEngine.LastRuntimeError()
+    ExpectBool "Preflight identifies unknown command", True, InStr(syntaxErrors, "SLEP") > 0, fails
+    ExpectBool "Preflight identifies unused slot", True, InStr(syntaxErrors, "does not use P2") > 0, fails
+    ExpectBool "Preflight identifies missing slot", True, InStr(syntaxErrors, "P3") > 0, fails
+    ExpectLong "Unreachable syntax errors prevent earlier input", 0, driver.KeyCalls, fails
+
+    MakeCmd badArr, 3, "# draft", "ignored", "", ""
+    MakeCmd badArr, 4, "SLEEP", "", "", "{never_read}"
+    MakeCmd badArr, 5, "", "", "", ""
+    ws.Range("A2:E6").value = badArr
+    ExpectSheetRun ws, "HALTED", fails
+    driver.Reset
+
+    MakeCmd badArr, 1, "KEY", "ENTER", "", ""
     MakeCmd badArr, 2, "IF", "0", "EQ", "1"
     MakeCmd badArr, 3, "WHILE", "1", "EQ", "1"
-    MakeCmd badArr, 4, "END_IF", 0, 0, ""
-    MakeCmd badArr, 5, "END_WHILE", 0, 0, ""
+    MakeCmd badArr, 4, "END_IF", "", "", ""
+    MakeCmd badArr, 5, "END_WHILE", "", "", ""
     ws.Range("A2:E6").value = badArr
     ExpectSheetRun ws, "FAILED", fails
     ExpectLong "Engine: validates before first input", 0, driver.KeyCalls, fails
     ExpectBool "Engine: structural rejection line", True, InStr(modEngine.LastRuntimeError(), "line 4") > 0, fails
 
-    MakeCmd subArr, 1, "SET", "{value}", 0, "25"
-    MakeCmd subArr, 2, "CALL", 0, 0, "SUB"
-    MakeCmd subArr, 3, "SLEEP", 0, 0, "{value}"
-    MakeCmd subArr, 4, "EXIT", 0, 0, ""
-    MakeCmd subArr, 5, "LABEL", 0, 0, "SUB"
+    MakeCmd subArr, 1, "SET", "{value}", "", "25"
+    MakeCmd subArr, 2, "CALL", "", "", "SUB"
+    MakeCmd subArr, 3, "SLEEP", "", "", "{value}"
+    MakeCmd subArr, 4, "EXIT", "", "", ""
+    MakeCmd subArr, 5, "LABEL", "", "", "SUB"
     MakeCmd subArr, 6, "IF", "0", "EQ", "1"
-    MakeCmd subArr, 7, "RETURN", 0, 0, ""
-    MakeCmd subArr, 8, "END_IF", 0, 0, ""
-    MakeCmd subArr, 9, "SET", "{value}", 0, "75"
-    MakeCmd subArr, 10, "RETURN", 0, 0, ""
+    MakeCmd subArr, 7, "RETURN", "", "", ""
+    MakeCmd subArr, 8, "END_IF", "", "", ""
+    MakeCmd subArr, 9, "SET", "{value}", "", "75"
+    MakeCmd subArr, 10, "RETURN", "", "", ""
     ws.Range("A2:E11").value = subArr
     ExpectSheetRun ws, "HALTED", fails
     ExpectLong "Engine: conditional RETURN false result", 75, driver.SleepTotal, fails
@@ -2643,8 +2810,8 @@ Private Function TC_EngineLifecycle() As Long
     ExpectSheetRun ws, "HALTED", fails
     ExpectLong "Engine: conditional RETURN true result", 25, driver.SleepTotal, fails
     driver.Reset
-    MakeCmd subArr, 6, "SLEEP", 0, 0, "75"
-    MakeCmd subArr, 7, "KEY", "ENTER", 0, ""
+    MakeCmd subArr, 6, "SLEEP", "", "", "75"
+    MakeCmd subArr, 7, "KEY", "ENTER", "", ""
     MakeCmd subArr, 8, "", 0, 0, ""
     driver.AbortOnSleep = 1
     ws.Range("A2:E11").value = subArr
@@ -2653,9 +2820,9 @@ Private Function TC_EngineLifecycle() As Long
 
     driver.Reset
     ws.Range("A2:F20").ClearContents
-    MakeCmd reentryArr, 1, "SET", "{kept}", 0, "9"
-    MakeCmd reentryArr, 2, "SLEEP", 0, 0, "75"
-    MakeCmd reentryArr, 3, "SLEEP", 0, 0, "{kept}"
+    MakeCmd reentryArr, 1, "SET", "{kept}", "", "9"
+    MakeCmd reentryArr, 2, "SLEEP", "", "", "75"
+    MakeCmd reentryArr, 3, "SLEEP", "", "", "{kept}"
     ws.Range("A2:E4").value = reentryArr
     Set driver.ReentrySheet = ws
     driver.AttemptReentry = True
@@ -2665,7 +2832,7 @@ Private Function TC_EngineLifecycle() As Long
 
     driver.Reset
     ws.Range("A2:F20").ClearContents
-    MakeCmd singleArr, 1, "KEY", "ENTER", 0, ""
+    MakeCmd singleArr, 1, "KEY", "ENTER", "", ""
     ws.Range("A2:E2").value = singleArr
     driver.FailOnKey = 1
     ExpectSheetRun ws, "FAILED", fails
@@ -2673,7 +2840,7 @@ Private Function TC_EngineLifecycle() As Long
     ExpectSheetRun Nothing, "FAILED", fails
     ExpectBool "Engine: fatal exception reason", True, InStr(modEngine.LastRuntimeError(), "worksheet is required") > 0, fails
     driver.Reset
-    MakeCmd singleArr, 1, "GOTO", 0, 0, "MISSING"
+    MakeCmd singleArr, 1, "GOTO", "", "", "MISSING"
     ws.Range("A2:E2").value = singleArr
     ExpectSheetRun ws, "FAILED", fails
     ExpectBool "Engine: label validation connected", True, InStr(modEngine.LastRuntimeError(), "target not found") > 0, fails
@@ -2754,19 +2921,10 @@ Private Function TC_ScriptRangeResolution() As Long
 
     Dim fails As Long
     Dim ws As Worksheet
-    Dim sheetName As String
 
     Debug.Print "--- [Engine 1A] Script range resolution ---"
 
-    sheetName = "RPA_RANGE_RESOLUTION_TEST"
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ThisWorkbook.Worksheets(sheetName).Delete
-    On Error GoTo ErrHandler
-    Application.DisplayAlerts = True
-
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.name = sheetName
     modDevTools.EnsureHeaders ws
 
     ' 헤더만 있는 시트 -> Nothing
@@ -2793,17 +2951,15 @@ Private Function TC_ScriptRangeResolution() As Long
     Dim lastCode As Long
     Dim lastLine As Long
     Dim result As eRunResult
-    Call MakeCmd(arr, 1, "SET", "{rr2}", 0, "1")
-    Call MakeCmd(arr, 3, "EXIT", 0, 0, "")
+    Call MakeCmd(arr, 1, "SET", "{rr2}", "", "1")
+    Call MakeCmd(arr, 3, "EXIT", "", "", "")
     result = RunProgram(arr, 1, 0, trace, lastCode, lastLine)
     ExpectTerminal rrHalted, result, fails
     ExpectLong "Range: blank row skipped to EXIT", 3, lastLine, fails
 
 CleanUp:
     On Error Resume Next
-    Application.DisplayAlerts = False
-    If Not ws Is Nothing Then ws.Delete
-    Application.DisplayAlerts = True
+    DeleteDiagnosticSheet ws
     On Error GoTo 0
     TC_ScriptRangeResolution = fails
     Exit Function
@@ -2839,34 +2995,40 @@ Private Function TC_ScriptProgramModel() As Long
     Dim arr(1 To 26, 1 To 5) As Variant
 
     Call MakeCmd(arr, 1, "> IF", "1", "EQ", "0")
-    Call MakeCmd(arr, 2, "TYPE", 0, 0, "if-body")
-    Call MakeCmd(arr, 3, "ELSE", 0, 0, "")
-    Call MakeCmd(arr, 4, "TYPE", 0, 0, "else-body")
-    Call MakeCmd(arr, 5, "END_IF", 0, 0, "")
+    Call MakeCmd(arr, 2, "TYPE", 0, "", "if-body")
+    Call MakeCmd(arr, 3, "ELSE", "", "", "")
+    Call MakeCmd(arr, 4, "TYPE", 0, "", "else-body")
+    Call MakeCmd(arr, 5, "END_IF", "", "", "")
     Call MakeCmd(arr, 6, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(arr, 7, "END_WHILE", 0, 0, "")
-    Call MakeCmd(arr, 8, "REPEAT", 2, 0, "")
-    Call MakeCmd(arr, 9, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(arr, 10, "SELECT", "A", 0, "")
-    Call MakeCmd(arr, 11, "CASE", "A", 0, "")
-    Call MakeCmd(arr, 12, "TYPE", 0, 0, "A")
-    Call MakeCmd(arr, 13, "SELECT", "B", 0, "")
-    Call MakeCmd(arr, 14, "CASE", "B", 0, "")
-    Call MakeCmd(arr, 15, "END_SELECT", 0, 0, "")
-    Call MakeCmd(arr, 16, "CASE", "ELSE", 0, "")
-    Call MakeCmd(arr, 17, "TYPE", 0, 0, "fallback")
-    Call MakeCmd(arr, 18, "END_SELECT", 0, 0, "")
-    Call MakeCmd(arr, 19, "LABEL", 0, 0, "LOGIN")
-    Call MakeCmd(arr, 20, "GOTO", 0, 0, "LOGIN")
+    Call MakeCmd(arr, 7, "END_WHILE", "", "", "")
+    Call MakeCmd(arr, 8, "REPEAT", 2, "", "")
+    Call MakeCmd(arr, 9, "END_REPEAT", "", "", "")
+    Call MakeCmd(arr, 10, "SELECT", "A", "", "")
+    Call MakeCmd(arr, 11, "CASE", "A", "", "")
+    Call MakeCmd(arr, 12, "TYPE", 0, "", "A")
+    Call MakeCmd(arr, 13, "SELECT", "B", "", "")
+    Call MakeCmd(arr, 14, "CASE", "B", "", "")
+    Call MakeCmd(arr, 15, "END_SELECT", "", "", "")
+    Call MakeCmd(arr, 16, "CASE", "ELSE", "", "")
+    Call MakeCmd(arr, 17, "TYPE", 0, "", "fallback")
+    Call MakeCmd(arr, 18, "END_SELECT", "", "", "")
+    Call MakeCmd(arr, 19, "LABEL", "", "", "LOGIN")
+    Call MakeCmd(arr, 20, "GOTO", "", "", "LOGIN")
     Call MakeCmd(arr, 21, "# real comment", 0, 0, "")
     Call MakeCmd(arr, 22, "> # not comment", 0, 0, "")
     Call MakeCmd(arr, 23, ">", 0, 0, "")
     Call MakeCmd(arr, 24, "", 0, 0, "")
     Call MakeCmd(arr, 25, "FOREACH_ROW", "Book", "Sheet", "")
-    Call MakeCmd(arr, 26, "END_FOREACH", 0, 0, "")
+    Call MakeCmd(arr, 26, "END_FOREACH", "", "", "")
 
     Dim program As clsScriptProgram
     Set program = New clsScriptProgram
+    program.LoadFromArray arr, 5
+    ExpectBool "indented comment false", False, program.IsCommentLine(22), fails
+    ExpectBool "raw > is not blank", False, program.IsBlankLine(23), fails
+    ExpectBool "Non-command markers reject the script", False, program.ValidateStructure(), fails
+    MakeCmd arr, 22, "# draft", "", "", ""
+    MakeCmd arr, 23, "", "", "", ""
     program.LoadFromArray arr, 5
     If Not program.ValidateStructure() Then
         LogFail "Program ValidateStructure", "True", program.ValidationErrors(): fails = fails + 1
@@ -2884,8 +3046,6 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectLong "RuntimeLineFromSheetRow", 1, program.RuntimeLineFromSheetRow(5), fails
     ExpectText "CmdAt indent", "IF", program.CmdAt(1), fails
     ExpectBool "raw comment true", True, program.IsCommentLine(21), fails
-    ExpectBool "indented comment false", False, program.IsCommentLine(22), fails
-    ExpectBool "raw > is not blank", False, program.IsBlankLine(23), fails
     ExpectBool "empty raw blank", True, program.IsBlankLine(24), fails
 
     ExpectLong "IF -> ELSE", 3, program.FindBlockPair(1, "IF", 1), fails
@@ -2934,12 +3094,12 @@ Private Function TC_ScriptProgramModel() As Long
 
     Dim ifChainModelArr(1 To 7, 1 To 5) As Variant
     Call MakeCmd(ifChainModelArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(ifChainModelArr, 2, "TYPE", 0, 0, "if")
+    Call MakeCmd(ifChainModelArr, 2, "TYPE", 0, "", "if")
     Call MakeCmd(ifChainModelArr, 3, "ELSE_IF", "2", "EQ", "2")
-    Call MakeCmd(ifChainModelArr, 4, "TYPE", 0, 0, "elseif")
+    Call MakeCmd(ifChainModelArr, 4, "TYPE", 0, "", "elseif")
     Call MakeCmd(ifChainModelArr, 5, "ELSE_IF", "3", "EQ", "3")
-    Call MakeCmd(ifChainModelArr, 6, "ELSE", 0, 0, "")
-    Call MakeCmd(ifChainModelArr, 7, "END_IF", 0, 0, "")
+    Call MakeCmd(ifChainModelArr, 6, "ELSE", "", "", "")
+    Call MakeCmd(ifChainModelArr, 7, "END_IF", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray ifChainModelArr, 1
     If Not program.ValidateStructure() Then
@@ -2959,14 +3119,14 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectLong "StyleDepth ELSE_IF guide", 1, program.StyleDepthAt(3), fails
 
     Dim roleArr(1 To 8, 1 To 5) As Variant
-    Call MakeCmd(roleArr, 1, "CALL", 0, 0, "SUB")
-    Call MakeCmd(roleArr, 2, "GOTO", 0, 0, "JMP")
-    Call MakeCmd(roleArr, 3, "CALL", 0, 0, "MIX")
-    Call MakeCmd(roleArr, 4, "GOTO", 0, 0, "MIX")
-    Call MakeCmd(roleArr, 5, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(roleArr, 6, "LABEL", 0, 0, "JMP")
-    Call MakeCmd(roleArr, 7, "LABEL", 0, 0, "MIX")
-    Call MakeCmd(roleArr, 8, "LABEL", 0, 0, "DEAD")
+    Call MakeCmd(roleArr, 1, "CALL", "", "", "SUB")
+    Call MakeCmd(roleArr, 2, "GOTO", "", "", "JMP")
+    Call MakeCmd(roleArr, 3, "CALL", "", "", "MIX")
+    Call MakeCmd(roleArr, 4, "GOTO", "", "", "MIX")
+    Call MakeCmd(roleArr, 5, "LABEL", "", "", "SUB")
+    Call MakeCmd(roleArr, 6, "LABEL", "", "", "JMP")
+    Call MakeCmd(roleArr, 7, "LABEL", "", "", "MIX")
+    Call MakeCmd(roleArr, 8, "LABEL", "", "", "DEAD")
     Set program = New clsScriptProgram
     program.LoadFromArray roleArr, 10
     ExpectText "LabelRole subroutine", "SubroutineLabel", program.LabelRoleAt(5), fails
@@ -2980,11 +3140,11 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectLong "Resolve mixed sheet row", 16, program.ResolveJumpTargetSheetRow("MIX"), fails
 
     Dim subArr(1 To 5, 1 To 5) As Variant
-    Call MakeCmd(subArr, 1, "CALL", 0, 0, "SUB")
-    Call MakeCmd(subArr, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(subArr, 3, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(subArr, 4, "TYPE", 0, 0, "inside")
-    Call MakeCmd(subArr, 5, "RETURN", 0, 0, "")
+    Call MakeCmd(subArr, 1, "CALL", "", "", "SUB")
+    Call MakeCmd(subArr, 2, "EXIT", "", "", "")
+    Call MakeCmd(subArr, 3, "LABEL", "", "", "SUB")
+    Call MakeCmd(subArr, 4, "TYPE", 0, "", "inside")
+    Call MakeCmd(subArr, 5, "RETURN", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray subArr, 20
     ExpectBool "Subroutine start", True, program.IsSubroutineStartAt(3), fails
@@ -2993,9 +3153,9 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectLong "Subroutine body display depth", 1, program.DisplayDepthAt(4), fails
 
     Dim varArr(1 To 3, 1 To 5) As Variant
-    Call MakeCmd(varArr, 1, "SET", "{score}", 0, "1")
-    Call MakeCmd(varArr, 2, "SET", "{out}", 0, "{scroe}")
-    Call MakeCmd(varArr, 3, "SET", "{unused}", 0, "value")
+    Call MakeCmd(varArr, 1, "SET", "{score}", "", "1")
+    Call MakeCmd(varArr, 2, "SET", "{out}", "", "{scroe}")
+    Call MakeCmd(varArr, 3, "SET", "{unused}", "", "value")
     Set program = New clsScriptProgram
     program.LoadFromArray varArr, 30
     ExpectBool "Program variable suggestion", True, (InStr(1, program.VariableErrorAt(2), "{score}", vbTextCompare) > 0), fails
@@ -3011,8 +3171,8 @@ Private Function TC_ScriptProgramModel() As Long
     ExpectLong "CASE execute fallthrough", 18, modEngine.ExecuteSmartAction(11), fails
 
     Dim dupArr(1 To 2, 1 To 5) As Variant
-    Call MakeCmd(dupArr, 1, "LABEL", 0, 0, "DUP")
-    Call MakeCmd(dupArr, 2, "LABEL", 0, 0, "dup")
+    Call MakeCmd(dupArr, 1, "LABEL", "", "", "DUP")
+    Call MakeCmd(dupArr, 2, "LABEL", "", "", "dup")
     Set program = New clsScriptProgram
     program.LoadFromArray dupArr, 1
     If program.ValidateLabels() Then
@@ -3022,7 +3182,7 @@ Private Function TC_ScriptProgramModel() As Long
     End If
 
     Dim tokenArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(tokenArr, 1, "LABEL", 0, 0, "{target}")
+    Call MakeCmd(tokenArr, 1, "LABEL", "", "", "{target}")
     Set program = New clsScriptProgram
     program.LoadFromArray tokenArr, 1
     If program.ValidateLabels() Then
@@ -3032,7 +3192,7 @@ Private Function TC_ScriptProgramModel() As Long
     End If
 
     Dim numericJumpArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(numericJumpArr, 1, "GOTO", 0, 0, "1")
+    Call MakeCmd(numericJumpArr, 1, "GOTO", "", "", "1")
     Set program = New clsScriptProgram
     program.LoadFromArray numericJumpArr, 1
     If program.ValidateLabels() Then
@@ -3042,7 +3202,7 @@ Private Function TC_ScriptProgramModel() As Long
     End If
 
     Dim dynamicJumpArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(dynamicJumpArr, 1, "CALL", 0, 0, "{target}")
+    Call MakeCmd(dynamicJumpArr, 1, "CALL", "", "", "{target}")
     Set program = New clsScriptProgram
     program.LoadFromArray dynamicJumpArr, 1
     If program.ValidateLabels() Then
@@ -3064,9 +3224,9 @@ Private Function TC_ScriptProgramModel() As Long
 
     Dim afterElseIfArr(1 To 4, 1 To 5) As Variant
     Call MakeCmd(afterElseIfArr, 1, "IF", "1", "EQ", "0")
-    Call MakeCmd(afterElseIfArr, 2, "ELSE", 0, 0, "")
+    Call MakeCmd(afterElseIfArr, 2, "ELSE", "", "", "")
     Call MakeCmd(afterElseIfArr, 3, "ELSE_IF", "1", "EQ", "1")
-    Call MakeCmd(afterElseIfArr, 4, "END_IF", 0, 0, "")
+    Call MakeCmd(afterElseIfArr, 4, "END_IF", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray afterElseIfArr, 1
     If program.ValidateStructure() Then
@@ -3079,7 +3239,7 @@ Private Function TC_ScriptProgramModel() As Long
     Dim badElseIfOpArr(1 To 3, 1 To 5) As Variant
     Call MakeCmd(badElseIfOpArr, 1, "IF", "1", "EQ", "0")
     Call MakeCmd(badElseIfOpArr, 2, "ELSE_IF", "1", "EQUALS", "1")
-    Call MakeCmd(badElseIfOpArr, 3, "END_IF", 0, 0, "")
+    Call MakeCmd(badElseIfOpArr, 3, "END_IF", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray badElseIfOpArr, 1
     If program.ValidateStructure() Then
@@ -3092,7 +3252,7 @@ Private Function TC_ScriptProgramModel() As Long
     Dim missingElseIfParamArr(1 To 3, 1 To 5) As Variant
     Call MakeCmd(missingElseIfParamArr, 1, "IF", "1", "EQ", "0")
     Call MakeCmd(missingElseIfParamArr, 2, "ELSE_IF", "", "", "")
-    Call MakeCmd(missingElseIfParamArr, 3, "END_IF", 0, 0, "")
+    Call MakeCmd(missingElseIfParamArr, 3, "END_IF", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray missingElseIfParamArr, 1
     If program.ValidateStructure() Then
@@ -3105,10 +3265,10 @@ Private Function TC_ScriptProgramModel() As Long
     ' [#1] 서브루틴 흐름 오류가 실행 전 차단(ValidateLabels)으로 승격되는지
     ' CALL 대상 LABEL에 RETURN 없음 -> 차단 + 설명 메시지
     Dim noReturnArr(1 To 4, 1 To 5) As Variant
-    Call MakeCmd(noReturnArr, 1, "CALL", 0, 0, "SUB")
-    Call MakeCmd(noReturnArr, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(noReturnArr, 3, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(noReturnArr, 4, "SET", "{x}", 0, "1")
+    Call MakeCmd(noReturnArr, 1, "CALL", "", "", "SUB")
+    Call MakeCmd(noReturnArr, 2, "EXIT", "", "", "")
+    Call MakeCmd(noReturnArr, 3, "LABEL", "", "", "SUB")
+    Call MakeCmd(noReturnArr, 4, "SET", "{x}", "", "1")
     Set program = New clsScriptProgram
     program.LoadFromArray noReturnArr, 1
     ExpectBool "Subroutine no-RETURN blocks", False, program.ValidateLabels(), fails
@@ -3131,17 +3291,17 @@ Private Function TC_ScriptProgramModel() As Long
 
     ' 정상 서브루틴(앞 EXIT + RETURN 있음)은 통과 (회귀 가드)
     Dim goodSubArr(1 To 4, 1 To 5) As Variant
-    Call MakeCmd(goodSubArr, 1, "CALL", 0, 0, "SUB")
-    Call MakeCmd(goodSubArr, 2, "EXIT", 0, 0, "")
-    Call MakeCmd(goodSubArr, 3, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(goodSubArr, 4, "RETURN", 0, 0, "")
+    Call MakeCmd(goodSubArr, 1, "CALL", "", "", "SUB")
+    Call MakeCmd(goodSubArr, 2, "EXIT", "", "", "")
+    Call MakeCmd(goodSubArr, 3, "LABEL", "", "", "SUB")
+    Call MakeCmd(goodSubArr, 4, "RETURN", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray goodSubArr, 1
     ExpectBool "Valid subroutine passes", True, program.ValidateLabels(), fails
 
     ' 고아 RETURN(서브루틴 밖)도 차단
     Dim orphanReturnArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(orphanReturnArr, 1, "RETURN", 0, 0, "")
+    Call MakeCmd(orphanReturnArr, 1, "RETURN", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray orphanReturnArr, 1
     ExpectBool "Orphan RETURN blocks", False, program.ValidateLabels(), fails
@@ -3149,15 +3309,15 @@ Private Function TC_ScriptProgramModel() As Long
     ' [C3] 루프 짝 불균형이 실행 전 검증(ValidateStructure)에서 차단되는지
     ' 고아 END_WHILE
     Dim orphanEnderArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(orphanEnderArr, 1, "END_WHILE", 0, 0, "")
+    Call MakeCmd(orphanEnderArr, 1, "END_WHILE", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray orphanEnderArr, 1
     ExpectBool "Orphan END_WHILE blocks", False, program.ValidateStructure(), fails
 
     ' 닫히지 않은 REPEAT
     Dim unclosedLoopArr(1 To 2, 1 To 5) As Variant
-    Call MakeCmd(unclosedLoopArr, 1, "REPEAT", "2", 0, "")
-    Call MakeCmd(unclosedLoopArr, 2, "TYPE", 0, 0, "body")
+    Call MakeCmd(unclosedLoopArr, 1, "REPEAT", "2", "", "")
+    Call MakeCmd(unclosedLoopArr, 2, "TYPE", 0, "", "body")
     Set program = New clsScriptProgram
     program.LoadFromArray unclosedLoopArr, 1
     ExpectBool "Unclosed REPEAT blocks", False, program.ValidateStructure(), fails
@@ -3165,16 +3325,16 @@ Private Function TC_ScriptProgramModel() As Long
     ' 루프 교차 중첩 (WHILE을 END_REPEAT가 먼저 닫음)
     Dim crossLoopArr(1 To 4, 1 To 5) As Variant
     Call MakeCmd(crossLoopArr, 1, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(crossLoopArr, 2, "REPEAT", "2", 0, "")
-    Call MakeCmd(crossLoopArr, 3, "END_WHILE", 0, 0, "")
-    Call MakeCmd(crossLoopArr, 4, "END_REPEAT", 0, 0, "")
+    Call MakeCmd(crossLoopArr, 2, "REPEAT", "2", "", "")
+    Call MakeCmd(crossLoopArr, 3, "END_WHILE", "", "", "")
+    Call MakeCmd(crossLoopArr, 4, "END_REPEAT", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray crossLoopArr, 1
     ExpectBool "Cross-nested loops block", False, program.ValidateStructure(), fails
 
     ' 고아 CASE (감싸는 SELECT 없음)
     Dim orphanCaseArr(1 To 1, 1 To 5) As Variant
-    Call MakeCmd(orphanCaseArr, 1, "CASE", "A", 0, "")
+    Call MakeCmd(orphanCaseArr, 1, "CASE", "A", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray orphanCaseArr, 1
     ExpectBool "Orphan CASE blocks", False, program.ValidateStructure(), fails
@@ -3182,21 +3342,21 @@ Private Function TC_ScriptProgramModel() As Long
     ' 정상 중첩 루프는 통과 (회귀 가드)
     Dim nestedLoopArr(1 To 4, 1 To 5) As Variant
     Call MakeCmd(nestedLoopArr, 1, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(nestedLoopArr, 2, "REPEAT", "2", 0, "")
-    Call MakeCmd(nestedLoopArr, 3, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(nestedLoopArr, 4, "END_WHILE", 0, 0, "")
+    Call MakeCmd(nestedLoopArr, 2, "REPEAT", "2", "", "")
+    Call MakeCmd(nestedLoopArr, 3, "END_REPEAT", "", "", "")
+    Call MakeCmd(nestedLoopArr, 4, "END_WHILE", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray nestedLoopArr, 1
     ExpectBool "Nested loops pass", True, program.ValidateStructure(), fails
 
     ' [CALL 경계] 루프 본문 내부 LABEL을 밖에서 CALL -> 실행 전 차단 (2026-07-10 버그)
     Dim callIntoLoopArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(callIntoLoopArr, 1, "CALL", 0, 0, "INSIDE")
-    Call MakeCmd(callIntoLoopArr, 2, "EXIT", 0, 0, "")
+    Call MakeCmd(callIntoLoopArr, 1, "CALL", "", "", "INSIDE")
+    Call MakeCmd(callIntoLoopArr, 2, "EXIT", "", "", "")
     Call MakeCmd(callIntoLoopArr, 3, "WHILE", "1", "EQ", "1")
-    Call MakeCmd(callIntoLoopArr, 4, "LABEL", 0, 0, "INSIDE")
-    Call MakeCmd(callIntoLoopArr, 5, "RETURN", 0, 0, "")
-    Call MakeCmd(callIntoLoopArr, 6, "END_WHILE", 0, 0, "")
+    Call MakeCmd(callIntoLoopArr, 4, "LABEL", "", "", "INSIDE")
+    Call MakeCmd(callIntoLoopArr, 5, "RETURN", "", "", "")
+    Call MakeCmd(callIntoLoopArr, 6, "END_WHILE", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray callIntoLoopArr, 1
     ExpectBool "CALL into loop body blocks", False, program.ValidateLabels(), fails
@@ -3204,12 +3364,12 @@ Private Function TC_ScriptProgramModel() As Long
 
     ' CALL의 sub-area 교차는 허용 유지 (루프 안 -> 밖 서브루틴, 회귀 가드)
     Dim callAcrossAreaArr(1 To 6, 1 To 5) As Variant
-    Call MakeCmd(callAcrossAreaArr, 1, "REPEAT", "1", 0, "")
-    Call MakeCmd(callAcrossAreaArr, 2, "CALL", 0, 0, "SUB")
-    Call MakeCmd(callAcrossAreaArr, 3, "END_REPEAT", 0, 0, "")
-    Call MakeCmd(callAcrossAreaArr, 4, "EXIT", 0, 0, "")
-    Call MakeCmd(callAcrossAreaArr, 5, "LABEL", 0, 0, "SUB")
-    Call MakeCmd(callAcrossAreaArr, 6, "RETURN", 0, 0, "")
+    Call MakeCmd(callAcrossAreaArr, 1, "REPEAT", "1", "", "")
+    Call MakeCmd(callAcrossAreaArr, 2, "CALL", "", "", "SUB")
+    Call MakeCmd(callAcrossAreaArr, 3, "END_REPEAT", "", "", "")
+    Call MakeCmd(callAcrossAreaArr, 4, "EXIT", "", "", "")
+    Call MakeCmd(callAcrossAreaArr, 5, "LABEL", "", "", "SUB")
+    Call MakeCmd(callAcrossAreaArr, 6, "RETURN", "", "", "")
     Set program = New clsScriptProgram
     program.LoadFromArray callAcrossAreaArr, 1
     ExpectBool "CALL across sub-area passes", True, program.ValidateLabels(), fails
@@ -3218,52 +3378,73 @@ Private Function TC_ScriptProgramModel() As Long
     Dim crossKindArr(1 To 4, 1 To 5) As Variant
     MakeCmd crossKindArr, 1, "IF", "0", "EQ", "1"
     MakeCmd crossKindArr, 2, "WHILE", "1", "EQ", "1"
-    MakeCmd crossKindArr, 3, "END_IF", 0, 0, ""
-    MakeCmd crossKindArr, 4, "END_WHILE", 0, 0, ""
+    MakeCmd crossKindArr, 3, "END_IF", "", "", ""
+    MakeCmd crossKindArr, 4, "END_WHILE", "", "", ""
     program.LoadFromArray crossKindArr, 1
     ExpectBool "Cross IF/WHILE rejected", False, program.ValidateStructure(), fails
     ExpectBool "Cross IF/WHILE error location", True, InStr(program.ValidationErrors(), "line 3") > 0, fails
-    MakeCmd crossKindArr, 1, "SELECT", "A", 0, ""
-    MakeCmd crossKindArr, 3, "END_SELECT", 0, 0, ""
+    MakeCmd crossKindArr, 1, "SELECT", "A", "", ""
+    MakeCmd crossKindArr, 3, "END_SELECT", "", "", ""
     program.LoadFromArray crossKindArr, 1
     ExpectBool "Cross SELECT/WHILE rejected", False, program.ValidateStructure(), fails
 
     Dim nestedCaseArr(1 To 6, 1 To 5) As Variant
-    MakeCmd nestedCaseArr, 1, "SELECT", "A", 0, ""
+    MakeCmd nestedCaseArr, 1, "SELECT", "A", "", ""
     MakeCmd nestedCaseArr, 2, "IF", "0", "EQ", "1"
-    MakeCmd nestedCaseArr, 3, "CASE", "A", 0, ""
-    MakeCmd nestedCaseArr, 4, "SET", "{wrong}", 0, "1"
-    MakeCmd nestedCaseArr, 5, "END_IF", 0, 0, ""
-    MakeCmd nestedCaseArr, 6, "END_SELECT", 0, 0, ""
+    MakeCmd nestedCaseArr, 3, "CASE", "A", "", ""
+    MakeCmd nestedCaseArr, 4, "SET", "{wrong}", "", "1"
+    MakeCmd nestedCaseArr, 5, "END_IF", "", "", ""
+    MakeCmd nestedCaseArr, 6, "END_SELECT", "", "", ""
     program.LoadFromArray nestedCaseArr, 1
     ExpectBool "CASE under IF rejected", False, program.ValidateStructure(), fails
     ExpectLong "CASE under IF not indexed", 0, program.SelectBlock(1).CaseCount, fails
     MakeCmd nestedCaseArr, 1, "IF", "0", "EQ", "1"
-    MakeCmd nestedCaseArr, 2, "REPEAT", "1", 0, ""
-    MakeCmd nestedCaseArr, 3, "ELSE", 0, 0, ""
-    MakeCmd nestedCaseArr, 5, "END_REPEAT", 0, 0, ""
-    MakeCmd nestedCaseArr, 6, "END_IF", 0, 0, ""
+    MakeCmd nestedCaseArr, 2, "REPEAT", "1", "", ""
+    MakeCmd nestedCaseArr, 3, "ELSE", "", "", ""
+    MakeCmd nestedCaseArr, 5, "END_REPEAT", "", "", ""
+    MakeCmd nestedCaseArr, 6, "END_IF", "", "", ""
     program.LoadFromArray nestedCaseArr, 1
     ExpectBool "ELSE under loop rejected", False, program.ValidateStructure(), fails
 
     Dim earlyReturnArr(1 To 9, 1 To 5) As Variant
-    MakeCmd earlyReturnArr, 1, "CALL", 0, 0, "SUB"
-    MakeCmd earlyReturnArr, 2, "LABEL", 0, 0, "MAIN"
-    MakeCmd earlyReturnArr, 3, "EXIT", 0, 0, ""
-    MakeCmd earlyReturnArr, 4, "LABEL", 0, 0, "SUB"
+    MakeCmd earlyReturnArr, 1, "CALL", "", "", "SUB"
+    MakeCmd earlyReturnArr, 2, "LABEL", "", "", "MAIN"
+    MakeCmd earlyReturnArr, 3, "EXIT", "", "", ""
+    MakeCmd earlyReturnArr, 4, "LABEL", "", "", "SUB"
     MakeCmd earlyReturnArr, 5, "IF", "0", "EQ", "1"
-    MakeCmd earlyReturnArr, 6, "RETURN", 0, 0, ""
-    MakeCmd earlyReturnArr, 7, "END_IF", 0, 0, ""
-    MakeCmd earlyReturnArr, 8, "GOTO", 0, 0, "MAIN"
-    MakeCmd earlyReturnArr, 9, "RETURN", 0, 0, ""
+    MakeCmd earlyReturnArr, 6, "RETURN", "", "", ""
+    MakeCmd earlyReturnArr, 7, "END_IF", "", "", ""
+    MakeCmd earlyReturnArr, 8, "GOTO", "", "", "MAIN"
+    MakeCmd earlyReturnArr, 9, "RETURN", "", "", ""
     program.LoadFromArray earlyReturnArr, 1
     ExpectBool "Conditional RETURN structure", True, program.ValidateStructure(), fails
     ExpectBool "Conditional RETURN end", True, program.IsSubroutineEndAt(9), fails
     ExpectLong "Conditional RETURN area extends to final RETURN", program.SubAreaIdAt(4), program.SubAreaIdAt(9), fails
     ExpectBool "Conditional RETURN cannot escape with GOTO", False, program.ValidateLabels(), fails
-    MakeCmd earlyReturnArr, 8, "SET", "{tail}", 0, "1"
+    MakeCmd earlyReturnArr, 8, "SET", "{tail}", "", "1"
     program.LoadFromArray earlyReturnArr, 1
     ExpectBool "Conditional RETURN valid tail", True, program.ValidateStructure() And program.ValidateLabels(), fails
+
+    Dim siblingReturn(1 To 8, 1 To 5) As Variant
+    MakeCmd siblingReturn, 1, "IF", "1", "EQ", "1"
+    MakeCmd siblingReturn, 3, "CALL", "", "", "SUB"
+    MakeCmd siblingReturn, 4, "EXIT", "", "", ""
+    MakeCmd siblingReturn, 5, "LABEL", "", "", "SUB"
+    MakeCmd siblingReturn, 6, "ELSE", "", "", ""
+    MakeCmd siblingReturn, 7, "RETURN", "", "", ""
+    MakeCmd siblingReturn, 8, "END_IF", "", "", ""
+    program.LoadFromArray siblingReturn
+    ExpectBool "Sibling IF branch cannot supply RETURN", False, program.ValidateLabels(), fails
+    MakeCmd siblingReturn, 1, "SELECT", "A", "", ""
+    MakeCmd siblingReturn, 2, "CASE", "A", "", ""
+    MakeCmd siblingReturn, 6, "CASE", "B", "", ""
+    MakeCmd siblingReturn, 8, "END_SELECT", "", "", ""
+    program.LoadFromArray siblingReturn
+    ExpectBool "Sibling CASE cannot supply RETURN", False, program.ValidateLabels(), fails
+    MakeCmd siblingReturn, 6, "RETURN", "", "", ""
+    MakeCmd siblingReturn, 7, "CASE", "B", "", ""
+    program.LoadFromArray siblingReturn
+    ExpectBool "Same branch supplies RETURN", True, program.ValidateStructure() And program.ValidateLabels(), fails
 
     Dim branchJumpArr(1 To 17, 1 To 5) As Variant
     MakeCmd branchJumpArr, 1, "GOTO", "", "", "FIRST"

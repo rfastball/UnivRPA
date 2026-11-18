@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' @desc Static ScriptProgram facade. External modules should query only this class.
-' @depends clsScriptProgramSource, clsScriptProgramIndex, clsScriptProgramAnalysis
+' @depends clsScriptProgramSource, clsScriptProgramIndex, clsScriptProgramAnalysis, modFilterUtils
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -30,7 +30,17 @@ End Sub
 
 Public Sub LoadFromRange(ByVal sourceRange As Range)
     If sourceRange Is Nothing Then Err.Raise 5, "clsScriptProgram.LoadFromRange", "Source range is required."
-    LoadFromArray sourceRange.value, sourceRange.Row
+    Dim values As Variant, R As Long, c As Long
+    values = sourceRange.value
+    ' Keep Date conversion, but recover digits lost by Currency conversion.
+    If IsArray(values) Then
+        For R = LBound(values, 1) To UBound(values, 1)
+            For c = LBound(values, 2) To UBound(values, 2)
+                values(R, c) = modFilterUtils.SnapshotCellValue(values(R, c), sourceRange, R, c)
+            Next c
+        Next R
+    End If
+    LoadFromArray values, sourceRange.Row
 End Sub
 
 Public Sub LoadFromArray(ByVal sourceArray As Variant, Optional ByVal firstSheetRow As Long = 1)

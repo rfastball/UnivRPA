@@ -194,23 +194,13 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
                 GoTo CleanUp
             End If
 
-            If Len(repeatArg) = 0 Then
-                ' 빈 반복횟수 -> 무한 반복 (BREAK/ESC로 종료)
-                maxCnt = 0
-                modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
-                ICommand_Execute = CMD_NEXT_LINE
-            Else
+            If Len(repeatArg) > 0 Then
                 maxCnt = modParse.ParseLongStrict(repeatArg)
-                If maxCnt <= 0 Then
-                    ' 0 이하 -> 무한 반복 (반복을 끄려면 REPEAT 블록을 주석 처리)
-                    maxCnt = 0
-                    modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
-                    ICommand_Execute = CMD_NEXT_LINE
-                Else
-                    modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
-                    ICommand_Execute = CMD_NEXT_LINE
-                End If
+                If maxCnt < 0 Or (maxCnt = 0 And repeatArg Like "*[1-9]*") Then _
+                    Err.Raise 5, "clsCommandsFlow", "REPEAT count must be zero or round to a positive integer."
             End If
+            modContext.LoopPush "REPEAT", R, rEndRepeat, maxCnt
+            ICommand_Execute = CMD_NEXT_LINE
 
          Case "END_REPEAT"
             ' 헤더 줄은 활성 프레임에서 조회 - 후방 스캔 제거 (기존엔 스캔값을 프레임과 등가 검증만 했음)
@@ -430,6 +420,7 @@ Private Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As
         GoTo CleanUp
     End If
 
+    Dim caseInst As clsInstruction
     Dim caseVal As String
     Dim fallbackLine As Long
     fallbackLine = 0
@@ -438,7 +429,11 @@ Private Function ResolveSelectTarget(ByVal R As Long, ByVal selVal As String) As
     For i = 1 To block.CaseCount
         Dim caseLine As Long
         caseLine = block.CaseLineAt(i)
-        caseVal = modTokenResolver.ResolveParam(prog.InstructionAt(caseLine).p1)
+        Set caseInst = prog.InstructionAt(caseLine)
+        Dim caseError As String
+        caseError = caseInst.RawSyntaxError()
+        If Len(caseError) > 0 Then Err.Raise 5, "clsCommandsFlow", "CASE line " & caseLine & ": " & caseError
+        caseVal = modTokenResolver.ResolveParam(caseInst.p1)
 
         ' Case ELSE (또는 빈 값) = 폴백. 여러 개면 마지막 폴백이 이긴다.
         If UCase$(Trim$(caseVal)) = "ELSE" Or Len(caseVal) = 0 Then

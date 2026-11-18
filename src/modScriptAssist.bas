@@ -102,6 +102,10 @@ Public Sub ToggleSelectedCommandComment(Optional ByVal targetRange As Range = No
     allCommented = True
 
     For Each cell In commandRange.Cells
+        If cell.HasFormula Then
+            Application.StatusBar = ASSIST_PREFIX & ": 수식 COMMAND 셀이 포함되어 주석을 변경하지 않았습니다. " & cell.Address(False, False)
+            Exit Sub
+        End If
         If Not IsBlankCommand(cell.value) Then
             targetCount = targetCount + 1
             If Not IsCommentCommand(cell.value) Then allCommented = False
@@ -180,10 +184,15 @@ Public Sub ValidateChangedCommands(ByVal Target As Range)
     If changedRows.count = 0 Then Exit Sub
 
     Dim program As clsScriptProgram, key As Variant
+    On Error GoTo SnapshotFailed
     Set program = modDevTools.ProgramSnapshotFromSheet(ws)
+    On Error GoTo 0
     For Each key In changedRows.keys
         ValidateCommandCell ws.Cells(CLng(key), cmdCol), program
     Next key
+    Exit Sub
+SnapshotFailed:
+    Application.StatusBar = ASSIST_PREFIX & ": " & Err.Description
 End Sub
 
 Public Sub ValidateCommandCell(ByVal Target As Range, Optional ByVal program As clsScriptProgram = Nothing)
@@ -288,12 +297,17 @@ Public Function HandleBeforeDoubleClick(ByVal Target As Range) As Boolean
     Dim cmd As String
     cmd = NormalizeCmd(ws.Cells(Target.Row, cmdCol).value)
 
+    On Error GoTo NavigationFailed
     Select Case cmd
         Case "CALL", "GOTO"
             HandleBeforeDoubleClick = HandleJumpParamDoubleClick(Target, cmd)
         Case "LABEL"
             HandleBeforeDoubleClick = HandleLabelParamDoubleClick(Target)
     End Select
+    Exit Function
+NavigationFailed:
+    Application.StatusBar = ASSIST_PREFIX & ": " & Err.Description
+    HandleBeforeDoubleClick = True
 End Function
 
 Private Function HandleJumpParamDoubleClick(ByVal Target As Range, ByVal cmd As String) As Boolean

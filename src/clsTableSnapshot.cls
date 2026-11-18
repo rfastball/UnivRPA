@@ -7,6 +7,8 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = True
+' @desc 시트 표시값과 헤더를 읽기 전용 스냅샷으로 변환 담당
+' @depends modActions, modFilterUtils
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -60,7 +62,7 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
     ElseIf TypeOf vSource Is Range Then
         ' [Case B] Range 객체가 넘어온 경우
         If vSource.Areas.count <> 1 Then Err.Raise 5, "clsTableSnapshot.LoadFromSheet", "A contiguous table range is required."
-        If vSource.Cells.count = 1 Then
+        If vSource.Cells.CountLarge = 1 Then
             ' [Case B-1] 단일 셀(예: A1)만 넘김 -> 여기서부터 끝까지 자동 탐색
             Set rngTarget = GetRealUsedRange(vSource.Worksheet, vSource)
         Else
@@ -78,7 +80,9 @@ Public Sub LoadFromSheet(ByVal vSource As Variant, Optional ByVal visibleOnly As
     End If
     
     Dim vData As Variant
+    CheckSnapshotAbort
     vData = SnapshotVisibleText(rngTarget, visibleOnly)
+    CheckSnapshotAbort
     
     ' 4. 배열 로드 실행
     LoadFromArray vData
@@ -125,7 +129,7 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly
 
     ' 값 일괄 스냅샷 (.Value는 Date/Currency 타입 보존 - 폴백 포맷 의미 유지)
     Dim vValues As Variant
-    If rngTarget.Cells.count = 1 Then
+    If rngTarget.Cells.CountLarge = 1 Then
         ReDim vValues(1 To 1, 1 To 1)
         vValues(1, 1) = rngTarget.value
     Else
@@ -138,6 +142,7 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly
     rowIncluded(1) = True
     includedRows = 1
     For R = 2 To rowCount
+        If R Mod 32 = 0 Then CheckSnapshotAbort
         If visibleOnly Then
             rowIncluded(R) = IsWorksheetRowVisible(rngTarget.rows(R))
         Else
@@ -149,19 +154,20 @@ Private Function SnapshotVisibleText(ByVal rngTarget As Range, ByVal visibleOnly
     ReDim result(1 To includedRows, 1 To colCount)
 
     For R = 1 To rowCount
+        CheckSnapshotAbort
         If Not rowIncluded(R) Then GoTo NextSourceRow
 
         targetRow = targetRow + 1
         For c = 1 To colCount
+            If c Mod 64 = 0 Then CheckSnapshotAbort
             If R = 1 Then
-                textValue = HeaderText(vValues(1, c))
+                textValue = HeaderText(modFilterUtils.SnapshotCellValue(vValues(1, c), rngTarget, 1, c))
             Else
                 Set cell = rngTarget.Cells(R, c)
                 textValue = cell.text
                 If IsOverflowText(textValue) Or (Len(textValue) = 0 And CellHasValue(vValues(R, c))) Then
-                    ' Currency from .Value has already lost digits beyond four decimals.
-                    If VarType(vValues(R, c)) = vbCurrency Then vValues(R, c) = cell.Value2
-                    textValue = modFilterUtils.GetSafeFormattedText(vValues(R, c), cell.NumberFormat)
+                    textValue = modFilterUtils.GetSafeFormattedText( _
+                        modFilterUtils.SnapshotCellValue(vValues(R, c), rngTarget, R, c), cell.NumberFormat)
                 End If
             End If
             result(targetRow, c) = textValue
@@ -171,6 +177,10 @@ NextSourceRow:
 
     SnapshotVisibleText = result
 End Function
+
+Private Sub CheckSnapshotAbort()
+    If modActions.AbortPending() Then Err.Raise 18, "clsTableSnapshot", "Table snapshot cancelled."
+End Sub
 
 Private Function IsWorksheetRowVisible(ByVal rngRow As Range) As Boolean
     On Error GoTo SafeExit

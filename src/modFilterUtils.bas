@@ -3,6 +3,16 @@ Attribute VB_Name = "modFilterUtils"
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
+' @desc 일괄 읽은 셀 값의 타입을 보존하고 통화값만 원래 정밀도로 반환함
+Public Function SnapshotCellValue(ByVal typedValue As Variant, ByVal source As Range, _
+                                  ByVal rowIndex As Long, ByVal columnIndex As Long) As Variant
+    If VarType(typedValue) = vbCurrency Then
+        SnapshotCellValue = source.Cells(rowIndex, columnIndex).Value2
+    Else
+        SnapshotCellValue = typedValue
+    End If
+End Function
+
 ' Applies an Excel number format with graceful fallback for narrow-column "####" snapshots.
 Public Function GetSafeFormattedText(ByVal vVal As Variant, ByVal sFmt As String) As String
     Dim sResult As String

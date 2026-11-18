@@ -23,6 +23,12 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
 
     ' 좌표(P1/P2)는 DT_NUM 슬롯인 분기에서만 파싱한다
     ' (KEY/COMBO의 P1/P2는 문자열 - 과거의 무조건 CLng(Val())는 데드 파스였음)
+    Dim waitMs As Long
+    If cmd <> "TYPE" And Len(Trim$(args(3))) > 0 Then
+        waitMs = modParse.ParseLongStrict(args(3))
+        If Left$(Trim$(args(3)), 1) = "-" And args(3) Like "*[1-9]*" Then _
+            Err.Raise 5, "clsCommandsAction", "Post-action delay must not be negative."
+    End If
     Select Case cmd
         Case "MOVE":   modActions.Action_MouseMove modParse.ParseLongStrict(args(1)), modParse.ParseLongStrict(args(2))
         Case "CLICK":  modActions.Action_MouseClick modParse.ParseLongStrict(args(1)), modParse.ParseLongStrict(args(2)), False
@@ -38,15 +44,7 @@ Private Function ICommand_Execute(ByVal cmd As String, ByVal R As Long, ByRef ar
             GoTo CleanUp
     End Select
 
-    ' [사후 대기] MOVE/CLICK/RCLICK/KEY/COMBO 만 P3에 대기시간(ms)을 가질 수 있음
-    '   (TYPE=텍스트 이므로 제외)
-    Dim waitMs As Long
-    If modParse.TryParseLongStrict(args(3), waitMs) And waitMs > 0 Then
-        Select Case cmd
-            Case "MOVE", "CLICK", "RCLICK", "KEY", "COMBO"
-                modActions.BetterWait waitMs
-        End Select
-    End If
+    If waitMs > 0 Then modActions.BetterWait waitMs
 
 CleanUp:
     Exit Function

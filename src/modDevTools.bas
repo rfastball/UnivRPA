@@ -1,6 +1,6 @@
 Attribute VB_Name = "modDevTools"
 ' @desc 시트 어댑터 및 서식/표시 담당. 정적 의미 판단은 clsScriptProgram에 질의한다.
-' @depends modCmdRegistry, modParse, clsScriptProgram, modScriptAssist
+' @depends modCmdRegistry, modParse, clsScriptProgram, clsInstruction, modScriptAssist
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -110,11 +110,15 @@ Public Sub FormatRPAScript(Optional ByVal targetSheet As Worksheet = Nothing)
                 End If
 
                     ' 3. 명령어 텍스트 및 IDE 스타일 적용
-                    If rowIsComment Then
-                        ws.Cells(R, 2).value = FormatCommentCommandText(ws.Cells(R, 2).value, printDepth)
-                    ElseIf Not rowLooksLikeIndentedComment Then
-                        ws.Cells(R, 2).value = FormatCommandText(pureCmd, printDepth)
-                    End If
+                    With ws.Cells(R, 2)
+                        If Not .HasFormula Then
+                            If rowIsComment Then
+                                .value = FormatCommentCommandText(.value, printDepth)
+                            ElseIf Not rowLooksLikeIndentedComment Then
+                                .value = FormatCommandText(pureCmd, printDepth)
+                            End If
+                        End If
+                    End With
 
                     ' [추가] 문법 및 파라미터 검사
                     Dim isValid As Boolean
@@ -205,23 +209,17 @@ Public Function ValidateLine(cmd As String, p1 As Variant, p2 As Variant, p3 As 
     m_lastValidationMessage = ""
     m_lastValidationWarning = ""
 
-    Dim def As CmdDef
+    Dim def As CmdDef, inst As New clsInstruction
     Set def = modCmdRegistry.GetCmdDef(cmd)
-
-    ' 1. 명령어 존재 여부 = 레지스트리 등록 여부
-    If def Is Nothing Then
-        SetValidationError "Unknown command: " & modCmdRegistry.NormalizeCommand(cmd)
-        ValidateLine = False
-        Exit Function
-    End If
+    inst.Init 0, 0, cmd, modCmdRegistry.NormalizeCommand(cmd), ParamText(p1), ParamText(p2), ParamText(p3), def
+    m_lastValidationMessage = inst.RawSyntaxError()
+    If Len(m_lastValidationMessage) > 0 Then Exit Function
 
     ValidateLine = True
 
-    If Not ValidateParamSlot(def, 1, p1) Then ValidateLine = False
-    If Not ValidateParamSlot(def, 2, p2) Then ValidateLine = False
-    If Not ValidateParamSlot(def, 3, p3) Then ValidateLine = False
-
-    If Not ValidateParamShift(def, p1, p2, p3) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 1, inst.p1) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 2, inst.p2) Then ValidateLine = False
+    If Not ValidateParamSlot(def, 3, inst.p3) Then ValidateLine = False
 End Function
 
 Public Function LastValidationMessage() As String
@@ -232,30 +230,15 @@ Public Function LastValidationWarning() As String
     LastValidationWarning = m_lastValidationWarning
 End Function
 
-Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal rawValue As Variant) As Boolean
+Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal text As String) As Boolean
     ValidateParamSlot = True
 
-    Dim text As String
     Dim numProbe As Double
-    text = ParamText(rawValue)
 
     Dim spec As ParamSpec
     Set spec = def.Param(idx)
 
-    If spec Is Nothing Then
-        If Len(text) > 0 Then
-            SetValidationError def.Canonical & " does not use P" & idx & "."
-            ValidateParamSlot = False
-        End If
-        Exit Function
-    End If
-
-    If spec.Required And Len(text) = 0 Then
-        SetValidationError def.Canonical & " requires P" & idx & " (" & spec.Meaning & ")."
-        ValidateParamSlot = False
-        Exit Function
-    End If
-
+    If spec Is Nothing Then Exit Function
     If Len(text) = 0 Then Exit Function
 
     ' [C2] RAW 슬롯 시맨틱은 레지스트리(ParamSpec.RawKind)가 선언 - 명령어명 하드코딩 금지
@@ -263,11 +246,6 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
         Case RK_JUMP_TARGET
             If modParse.TryParseDoubleStrict(text, numProbe) Or ContainsTokenSyntax(text) Then
                 SetValidationError def.Canonical & " target must be a static LABEL."
-                ValidateParamSlot = False
-            End If
-        Case RK_CONDITION
-            If Not modCondition.IsConditionOperator(text) Then
-                SetValidationError "Invalid condition operator: " & text
                 ValidateParamSlot = False
             End If
         Case RK_LVALUE
@@ -292,32 +270,6 @@ Private Function ValidateParamSlot(ByVal def As CmdDef, ByVal idx As Long, ByVal
             End If
         End If
     End If
-End Function
-
-Private Function ValidateParamShift(ByVal def As CmdDef, ByVal p1 As Variant, ByVal p2 As Variant, ByVal p3 As Variant) As Boolean
-    ValidateParamShift = True
-
-    Dim vals(1 To 3) As String
-    vals(1) = ParamText(p1)
-    vals(2) = ParamText(p2)
-    vals(3) = ParamText(p3)
-
-    Dim idx As Long, later As Long
-    For idx = 1 To 2
-        Dim spec As ParamSpec
-        Set spec = def.Param(idx)
-        If Not spec Is Nothing Then
-            If spec.Required And Len(vals(idx)) = 0 Then
-                For later = idx + 1 To 3
-                    If Len(vals(later)) > 0 Then
-                        SetValidationError def.Canonical & " P" & idx & " is blank, but a later parameter has a value."
-                        ValidateParamShift = False
-                        Exit Function
-                    End If
-                Next later
-            End If
-        End If
-    Next idx
 End Function
 
 Private Function ParamText(ByVal rawValue As Variant) As String
