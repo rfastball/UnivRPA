@@ -19,6 +19,7 @@ Attribute VB_Exposed = False
 Option Explicit
 
 Private Const CAPTURE_MODE_COORDS As String = "좌표/색상"
+Private Const CAPTURE_MODE_XY As String = "좌표만 (X/Y)"
 Private Const CAPTURE_MODE_PIXEL_IF As String = "픽셀 IF 조건"
 
 Public Sub Prepare()
@@ -35,6 +36,10 @@ End Function
 
 Public Function IsPixelIfMode() As Boolean
     IsPixelIfMode = (SelectedSnippetMode() = CAPTURE_MODE_PIXEL_IF)
+End Function
+
+Public Function IsXYMode() As Boolean
+    IsXYMode = (SelectedSnippetMode() = CAPTURE_MODE_XY)
 End Function
 
 Public Function ModeCaption() As String
@@ -71,6 +76,7 @@ Private Sub PrepareSnippetMode()
         .Clear
         .AddItem CAPTURE_MODE_COORDS
         .AddItem CAPTURE_MODE_PIXEL_IF
+        .AddItem CAPTURE_MODE_XY
         .ListIndex = 0
     End With
 SafeExit:

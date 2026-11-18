@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UnivRPA 연습실</title>
+<style>
+* {box-sizing:border-box}
+html {scrollbar-gutter:stable;color-scheme:light}
+body {margin:0;background:#f3f5f2;color:#192e2c;font:16px/1.55 "Malgun Gothic",sans-serif}
+main {max-width:820px;margin:auto;padding:24px clamp(16px,4vw,40px)}
+header,nav,.row {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header {justify-content:space-between;border-bottom:1px solid #c4d0ca;padding-bottom:12px}
+header strong {font-size:18px} nav {gap:6px} nav a {color:#315852;text-decoration:none;padding:4px 8px}
+nav a[aria-current] {color:#12483a;box-shadow:inset 0 -2px #186650;font-weight:bold}
+h1 {font-size:clamp(24px,4vw,34px);margin:20px 0 3px} p {margin:0 0 16px}
+section {background:white;border:1px solid #c4d0ca;padding:clamp(14px,3vw,24px);border-radius:10px}
+button,select,input {font:inherit;border:1px solid #95aaa0;border-radius:5px;padding:6px 10px;background:white;color:inherit}
+button,select {cursor:pointer} :focus-visible {outline:3px solid #2274bb;outline-offset:2px}
+.fields {display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;margin:12px 0}
+label {display:block;font-weight:bold} input {display:block;width:100%;margin-top:4px}
+#send {min-width:136px;background:#155445;color:white;border:0;padding:10px 16px}
+#send.accepted {background:#284b87}
+.reserved {visibility:hidden}
+.controls {min-height:44px} #lamp {display:inline-block;width:32px;height:32px;background:#666;vertical-align:middle}
+#lamp.ready {background:#008040}
+h2 {font-size:17px;margin:18px 0 6px} ol {margin:0;padding:0;list-style:none}
+li {padding:5px 0;border-top:1px solid #dde4de;font-variant-numeric:tabular-nums}
+output {font-weight:bold} .help {color:#40594f;margin-top:12px;font-size:14px}
+</style>
+<main>
+<header><strong>UnivRPA 연습실</strong><nav aria-label="실습 선택">
+<a href="#01">1. 클릭</a><a href="#02">2. 입력</a><a href="#03">3. 대기</a></nav></header>
+<h1 id="title"></h1><p id="goal"></p>
+<section aria-label="주문 접수 연습 화면">
+  <div class="row controls" id="timing">
+    <select id="delay" aria-label="준비 시간"><option value="500">빠른 준비 · 0.5초</option><option value="3000">느린 준비 · 3초</option></select>
+    <button id="start">준비 시작</button><span id="lamp"></span><span id="status" role="status"></span>
+  </div>
+  <form id="order" autocomplete="off">
+    <div class="fields" id="fields"><label>품목<input id="item"></label><label>수량<input id="qty" inputmode="numeric"></label></div>
+    <div class="row"><button id="send" type="submit">접수</button><button type="button" id="reset">다시 시작</button><output id="result"></output></div>
+  </form>
+</section>
+<p id="hint" class="help"></p>
+<h2>실행 기록</h2><ol id="history" role="log" aria-live="polite"></ol>
+</main>
+<script>
+'use strict';
+const el = id => document.getElementById(id);
+const lessons = {
+  '01': ['1초 뒤 버튼 클릭', '버튼을 한 번 눌러 보고 초기화한 뒤, 같은 동작을 엑셀에서 실행하세요.', '클릭 줄을 주석 처리하고 다시 시작하면 클릭 횟수가 0으로 남습니다.'],
+  '02': ['품목과 수량 입력', '기존 품목을 노트로 바꾸고 수량 2를 입력한 뒤 Enter로 접수하세요.', '품목 → Tab → 수량 → Enter 순서입니다. 접수한 값은 실행 기록에 남습니다.'],
+  '03': ['준비 신호 기다리기', '준비 시작을 누르고 표시등이 초록색이 된 뒤 접수하세요.', '준비 시간을 바꾸고 같은 스크립트를 실행하세요. HUD는 글자가 없는 표시등 중앙에 맞춥니다.']
+};
+let lesson, timer, ready, count, began;
+function log(message) {
+  const line = document.createElement('li');
+  line.textContent = ((performance.now()-began)/1000).toFixed(1) + '초 · ' + message;
+  el('history').prepend(line);
+}
+function setReady(value, message) {
+  ready = value;
+  el('lamp').classList.toggle('ready', value);
+  el('status').textContent = message;
+  el('item').readOnly = el('qty').readOnly = !value;
+}
+function reset() {
+  clearTimeout(timer);
+  began = performance.now();
+  count = 0;
+  el('history').replaceChildren();
+  el('item').value = lesson === '03' ? '노트' : '기존 품목';
+  el('qty').value = lesson === '03' ? '2' : '';
+  el('send').classList.remove('accepted');
+  el('result').textContent = lesson === '01' ? '클릭 0회' : '접수 0건';
+  setReady(lesson !== '03', '시작 전');
+}
+function openLesson() {
+  const hash = location.hash.slice(1);
+  lesson = Object.hasOwn(lessons, hash) ? hash : '01';
+  document.title = 'UnivRPA Lab ' + lesson + ' · 연습실';
+  [el('title').textContent, el('goal').textContent, el('hint').textContent] = lessons[lesson];
+  el('timing').classList.toggle('reserved', lesson !== '03');
+  el('fields').classList.toggle('reserved', lesson === '01');
+  el('send').textContent = lesson === '01' ? '클릭하기' : '접수';
+  for (const a of document.querySelectorAll('nav a')) {
+    if (a.hash === '#' + lesson) a.setAttribute('aria-current','step');
+    else a.removeAttribute('aria-current');
+  }
+  el('delay').value = '500';
+  reset();
+}
+el('start').onclick = () => {
+  reset();
+  setReady(false, '준비 중');
+  log('준비 시작');
+  timer = setTimeout(() => {setReady(true,'입력 가능'); log('입력 가능');}, Number(el('delay').value));
+};
+el('delay').onchange = reset;
+el('reset').onclick = reset;
+el('order').onsubmit = event => {
+  event.preventDefault();
+  if (!ready) {log('접수 시도 · 아직 준비되지 않았습니다'); return;}
+  const item = el('item').value.trim(), qty = el('qty').value.trim();
+  if (lesson !== '01' && (!item || !/^[1-9]\d*$/.test(qty))) {log('품목과 1 이상의 정수 수량을 입력하세요'); return;}
+  count++;
+  el('send').classList.add('accepted');
+  el('result').textContent = lesson === '01' ? '클릭 ' + count + '회' : '접수 ' + count + '건';
+  log(lesson === '01' ? '버튼 클릭' : item + ' · ' + qty + '개 접수');
+};
+window.addEventListener('hashchange',openLesson);
+openLesson();
+</script>
+</html>

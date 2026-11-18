@@ -86,7 +86,7 @@ Public Sub RunCaptureHud(ByVal view As frmCapture)
                 strInfo = CaptureSnippet(view, pt.x, pt.y, hexColor)
 
                 If view.IsAutoMode Then
-                    FillCaptureCells ActiveCell, view.IsPixelIfMode, pt.x, pt.y, hexColor
+                    FillCaptureCells ActiveCell, view.IsPixelIfMode, pt.x, pt.y, hexColor, view.IsXYMode
                     view.RenderAutoFilled pt.x, pt.y, hexColor
                 Else
                     modWinAPI.SetClipboardText strInfo
@@ -123,27 +123,30 @@ End Sub
 Private Function CaptureSnippet(ByVal view As frmCapture, ByVal x As Long, ByVal y As Long, ByVal hexColor As String) As String
     If view.IsPixelIfMode Then
         CaptureSnippet = "{$PIXEL:" & x & "," & y & "}" & vbTab & "EQ" & vbTab & hexColor
+    ElseIf view.IsXYMode Then
+        CaptureSnippet = x & vbTab & y
     Else
         CaptureSnippet = x & vbTab & y & vbTab & hexColor
     End If
 End Function
 
 ' @desc 대상 셀부터 캡처 결과를 기록하고 다음 행으로 이동함
-Public Sub FillCaptureCells(ByVal target As Range, ByVal pixelIfMode As Boolean, ByVal x As Long, ByVal y As Long, ByVal hexColor As String)
+Public Sub FillCaptureCells(ByVal target As Range, ByVal pixelIfMode As Boolean, ByVal x As Long, ByVal y As Long, ByVal hexColor As String, Optional ByVal xyOnly As Boolean = False)
     With target
-        .offset(0, 2).NumberFormat = "@"
         If pixelIfMode Then
             .value = "{$PIXEL:" & x & "," & y & "}"
             .offset(0, 1).value = "EQ"
-            .offset(0, 2).value = hexColor
         Else
             .value = x
             .offset(0, 1).value = y
-            .offset(0, 2).value = hexColor
         End If
         .Interior.color = CLR_CAPTURE_FILL
         .offset(0, 1).Interior.color = CLR_CAPTURE_FILL
-        .offset(0, 2).Interior.color = CLR_CAPTURE_FILL
+        If Not xyOnly Then
+            .offset(0, 2).NumberFormat = "@"
+            .offset(0, 2).value = hexColor
+            .offset(0, 2).Interior.color = CLR_CAPTURE_FILL
+        End If
         .offset(1, 0).Select
     End With
 End Sub

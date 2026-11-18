@@ -2534,6 +2534,10 @@ Private Function TC_ScriptAssistFormatterRegression() As Long
         ExpectText "HUD preserves captured color " & capturedColor, CStr(capturedColor), CStr(ws.Range("E2").Value2), fails
         ExpectLong "HUD stores color as text", vbString, VarType(ws.Range("E2").Value2), fails
     Next capturedColor
+    ws.Range("E2").Value2 = "500"
+    modHelper.FillCaptureCells ws.Range("C2"), False, 30, 40, "FF0000", True
+    ExpectText "XY capture writes coordinates and preserves delay", "30/40/500", _
+        ws.Range("C2").Value2 & "/" & ws.Range("D2").Value2 & "/" & ws.Range("E2").Value2, fails
     ws.Range("A2:F4").Clear
     ws.Range("B2").value = "EXIT"
     ws.Range("B3").Formula = "=IF(H1=1,""CLICK"",""MOVE"")"

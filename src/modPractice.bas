@@ -1,27 +1,52 @@
 Attribute VB_Name = "modPractice"
 ' @desc 배포 사본에 기능별 연습 시트를 구성함
-' @depends modDevTools, clsScriptProgram
+' @depends modDevTools, clsScriptProgram, modActions
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
 
-' @desc 배포 사본 앞에 실행 가능한 연습 시트 여섯 장을 추가함
+' @desc 배포 사본에 브라우저 실습과 기능별 연습 시트를 추가함
 Public Sub BuildPracticeSheets()
     Dim anchor As Worksheet, firstLesson As Worksheet, tableLesson As Worksheet
     Set anchor = ThisWorkbook.Worksheets(1)
 
-    Set firstLesson = AddLesson(anchor, "연습01 시스템", Array( _
+    Set firstLesson = AddLesson(anchor, "연습01 고정 대기 클릭", Array( _
+        "FOCUS|||UnivRPA Lab 01|H2의 연습실 열기로 시작합니다.", _
+        "SLEEP|||1000|1초를 3초로 바꾸고 차이를 확인하세요.", _
+        "CLICK|{버튼X}|{버튼Y}||클릭하기 버튼 중앙을 캡처하세요. 결과: 클릭 1회."))
+    AddLabControls firstLesson, "클릭하기 버튼"
+    Dim entryLesson As Worksheet, waitLesson As Worksheet
+    Set entryLesson = AddLesson(anchor, "연습02 한 건 입력", Array( _
+        "FOCUS|||UnivRPA Lab 02|연습실의 다시 시작을 누른 뒤 실행하세요.", _
+        "CLICK|{품목X}|{품목Y}||품목 칸의 오른쪽 빈 곳을 캡처하세요.", _
+        "COMBO|CTRL|A||기존 품목을 모두 선택합니다.", _
+        "TYPE|30||노트|접수할 품목입니다.", _
+        "KEY|TAB|||다음 수량 칸으로 이동합니다.", _
+        "TYPE|30||2|수량을 입력합니다.", _
+        "KEY|ENTER|||기록에 노트 2개가 보이면 성공입니다."))
+    AddLabControls entryLesson, "품목 입력칸"
+    Set waitLesson = AddLesson(anchor, "연습03 색상 대기", Array( _
+        "FOCUS|||UnivRPA Lab 03|먼저 빠른 준비에서 실행하세요.", _
+        "CLICK|{시작X}|{시작Y}||준비 시작 버튼. 여기서 준비 시간이 시작됩니다.", _
+        "SLEEP|||1000|느린 준비에서 실패한 뒤 이 줄을 주석 처리하세요.", _
+        "# WAIT_APPEAR|{표시등X}|{표시등Y}|408000|초록 표시등을 캡처하고 이 줄의 주석을 해제하세요.", _
+        "CLICK|{접수X}|{접수Y}||접수 버튼. 실행 기록에서 입력 가능과 접수 시점을 비교하세요."))
+    AddLabControls waitLesson, "준비 시작 버튼과 접수 버튼"
+    waitLesson.Range("H8").Value2 = "3강: 준비 시작을 손으로 누른 뒤 초록 표시등 중앙을 좌표/색상 모드로 C5에 캡처하세요."
+    waitLesson.Range("H9").Value2 = "빠른 준비, 느린 준비 순으로 실행한 뒤 B4와 B5의 주석을 각각 전환해 다시 실행하세요."
+
+    AddLesson anchor, "연습04 시스템", Array( _
         "SLEEP|||500|Ctrl+Shift+W로 실행하세요. 0.5초 후 다음 줄로 이동합니다.", _
         "NOTIFY|2||첫 실행 성공!|알림 문구를 바꾸고 다시 실행해 보세요.", _
-        "EXIT||||여기서 실행을 마칩니다."))
+        "EXIT||||여기서 실행을 마칩니다.")
 
-    AddLesson anchor, "연습02 변수", Array( _
+    AddLesson anchor, "연습05 변수", Array( _
         "SET|{재고}||10|재고를 10개로 시작합니다.", _
         "INC|{재고}||5|입고 5개를 더합니다.", _
         "DEC|{재고}||2|출고 2개를 뺍니다.", _
         "NOTIFY|2||남은 재고 {재고}개|예상 결과는 13개입니다. 입고량을 바꿔 보세요.")
 
-    AddLesson anchor, "연습03 흐름 제어", Array( _
+    AddLesson anchor, "연습06 흐름 제어", Array( _
         "SET|{합계}||0|누적할 값을 0으로 초기화합니다.", _
         "REPEAT|3|||반복 횟수를 4로 바꿔 결과를 비교해 보세요.", _
         "INC|{합계}||{$LOOP}|현재 회차를 더합니다. 3회면 1+2+3입니다.", _
@@ -32,12 +57,12 @@ Public Sub BuildPracticeSheets()
         "NOTIFY|2||목표 미달 ({합계})|기본 3회에서는 목표 미달 (6)이 표시됩니다.", _
         "END_IF||||조건 분기를 마칩니다.")
 
-    AddLesson anchor, "연습04 마우스", Array( _
+    AddLesson anchor, "연습07 마우스", Array( _
         "MOVE|80|160|700|포인터가 첫 좌표에 도착해 0.7초간 머뭅니다.", _
         "MOVE|320|160|700|포인터가 오른쪽으로 이동합니다. X값을 바꿔 보세요.", _
         "NOTIFY|2||포인터 이동 완료|Ctrl+Shift+E로 연 캡처 HUD에서 다른 좌표를 확인할 수 있습니다.")
 
-    AddLesson anchor, "연습05 화면 색상", Array( _
+    AddLesson anchor, "연습08 화면 색상", Array( _
         "SET|{x}||80|검사할 화면 X좌표입니다. 고정된 배경을 고르세요.", _
         "SET|{y}||160|검사할 화면 Y좌표입니다.", _
         "SET|{기준색}||{$PIXEL:{x},{y}}|실행 시점의 픽셀 색상을 읽어 저장합니다.", _
@@ -45,9 +70,9 @@ Public Sub BuildPracticeSheets()
         "ASSERT|{x}|{y}|{기준색}|색이 달라지면 이 줄에서 멈춥니다.", _
         "NOTIFY|2||확인한 색상 {기준색}|색이 같으면 여섯 자리 색상값이 표시됩니다.")
 
-    Set tableLesson = AddLesson(anchor, "연습06 표 순회", Array( _
+    Set tableLesson = AddLesson(anchor, "연습09 표 순회", Array( _
         "SET|{총수량}||0|오른쪽 H:I열에 있는 주문 세 건의 수량을 더합니다.", _
-        "FOREACH_ROW|UnivRPA|연습06 표 순회!H1:I4||파일명을 바꿨거나 여러 버전을 열었다면 P1에 파일명을 입력하세요.", _
+        "FOREACH_ROW|UnivRPA|연습09 표 순회!H1:I4||파일명을 바꿨거나 여러 버전을 열었다면 P1에 파일명을 입력하세요.", _
         "INC|{총수량}||{$ROW.수량}|표의 수량 열을 머리글 이름으로 읽습니다.", _
         "END_FOREACH||||다음 주문으로 이동합니다.", _
         "NOTIFY|2||총 주문 수량 {총수량}개|예상 결과는 9개입니다. I열의 수량을 바꿔 보세요."))
@@ -60,6 +85,47 @@ Public Sub BuildPracticeSheets()
         .Columns("H:I").AutoFit
     End With
     firstLesson.Activate
+End Sub
+
+Private Sub AddLabControls(ByVal ws As Worksheet, ByVal targetName As String)
+    Dim button As Button
+    Set button = ws.Buttons.Add(ws.Range("H2").Left, ws.Range("H2").Top, 110, 22)
+    button.Caption = "연습실 열기"
+    button.OnAction = "OpenPracticeLab"
+    ws.Range("H4").Value2 = "창을 나란히 둔 뒤 창 위치와 확대율을 유지하세요. 대상: " & targetName
+    ws.Range("H5").Value2 = "CLICK 행의 C셀 선택 > Ctrl+Shift+E > 좌표만 (X/Y) > 자동 입력 모드를 켭니다."
+    ws.Range("H6").Value2 = "대상에 마우스를 올리고 CapsLock을 켭니다. 다음 캡처 전에는 끄고, Esc로 HUD를 닫습니다."
+    ws.Range("H7").Value2 = "스크립트 시트에서 Ctrl+Shift+W로 실행합니다. Ctrl+Shift+/로 선택한 명령의 주석을 전환합니다."
+End Sub
+
+' @desc 현재 연습 시트에 맞는 로컬 브라우저 실습 창을 엶
+Public Sub OpenPracticeLab()
+    Dim lesson As String, page As String, edge As String, url As String, folder As Variant
+    On Error GoTo Failed
+    lesson = Mid$(ActiveSheet.Name, 3, 2)
+    Select Case lesson
+        Case "01", "02", "03"
+        Case Else: Exit Sub
+    End Select
+    page = ThisWorkbook.Path & Application.PathSeparator & "연습실.html"
+    If Len(Dir$(page)) = 0 Then
+        MsgBox "배포 ZIP을 모두 풀고 연습실.html을 통합 문서와 같은 폴더에 두세요.", vbInformation
+        Exit Sub
+    End If
+    If modActions.Action_FocusWindow("UnivRPA Lab " & lesson) Then Exit Sub
+    url = "file:///" & Replace(page, "\", "/")
+    url = Replace(Replace(Replace(url, "%", "%25"), "#", "%23"), " ", "%20") & "#" & lesson
+    For Each folder In Array(Environ$("ProgramFiles(x86)"), Environ$("ProgramFiles"), Environ$("LocalAppData"))
+        edge = folder & "\Microsoft\Edge\Application\msedge.exe"
+        If Len(Dir$(edge)) > 0 Then
+            Shell """" & edge & """ --app=""" & url & """", vbNormalFocus
+            Exit Sub
+        End If
+    Next
+    ThisWorkbook.FollowHyperlink Address:=page, SubAddress:=lesson, NewWindow:=True
+    Exit Sub
+Failed:
+    MsgBox "연습실.html을 브라우저에서 열고 " & lesson & "강을 선택하세요." & vbCrLf & Err.Description, vbInformation
 End Sub
 
 Private Function AddLesson(ByVal anchor As Worksheet, ByVal title As String, ByVal lines As Variant) As Worksheet
