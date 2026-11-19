@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UnivRPA Islands · 원숭이 군도 특급배송</title>
+<style>
+*{box-sizing:border-box}html{color-scheme:light}body{background:#e7eee7;color:#203c40;font:16px/1.45 "Malgun Gothic",sans-serif;margin:0}main{max-width:1120px;margin:auto;padding:18px}header,.line,.stats,form{display:flex;align-items:center;gap:12px;flex-wrap:wrap}header{justify-content:space-between}h1,h2,p{margin:0}h1{font-size:clamp(22px,3vw,34px)}h2{font-size:17px;margin:0 0 8px}.grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:14px;margin:12px 0}.box,.signal{background:#fffdf2;border:1px solid #94aa9d;border-radius:9px;padding:12px}.signal{background:#224b51;color:white;margin-top:12px;min-height:100px}.signal[data-tone="warn"]{background:#74471c}.signal[data-tone="good"]{background:#20563e}.signal small{color:#f5e1a3;font-weight:bold}.signal strong{display:block;font-size:clamp(20px,2.8vw,30px)}.signal p{font-size:16px}.map{padding:0;overflow:hidden}canvas{width:100%;height:auto;display:block;image-rendering:pixelated}.islands{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;background:#fff6cb}.islands>div{padding:6px}.islands output{display:block;font-size:14px;min-height:1.5em}.warehouse{padding:10px 12px;border-top:1px solid #bfbd9d}.warehouse b{font-variant-numeric:tabular-nums}button,input{font:inherit;border:1px solid #83998d;border-radius:4px;padding:4px 8px;color:inherit;background:white}button{cursor:pointer;background:#fff6d6;font-weight:700}button:focus-visible,input:focus-visible{outline:3px solid #2879a0}table{border-collapse:collapse;width:100%;font-size:14px}td,th{text-align:left;padding:7px 3px;border-bottom:1px solid #dedfcc}tr.active{background:#ffeba9;font-weight:bold}th{color:#526863}.stats{padding:9px 0;font-weight:bold;gap:8px 18px}.stats b{font-size:21px}.history{margin:0;padding:0;list-style:none;max-height:160px;overflow:auto}.history li{border-top:1px solid #dedfcc;padding:5px 0}.history time{color:#617774;margin-right:10px;font-variant-numeric:tabular-nums}.receipt{background:#eef5e8;margin-top:8px;padding:8px;font-size:15px}.receipt strong{display:block}details{margin-top:10px}summary{cursor:pointer}form{margin-top:8px}#command{width:17em}#answer{width:9em} [hidden]{display:none!important}
+@media(max-width:710px){main{padding:8px}.grid{grid-template-columns:1fr}.signal{min-height:108px}.history{max-height:115px}}
+.scene{position:relative;overflow:hidden}#boat{position:absolute;inset:0;pointer-events:none}#wire{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;padding:0;border:0}table{table-layout:fixed}th:first-child{width:9%}th:nth-child(2){width:17%}th:last-child{width:28%}
+</style>
+<main><header><h1>원숭이 군도 특급배송</h1><span id="round">출항 대기</span></header>
+<section class="signal" id="signal" aria-live="polite"><small id="phase">선착장 · 대기</small><strong id="headline">엑셀 배송표를 기다립니다</strong><p id="explain">UnivRPA.xlsm의 첫 시트에서 ‘처음부터 배송’을 누르세요.</p></section>
+<div class="grid"><section class="box map"><div class="scene"><canvas id="sea" width="348" height="103" role="img" aria-label="창고 선착장에서 모모, 코코, 루루 섬으로 이동하는 뗏목"></canvas><canvas id="boat" width="348" height="103" aria-hidden="true"></canvas></div>
+<div class="islands"><div><b>모모 섬</b><output></output></div><div><b>코코 섬</b><output></output></div><div><b>루루 섬</b><output></output></div></div>
+<div class="warehouse line"><b>창고</b><span id="stock"></span><button id="supply">파파야 +1 보충</button></div></section>
+<section class="box"><h2>배송표</h2><table><thead><tr><th>행</th><th>번호</th><th>목적지 · 짐</th><th>처리</th></tr></thead><tbody id="rows"></tbody></table>
+<div class="receipt"><strong>섬 수령함</strong><span id="receipt">아직 받은 짐이 없습니다.</span></div></section></div>
+<section class="box"><h2>운항 기록</h2><div id="stats" class="stats"></div><ol class="history" id="history"></ol></section>
+<details id="console"><summary>선착장 조작대</summary><form id="form"><label>명령 <input id="command" autocomplete="off"></label><button>실행</button><label>응답 <input id="answer" readonly></label></form>
+<p>명령을 입력하고 실행을 누르면 옆에 응답이 표시됩니다.</p></details></main><input id="wire" aria-label="배송 자동 입력" tabindex="-1" autocomplete="off" spellcheck="false">
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const names=['모모','코코','루루'], fruit=['바나나','파파야'];
+const routeX=[58,174,290];
+const canvas=$('sea'),ctx=canvas.getContext('2d');
+const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+const voyageMs=3000;
+let rows=[],index=-1,previous=new Set(),trip=null,arrivalTimer,sailing,clock,round=0,lastReceipt='';
+function fresh(){return {stock:[7,4],receipts:[],orders:{},held:[],supplied:0};}
+let ledger=fresh();
+// A refresh of this tab preserves landed cargo; a new departure is committed at landing.
+const storageKey='univrpa-islands-v1';
+try{const saved=sessionStorage.getItem(storageKey);if(saved)ledger=JSON.parse(saved);}catch{}
+function save(){try{sessionStorage.setItem(storageKey,JSON.stringify(ledger));}catch{}}
+function event(phase,title,detail,tone='normal',log=true){
+ $('signal').dataset.tone=tone;$('phase').textContent=phase;$('headline').textContent=title;$('explain').textContent=detail;
+ if(log){const li=document.createElement('li'), t=document.createElement('time');
+ t.textContent=Math.floor((performance.now()-clock)/1000)+'초';li.append(t,title+' · '+detail);$('history').prepend(li);}
+}
+function rect(c,x,y,w,h,brush=ctx){brush.fillStyle=c;brush.fillRect(Math.round(x),Math.round(y),w,h);}
+function ellipse(c,x,y,rx,ry){for(let dy=-ry;dy<=ry;dy+=2){let w=Math.round(rx*Math.sqrt(Math.max(0,1-dy*dy/(ry*ry))));rect(c,x-w,y+dy,w*2,2);}}
+const monkey=['    dddddd    ','   dBBBBBBd   ','  dBBffffBBd  ','dddBffeffefddd','dfdBfffffffdfd',' ddBfffefffdd ','   dBffffBd   ','    dBBBBd    ','  fBBfFFFBBf  ','    BBBBBB    ','   dd    dd   '];
+function mascot(x,y,i){const colors={d:'#573c36',B:['#ac734f','#926051','#c49354'][i],f:'#ffd29a',e:'#51392f',F:'#e7b378'};
+ monkey.forEach((line,dy)=>[...line].forEach((v,dx)=>{if(colors[v])rect(colors[v],x+dx,y+dy,1,1);}));
+ rect(colors.d,x+11,y+8,4,1);rect(colors.d,x+14,y+6,1,3);}
+function flag(x,y){rect('#775a3b',x,y,1,10);rect('#ffdb5e',x+1,y,6,4);}
+function draw(){
+ rect('#b5e7f3',0,0,348,103);rect('#75bbc4',0,33,348,70);
+ for(const [x,y] of [[14,9],[119,16],[252,6]]){rect('#fff8de',x,y,24,4);rect('#fff8de',x+6,y-3,12,4);}
+ for(let i=0;i<32;i++)rect('#9cdae0',(i*37)%348,39+(i*13)%59,5,1);
+ names.forEach((name,i)=>{const x=routeX[i];ellipse('#dcc184',x,45,33,9);ellipse('#82ad74',x,41,30,8);ellipse('#a7cc7b',x,39,24,6);
+ mascot(x-5,25,i);rect('#926640',x-6,48,14,6);if(ledger.receipts.some(r=>r.name===name))flag(x+12,26);});
+ rect('#97784d',0,86,47,7);for(let x=1;x<47;x+=7)rect('#e5c387',x,85,5,6);
+ rect('#976e40',4,72,18,13);rect('#5a6546',2,70,22,4);
+ if(trip){ctx.strokeStyle='#f8e8a8';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(43,81);ctx.lineTo(routeX[names.indexOf(trip.name)],53);ctx.stroke();ctx.setLineDash([]);}
+}
+function drawBoat(cargo){
+ const boat=$('boat'),brush=boat.getContext('2d');
+ brush.clearRect(0,0,348,103);
+ rect('#644d35',34,81,18,4,brush);rect('#edbe72',33,79,20,3,brush);rect('#5e5842',45,69,1,12,brush);rect('#fff4d3',46,69,5,6,brush);
+ if(cargo)for(let j=0;j<cargo.qty;j++)rect(cargo.kind==='바나나'?'#ffdb57':'#ff8953',34+j*3,76,3,3,brush);
+}
+function sail(){
+ const boat=$('boat'), x=(routeX[names.indexOf(trip.name)]-43)*100/348;
+ sailing?.cancel();drawBoat(trip);draw();
+ sailing=boat.animate([{transform:'none'},{transform:'translate('+x+'%, '+(-28*100/103)+'%)'}],
+ {duration:reduced.matches?0:voyageMs,easing:'linear',fill:'forwards'});
+}
+function setText(el,value){if(el.textContent!==value)el.textContent=value;}
+function render(){
+ setText($('stock'),'바나나 '+ledger.stock[0]+'개　파파야 '+ledger.stock[1]+'개');
+ document.querySelectorAll('.islands output').forEach((box,i)=>{
+ const totals=fruit.map(f=>ledger.receipts.filter(r=>r.name===names[i]&&r.kind===f).reduce((s,r)=>s+r.qty,0));
+ setText(box,fruit.flatMap((f,n)=>totals[n]?[f+' '+totals[n]+'개']:[]).join(' · ')||'빈 바구니');});
+ const body=$('rows');
+ while(body.rows.length>rows.length)body.deleteRow(-1);
+ rows.forEach((r,i)=>{const tr=body.rows[i]||body.insertRow();
+ tr.classList.toggle('active',index===i);
+ [String(i+1),r.id,r.name+' · '+r.kind+' '+r.qty,r.state].forEach((v,j)=>setText(tr.cells[j]||tr.insertCell(),v));});
+ const done=Object.values(ledger.orders).filter(o=>o.confirmed).length;
+ setText($('stats'),'완료 '+done+'건　·　출항 '+(ledger.receipts.length+(trip?1:0))+'회　·　전달 '+ledger.receipts.reduce((n,r)=>n+r.qty,0)+'개　·　보류 '+ledger.held.length+'건　·　중복 '+rows.filter(r=>r.state==='중복').length+'행');
+}
+function begin(clear){
+ clearTimeout(arrivalTimer);trip=null;rows=[];index=-1;previous=new Set();lastReceipt='';clock=performance.now();
+ if(clear){ledger=fresh();round=0;save();$('history').replaceChildren();}
+ sailing?.cancel();drawBoat(null);draw();round++;$('round').textContent=round+'차 운항';$('receipt').textContent=ledger.receipts.length?'기존 수령 기록 '+ledger.receipts.length+'건 유지':'아직 받은 짐이 없습니다.';
+ event('운항 개시',clear?'첫 배송을 시작합니다':'수령 기록에서 이어갑니다',clear?'바나나 7개와 파파야 4개를 싣고 떠날 준비가 됐습니다.':'완료된 배송은 건너뛰고 보류된 짐을 다시 확인합니다.');
+}
+function land(){
+ if(!trip)return;
+ const r=trip;trip=null;const o=ledger.orders[r.id];o.delivered+=r.qty;ledger.stock[fruit.indexOf(r.kind)]-=r.qty;
+ ledger.receipts.push({key:r.key,id:r.id,name:r.name,kind:r.kind,qty:r.qty});save();lastReceipt=r.key;
+ drawBoat(null);draw();
+ const missing=r.key==='A02-1';
+ $('receipt').textContent=missing?'코코가 짐을 받았습니다. 선착장 도착 신호는 아직 없습니다.':r.key+' · '+r.name+' 수령';
+ rows[index].state=missing?'신호 대기':'도착';
+ event(missing?'섬 도착 · 신호 지연':'섬 도착',r.name+'가 '+r.kind+' '+r.qty+'개를 받았습니다',missing?'바구니는 늘었지만 도착 신호가 누락됐습니다. 수령함 조회를 기다립니다.':r.key+'의 도착 신호가 선착장에 들어왔습니다.',missing?'warn':'good');render();
+}
+function handle(text){
+ const [op,...a]=text.trim().split(/\s+/);
+ if(op==='새배송'||op==='이어배송'){begin(op==='새배송');return 'OK';}
+ if(op==='목록'){
+ const [id,name,kind,q]=a,qty=Number(q);
+ if(!/^[A-Za-z0-9_-]{1,24}$/.test(id)||!names.includes(name)||!fruit.includes(kind)||!Number.isSafeInteger(qty)||qty<1||qty>999)throw Error('배송표의 번호·섬·과일·수량을 확인하세요.');
+ rows.push({id,name,kind,qty,state:'대기'});return 'OK';}
+ if(op==='마감'){index=-1;event('운항 마감','배송표 확인이 끝났습니다',ledger.held.length?'파파야를 보충하고 엑셀에서 ‘이어서 배송’을 누르세요.':'수령함과 창고의 최종 수량을 확인하세요.','good');return 'OK';}
+ if(op==='조회'){index=Number(a[0])-1;if(!rows[index])throw Error('배송표에 없는 행입니다.');}
+ const r=rows[index];if(!r)throw Error('먼저 배송표 행을 조회하세요.');
+ let o=ledger.orders[r.id];
+ if(op==='조회'){
+ if(o&&(o.name!==r.name||o.kind!==r.kind||o.qty!==r.qty))throw Error('같은 번호의 배송 내용이 달라졌습니다.');
+ if(!o)o=ledger.orders[r.id]={name:r.name,kind:r.kind,qty:r.qty,delivered:0};
+ const duplicate=previous.has(r.id);previous.add(r.id);
+ if(o.confirmed||duplicate){
+ r.state=duplicate?'중복':'기배송';event('배송번호 대조',r.id+(duplicate?' · 중복 쪽지':' · 이미 처리한 배송'),r.name+' 섬의 기록과 일치합니다. 이번 행은 출항하지 않습니다.','warn');return 'SKIP';}
+ r.state='조회';event('배송표 '+(index+1)+'행',r.id+' · '+r.name+' 섬으로 '+r.kind+' '+r.qty+'개', '기존 수령량과 창고 재고를 확인합니다.');return 'OPEN';}
+ if(op==='잔량')return String(o.qty-o.delivered);
+ if(op==='재고')return String(ledger.stock[fruit.indexOf(r.kind)]);
+ if(op==='보류'){
+ const shortage=o.qty-o.delivered-ledger.stock[fruit.indexOf(r.kind)];
+ if(shortage<1)throw Error('재고가 충분합니다.');
+ if(!ledger.held.includes(r.id))ledger.held.push(r.id);save();r.state='재고 보류';
+ event('재고 확인 · 보류',r.id+' · '+r.kind+' '+shortage+'개 부족','창고의 남은 '+r.kind+'는 그대로 보관합니다.','warn');return 'OK';}
+ if(op==='출항'){
+ const qty=Number(a[0]);if(trip||!Number.isInteger(qty)||qty<1||qty>3||qty>o.qty-o.delivered||qty>ledger.stock[fruit.indexOf(r.kind)])throw Error('적재 한도·재고·남은 수량을 확인하세요.');
+ const part=ledger.receipts.filter(v=>v.id===r.id).length+1,key=r.id+'-'+part;
+ ledger.held=ledger.held.filter(id=>id!==r.id);r.state='운항 중';lastReceipt='';
+ trip={...r,qty,key,at:performance.now()};event('선적 → 출항',key+' · '+r.kind+' '+qty+'개 출항',r.name+' 섬까지 운항합니다. 이 배송에 남은 짐은 '+(o.qty-o.delivered-qty)+'개입니다.');
+ sail();arrivalTimer=setTimeout(land,voyageMs);return key;}
+ if(op==='신호')return !lastReceipt||lastReceipt==='A02-1'?'WAIT':lastReceipt;
+ if(op==='수령함'){
+ const found=ledger.receipts.find(v=>v.id===r.id&&v.key===a[0]);
+ $('receipt').textContent=found?found.key+' · '+found.name+' · '+found.kind+' '+found.qty+'개 수령':'일치하는 수령증 없음';
+ if(found)r.state='수령증 확인';
+ event('수령함 대조',found?'수령증 '+found.key+' 확인':'수령증 없음',found?'섬의 기록으로 배송을 확인했습니다. 같은 짐을 다시 보내지 않습니다.':'배송을 멈추고 기록을 확인하세요.',found?'good':'warn');return found?.key||'MISSING';}
+ if(op==='확정'){if(o.delivered!==o.qty)throw Error('아직 받을 짐이 있습니다.');
+ o.confirmed=true;save();r.state='완료';event('배송 확정',r.id+' · '+r.name+' 섬 배송 완료',r.kind+' '+o.delivered+'개가 바구니에 있습니다.','good');return 'OK';}
+ throw Error('지원하지 않는 선착장 명령입니다.');
+}
+function execute(command){
+ try{const answer=handle(command);render();return answer;}
+ catch(e){event('입력 확인','배송을 확인하세요',e.message,'warn');return 'ERROR';}
+}
+$('form').onsubmit=e=>{e.preventDefault();$('answer').value=execute($('command').value);};
+const wire=$('wire');
+document.addEventListener('keydown',e=>{
+ if(e.key==='F2'){e.preventDefault();wire.value='';if(document.activeElement!==wire)wire.focus({preventScroll:true});}
+ else if(e.key==='Enter'&&e.target===wire){e.preventDefault();wire.value=execute(wire.value);wire.select();}
+});
+wire.addEventListener('copy',e=>{e.clipboardData.setData('text/plain',wire.value);e.preventDefault();});
+$('supply').onclick=()=>{ledger.stock[1]++;ledger.supplied++;save();event('창고 보충','파파야 1개 보충','현재 파파야 '+ledger.stock[1]+'개. 엑셀에서 이어서 배송할 수 있습니다.','good');render();};
+clock=performance.now();draw();drawBoat(null);render();
+</script></html>

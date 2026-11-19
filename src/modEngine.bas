@@ -39,7 +39,7 @@ Sub RunRPA()
 End Sub
 
 ' @desc 시트 검증 후 실행하여 종료 상태 반환, 재진입이면 BUSY 반환
-Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unattended As Boolean = False) As String
+Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unattended As Boolean = False, Optional ByVal showProgress As Boolean = True) As String
     If m_running Then
         RunScriptSheet = "BUSY"
         Exit Function
@@ -97,7 +97,7 @@ Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unatt
     End If
 
     ' [UI] 상태 표시 폼 로드
-    If Not unattended Then modHelper.ShowRpaStatus frmRPAStatus, totalLines
+    If showProgress And Not unattended Then modHelper.ShowRpaStatus frmRPAStatus, totalLines
 
     modHelper.SetStatusBar "매크로 실행 중..."
     currentLine = 1
@@ -137,8 +137,8 @@ Public Function RunScriptSheet(ByVal wsSource As Worksheet, Optional ByVal unatt
             Dim activeRtotal As Long
             activeRidx = modContext.GetActiveForeachOrdinal()
             activeRtotal = modContext.GetActiveForeachTotalRows()
-            If Not unattended Then modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
-            UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
+            If showProgress And Not unattended Then modHelper.UpdateRpaStatus frmRPAStatus, currentLine, stepInfo, activeRidx, activeRtotal
+            If showProgress Then UpdateStatusBarProgress currentLine, totalLines, activeRidx, activeRtotal
             DoEvents
         End If
 
@@ -203,11 +203,11 @@ CleanUp:
     End Select
     LogShim.LogEvent "run_end", Array("status", "message", "line", "reason", "callDepth", "loopDepth"), _
         Array(finalStatus, finalMessage, currentLine, m_lastRuntimeError, modContext.GetStackDepth(), modContext.LoopDepth())
-    If Not unattended Then modHelper.CloseRpaStatus frmRPAStatus
+    If showProgress And Not unattended Then modHelper.CloseRpaStatus frmRPAStatus
     modContext.ResetContext
     modHelper.ClearStatusBar
     Set m_program = Nothing
-    modActions.Action_ShowNotification finalMessage, 1
+    If showProgress Or finalStatus <> "HALTED" Then modActions.Action_ShowNotification finalMessage, 1
     RunScriptSheet = finalStatus
     m_running = False
     On Error GoTo 0
