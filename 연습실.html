@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>원숭이 간식 당번</title>
 <style>
-*{box-sizing:border-box} html{color-scheme:light;scrollbar-gutter:stable}
+[hidden]{display:none!important}*{box-sizing:border-box} html{color-scheme:light;scrollbar-gutter:stable}
 body{margin:0;padding:clamp(8px,3vw,30px);background:#becedc;color:#243c50;font:16px/1.45 "Malgun Gothic",sans-serif}
 main{max-width:840px;margin:auto;background:#fff8de;border:3px solid #324b64;border-radius:8px;overflow:hidden;box-shadow:0 5px #8ba1b2}
 header{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#d8edf7;border-bottom:2px solid #648096;padding:12px 18px}
@@ -28,10 +28,14 @@ input{width:3.5em;text-align:center;padding:5px}.action{background:#345f50;color
 #feedback{margin:0;padding:8px 18px;min-height:40px;background:#e7f0ef;border-top:1px solid #9aadae;font-weight:700}
 details{padding:6px 18px 10px;font-size:14px;background:#e7f0ef} summary{cursor:pointer}ol{margin:5px 0;padding-left:22px}
 @media(max-width:540px){header,nav,.panel{padding-left:10px;padding-right:10px}.play{margin:0 8px}.basket{font-size:12px}.controls,.arrival,nav{gap:5px}.action{padding:6px 10px}#goal{font-size:16px}}
+#dispatch input {width:6em;text-align:left}
+#dispatch #units {width:3.5em}
+#dispatch label {display:grid;gap:2px;font-size:14px}
+#dispatch {align-items:end}
 </style>
 <main>
 <header><h1>원숭이 간식 당번</h1><button id="reset">다시 시작</button></header>
-<nav aria-label="연습 메뉴"><a href="#01">1. 하나 쏙!</a><a href="#02">2. 파파야 둘!</a><a href="#03">3. 코코 오는 중…</a></nav>
+<nav aria-label="시연 메뉴"><a href="#demo">배급표 자동화</a><a href="#01">고정 대기 클릭</a><a href="#02">키 입력</a><a href="#03">색상 대기</a></nav>
 <div class="play">
 <canvas id="scene" width="320" height="86" aria-label="모모, 코코, 루루의 숲속 간식 배급대" role="img"></canvas>
 <div class="baskets" aria-label="원숭이별 바구니">
@@ -41,6 +45,12 @@ details{padding:6px 18px 10px;font-size:14px;background:#e7f0ef} summary{cursor:
 </div></div>
 <section class="panel" aria-label="간식 배급대">
 <p id="goal"></p>
+<form class="controls" id="dispatch" autocomplete="off" hidden>
+<label>원숭이<input id="recipient" required></label>
+<label>간식<input id="snack" required></label>
+<label>개수<input id="units" inputmode="numeric" required></label>
+<button class="action" type="submit">배급</button>
+</form>
 <form class="controls" id="feed">
 <button class="fruit" type="button" data-fruit="banana"><canvas width="16" height="16" aria-hidden="true"></canvas>바나나</button>
 <button class="fruit" type="button" data-fruit="papaya"><canvas width="16" height="16" aria-hidden="true"></canvas>파파야</button>
@@ -57,7 +67,7 @@ details{padding:6px 18px 10px;font-size:14px;background:#e7f0ef} summary{cursor:
 'use strict';
 const $ = id => document.getElementById(id);
 const names = ['모모','코코','루루'];
-const goals = {'01':'모모에게 바나나 하나를 주세요.','02':'모모에게 파파야 두 개를 주세요.','03':'코코를 부르고, 초록불이 켜지면 바나나 하나를 주세요.'};
+const goals = {demo:'엑셀 배급표 → 원숭이 바구니','01':'모모에게 바나나 하나를 주세요.','02':'모모에게 파파야 두 개를 주세요.','03':'코코를 부르고, 초록불이 켜지면 바나나 하나를 주세요.'};
 const fruits = {banana:'바나나',papaya:'파파야'};
 const baskets = Array.from(document.querySelectorAll('.basket output'));
 const fruitButtons = Array.from(document.querySelectorAll('.fruit'));
@@ -88,6 +98,7 @@ function tree(x,y){
  rect('#87c47b',x+4,y+4,9,3);rect('#add98a',x+8,y+1,5,2);
 }
 const coats=[palette,{...palette,b:'#86554b',B:'#694440'},{...palette,b:'#d9a459',B:'#b78048'}];
+let deliveries,unitsGiven;
 let lesson,fruit,receiver,ready,counts,arrivalTimer,walkStart,walkTime,animation,delivery,began;
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
 function paint(now=performance.now()){
@@ -145,14 +156,25 @@ function setReady(value,text){ready=value;$('lamp').classList.toggle('ready',val
 function reset(){
  clearTimeout(arrivalTimer);walkStart=null;delivery=null;began=performance.now();
  counts=names.map(()=>({banana:0,papaya:0}));receiver=lesson==='03'?1:0;
+ deliveries=0;unitsGiven=0;$('dispatch').reset();
  choose('banana');$('qty').value='1';$('log').replaceChildren();updateBaskets();
  setReady(lesson!=='03',lesson==='03'?'코코 대기 중':'모모 준비 완료');
  $('feedback').textContent=lesson==='03'?'코코 부르기를 누르세요.':'모모가 기다리고 있어요.';
+ if(lesson==='demo'){
+  $('goal').textContent=goals.demo;
+  $('feedback').textContent='Excel의 [시연 시작]을 누르세요. 배급표의 지급 행이 차례로 입력됩니다.';
+  $('recipient').focus({preventScroll:true});
+ }
  redraw();
 }
 function openLesson(){
- const key=location.hash.slice(1);lesson=Object.hasOwn(goals,key)?key:'01';
+ const key=location.hash.slice(1);lesson=Object.hasOwn(goals,key)?key:'demo';
  document.title='UnivRPA Lab '+lesson+' · 원숭이 간식 당번';
+ const demo=lesson==='demo';
+ $('dispatch').hidden=!demo;
+ $('feed').hidden=demo;
+ $('lamp').parentElement.hidden=demo;
+ $('log').parentElement.open=demo;
  $('goal').textContent=goals[lesson];
  for(const a of document.querySelectorAll('nav a')){if(a.hash==='#'+lesson)a.setAttribute('aria-current','step');else a.removeAttribute('aria-current');}
  $('call').disabled=$('speed').disabled=lesson!=='03';$('speed').value='500';reset();
@@ -169,9 +191,31 @@ $('feed').onsubmit=event=>{
  if(!ready){record(walkStart===null?'코코를 먼저 불러 주세요.':'아직 오는 중!');return;}
  const raw=$('qty').value.trim();
  if(!/^[1-9]\d?$/.test(raw)){record('개수는 1부터 99까지 입력하세요.');return;}
- const qty=Number(raw);counts[receiver][fruit]+=qty;delivery={at:performance.now(),to:receiver,fruit,qty};
- updateBaskets();record(names[receiver]+'에게 '+fruits[fruit]+' '+qty+'개를 줬어요!');redraw();
+ give(receiver,fruit,Number(raw));
 };
+function give(to,kind,qty){
+ receiver=to;fruit=kind;counts[receiver][fruit]+=qty;delivery={at:performance.now(),to:receiver,fruit,qty};
+ deliveries++;unitsGiven+=qty;
+ updateBaskets();record(names[receiver]+'에게 '+fruits[fruit]+' '+qty+'개를 줬어요!');redraw();
+ if(lesson==='demo')$('goal').textContent='배급 완료 '+deliveries+'건 · 간식 '+unitsGiven+'개';
+}
+$('dispatch').onsubmit=event=>{
+ event.preventDefault();
+ const to=names.indexOf($('recipient').value.trim());
+ const kind=Object.keys(fruits).find(key=>fruits[key]===$('snack').value.trim());
+ const qty=$('units').value.trim();
+ if(to<0||!kind||!/^[1-9]\d?$/.test(qty)){
+  record('입력 확인 · 원숭이(모모·코코·루루), 간식(바나나·파파야), 개수(1~99)');
+ }else{
+  give(to,kind,Number(qty));
+ }
+ $('dispatch').reset();$('recipient').focus({preventScroll:true});
+};
+document.addEventListener('keydown',event=>{
+ if(lesson==='demo'&&event.key==='F8'){
+  event.preventDefault();reset();
+ }
+});
 window.addEventListener('hashchange',openLesson);openLesson();
 </script>
 </html>

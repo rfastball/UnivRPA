@@ -1,6 +1,6 @@
 Attribute VB_Name = "modPractice"
 ' @desc 배포 사본에 기능별 연습 시트를 구성함
-' @depends modDevTools, clsScriptProgram, modActions
+' @depends modDevTools, clsScriptProgram, modActions, modEngine
 ' SPDX-License-Identifier: MIT
 ' Copyright (c) 2026 JM - see LICENSE
 Option Explicit
@@ -10,6 +10,50 @@ Public Sub BuildPracticeSheets()
     Dim anchor As Worksheet, firstLesson As Worksheet, tableLesson As Worksheet
     Set anchor = ThisWorkbook.Worksheets(1)
 
+    Dim showcase As Worksheet, preview As Worksheet, orders As Worksheet
+    Set showcase = AddLesson(anchor, "시연 자동 배급", Array( _
+        "FOCUS|||UnivRPA Lab demo|배급 화면을 앞으로 가져옵니다.", _
+        "KEY|F8|||이전 기록을 지우고 원숭이 칸에 커서를 놓습니다.", _
+        "FOREACH_ROW|UnivRPA.xlsm|배급표||배급표에서 한 행을 읽습니다.", _
+        "IF|{$ROW.상태}|EQ|지급|지급 행만 화면으로 보냅니다.", _
+        "TYPE|70||{$ROW.원숭이}|받을 원숭이를 입력합니다.", _
+        "KEY|TAB|||간식 칸으로 이동합니다.", _
+        "TYPE|70||{$ROW.간식}|간식 이름을 입력합니다.", _
+        "KEY|TAB|||개수 칸으로 이동합니다.", _
+        "TYPE|70||{$ROW.개수}|개수를 입력합니다.", _
+        "KEY|ENTER|||배급하면 다음 입력은 원숭이 칸에서 시작합니다.", _
+        "SLEEP|||700|바구니에 들어간 간식을 보여 줍니다.", _
+        "END_IF||||", _
+        "END_FOREACH||||"))
+    Dim startButton As Button
+    Set startButton = showcase.Buttons.Add(showcase.Range("H2").Left, showcase.Range("H2").Top, 115, 24)
+    startButton.Caption = "시연 시작"
+    startButton.OnAction = "StartFeedingShowcase"
+    showcase.Range("H5").Value2 = "배급표 5행 중 지급 4건을 브라우저에 입력합니다."
+    showcase.Range("H6").Value2 = "기본 결과: 모모 바나나 3개, 코코 파파야 3개, 루루 바나나 4개."
+    showcase.Range("H7").Value2 = "배급표 시트의 값이나 상태를 바꾸고 다시 실행하면 바구니가 처음부터 채워집니다."
+    showcase.Range("H8").Value2 = "직접 실행: 연습실.html > 배급표 자동화 > 이 시트에서 Ctrl+Shift+W."
+    Set orders = ThisWorkbook.Worksheets.Add(Before:=anchor)
+    orders.Name = "배급표"
+    orders.Range("A1:D1").Value = Array("원숭이", "간식", "개수", "상태")
+    orders.Range("A2:D2").Value = Array("모모", "바나나", 2, "지급")
+    orders.Range("A3:D3").Value = Array("코코", "파파야", 3, "지급")
+    orders.Range("A4:D4").Value = Array("루루", "파파야", 7, "보류")
+    orders.Range("A5:D5").Value = Array("루루", "바나나", 4, "지급")
+    orders.Range("A6:D6").Value = Array("모모", "바나나", 1, "지급")
+    orders.Range("A1:D1").Font.Bold = True
+    orders.Columns("A:D").ColumnWidth = 15
+    Set preview = AddLesson(anchor, "시연 배급 집계", Array( _
+        "SET|{건수}||0|지급할 행 수입니다.", _
+        "SET|{수량}||0|지급할 간식 수입니다.", _
+        "FOREACH_ROW|UnivRPA.xlsm|배급표||동일한 배급표를 읽습니다.", _
+        "IF|{$ROW.상태}|EQ|지급|보류 행을 제외합니다.", _
+        "INC|{건수}||1|", _
+        "INC|{수량}||{$ROW.개수}|", _
+        "END_IF||||", _
+        "END_FOREACH||||", _
+        "NOTIFY|4||배급 예정 {건수}건 / 간식 {수량}개|기본 결과는 4건, 10개입니다."))
+    preview.Range("H2").Value2 = "Ctrl+Shift+W로 실행하면 배급표를 집계해 알림을 표시합니다."
     Set firstLesson = AddLesson(anchor, "연습01 하나 쏙", Array( _
         "FOCUS|||UnivRPA Lab 01|H2에서 연습실을 열고 창을 나란히 두세요.", _
         "SLEEP|||1000|1초 뒤 모모의 바구니를 보세요.", _
@@ -84,7 +128,7 @@ Public Sub BuildPracticeSheets()
         .Range("H1:I1").Font.Bold = True
         .Columns("H:I").AutoFit
     End With
-    firstLesson.Activate
+    showcase.Activate
 End Sub
 
 Private Sub AddLabControls(ByVal ws As Worksheet, ByVal targetName As String)
@@ -98,35 +142,62 @@ Private Sub AddLabControls(ByVal ws As Worksheet, ByVal targetName As String)
     ws.Range("H7").Value2 = "스크립트 시트에서 Ctrl+Shift+W로 실행합니다. Ctrl+Shift+/로 선택한 명령의 주석을 전환합니다."
 End Sub
 
+' @desc 배급표를 브라우저에 입력하는 예제 스크립트를 실행함
+Public Sub StartFeedingShowcase()
+    Dim ws As Worksheet, attempt As Long
+    Set ws = ThisWorkbook.Worksheets("시연 자동 배급")
+    ws.Activate
+    If Not OpenLabWindow("demo") Then Exit Sub
+    For attempt = 1 To 50
+        If modActions.Action_FocusWindow("UnivRPA Lab demo") Then
+            modEngine.RunScriptSheet ws
+            Exit Sub
+        End If
+        If modWinAPI.IsKeyDown(modWinAPI.VK_ESCAPE) Then Exit Sub
+        modWinAPI.Sleep 150
+        DoEvents
+    Next
+    MsgBox "연습실.html의 배급표 자동화를 열고 시연 자동 배급 시트에서 Ctrl+Shift+W를 누르세요.", vbInformation
+End Sub
+
 ' @desc 현재 연습 시트에 맞는 로컬 브라우저 실습 창을 엶
 Public Sub OpenPracticeLab()
-    Dim lesson As String, page As String, edge As String, url As String, folder As Variant
-    On Error GoTo Failed
+    Dim lesson As String
     lesson = Mid$(ActiveSheet.Name, 3, 2)
     Select Case lesson
         Case "01", "02", "03"
         Case Else: Exit Sub
     End Select
+    OpenLabWindow lesson
+End Sub
+
+Private Function OpenLabWindow(ByVal lesson As String) As Boolean
+    Dim page As String, edge As String, url As String, folder As Variant
+    On Error GoTo Failed
     page = ThisWorkbook.Path & Application.PathSeparator & "연습실.html"
     If Len(Dir$(page)) = 0 Then
         MsgBox "배포 ZIP을 모두 풀고 연습실.html을 통합 문서와 같은 폴더에 두세요.", vbInformation
-        Exit Sub
+        Exit Function
     End If
-    If modActions.Action_FocusWindow("UnivRPA Lab " & lesson) Then Exit Sub
-    url = "file:///" & Replace(page, "\", "/")
-    url = Replace(Replace(Replace(url, "%", "%25"), "#", "%23"), " ", "%20") & "#" & lesson
+    If modActions.Action_FocusWindow("UnivRPA Lab " & lesson) Then
+        OpenLabWindow = True
+        Exit Function
+    End If
+    url = "file:///" & Replace(Replace(Application.WorksheetFunction.EncodeURL(Replace(page, "\", "/")), "%2F", "/", 1, -1, vbTextCompare), "%3A", ":", 1, -1, vbTextCompare) & "#" & lesson
     For Each folder In Array(Environ$("ProgramFiles(x86)"), Environ$("ProgramFiles"), Environ$("LocalAppData"))
         edge = folder & "\Microsoft\Edge\Application\msedge.exe"
         If Len(Dir$(edge)) > 0 Then
             Shell """" & edge & """ --app=""" & url & """", vbNormalFocus
-            Exit Sub
+            OpenLabWindow = True
+            Exit Function
         End If
     Next
     ThisWorkbook.FollowHyperlink Address:=page, SubAddress:=lesson, NewWindow:=True
-    Exit Sub
+    OpenLabWindow = True
+    Exit Function
 Failed:
     MsgBox "연습실.html을 브라우저에서 열고 " & lesson & "강을 선택하세요." & vbCrLf & Err.Description, vbInformation
-End Sub
+End Function
 
 Private Function AddLesson(ByVal anchor As Worksheet, ByVal title As String, ByVal lines As Variant) As Worksheet
     Dim ws As Worksheet, i As Long, program As clsScriptProgram
