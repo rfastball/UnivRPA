@@ -1,6 +1,6 @@
 # 01. 시작하기
 
-> UnivRPA 1.0.0 사용 매뉴얼
+> UnivRPA 1.0.1 사용 매뉴얼
 > 관련 문서: [명령어 레퍼런스](02-command-reference.md) · [작성 보조 도구](03-authoring-tools.md)
 
 이 문서는 UnivRPA로 첫 자동화 스크립트를 작성·실행하는 과정을 처음부터 끝까지 안내합니다.

@@ -1,6 +1,6 @@
 # 02. 명령어 레퍼런스
 
-> UnivRPA 1.0.0 사용 매뉴얼
+> UnivRPA 1.0.1 사용 매뉴얼
 > 단일 출처(SSOT): 파라미터 정의는 `modCmdRegistry.bas`, 조건 연산자는 `modCondition.bas`(`IsConditionOperator`), 키 이름은 `modActions.bas`(`ParseKeyCode`) 등록값을 그대로 따릅니다.
 > 관련 문서: [시작하기](01-getting-started.md) · [작성 보조 도구](03-authoring-tools.md)
 

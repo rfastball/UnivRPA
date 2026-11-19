@@ -9,7 +9,7 @@ visible = true
 root = "src"
 
 [dist]
-version = "1.0.0"
+version = "1.0.1"
 bootstrap = "modPractice.BuildPracticeSheets"
 exclude = ["modTester", "SmokeTest"]
 
